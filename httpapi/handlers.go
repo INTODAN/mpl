@@ -1,0 +1,102 @@
+package httpapi
+
+import (
+	"context"
+	"islandBattles/lobby"
+)
+
+type handlers struct {
+	app           lobby.Application
+	authenticator lobby.Authenticator
+	issuer        lobby.ConnectionTokenIssuer
+}
+
+func (handler handlers) session(ctx context.Context, input *CreateSessionInput) (*CreateSessionOutput, error) {
+	result, err := handler.authenticator.CreateGuest(ctx, lobby.CreateGuestRequest{DisplayName: input.Body.DisplayName})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &CreateSessionOutput{Body: GuestSession{PlayerID: result.PlayerID, AccessToken: result.AccessToken, ExpiresAt: result.ExpiresAt}}, nil
+}
+func (handler handlers) token(ctx context.Context, _ *ConnectionTokenInput) (*ConnectionTokenOutput, error) {
+	result, err := handler.issuer.IssueConnectionToken(ctx, sessionFromContext(ctx))
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &ConnectionTokenOutput{Body: ConnectionToken{Token: result.Token, ExpiresAt: result.ExpiresAt, WebsocketURL: result.WebsocketURL}}, nil
+}
+func sessionFromContext(ctx context.Context) lobby.SessionVerification {
+	verification, _ := ctx.Value(sessionContextKey{}).(lobby.SessionVerification)
+	return verification
+}
+func (handler handlers) create(ctx context.Context, input *CreateLobbyInput) (*CreateLobbyOutput, error) {
+	body := input.Body
+	teams := make([]lobby.TeamDefinition, len(body.Teams))
+	for i, team := range body.Teams {
+		teams[i] = lobby.TeamDefinition{Name: team.Name, Capacity: team.Capacity}
+	}
+	result, err := handler.app.Create(ctx, principalFromContext(ctx), lobby.CreateRequest{RequestID: body.RequestID, GameKey: body.GameKey, Name: body.Name, Capacity: body.Capacity, Teams: teams, ClientInstanceID: body.ClientInstanceID})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &CreateLobbyOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) join(ctx context.Context, input *JoinLobbyInput) (*JoinLobbyOutput, error) {
+	body := input.Body
+	result, err := handler.app.Join(ctx, principalFromContext(ctx), lobby.JoinRequest{GameKey: body.GameKey, JoinCode: body.JoinCode, ClientInstanceID: body.ClientInstanceID})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &JoinLobbyOutput{Body: snapshotFromDomain(result)}, nil
+}
+func scope(input ScopeInput) lobby.Scope {
+	return lobby.Scope{GameKey: input.GameKey, LobbyID: input.LobbyID}
+}
+func (handler handlers) snapshot(ctx context.Context, input *ScopeInput) (*SnapshotOutput, error) {
+	result, err := handler.app.Snapshot(ctx, principalFromContext(ctx), scope(*input))
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) team(ctx context.Context, input *SelectTeamInput) (*SnapshotOutput, error) {
+	result, err := handler.app.SelectTeam(ctx, principalFromContext(ctx), scope(input.ScopeInput), lobby.SelectTeamRequest{TeamID: input.Body.TeamID.Value})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) ready(ctx context.Context, input *ReadyInput) (*SnapshotOutput, error) {
+	result, err := handler.app.SetReady(ctx, principalFromContext(ctx), scope(input.ScopeInput), lobby.ReadyRequest{Ready: input.Body.Ready})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) start(ctx context.Context, input *StartInput) (*SnapshotOutput, error) {
+	result, err := handler.app.Start(ctx, principalFromContext(ctx), scope(input.ScopeInput))
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) leave(ctx context.Context, input *LeaveInput) (*EmptyOutput, error) {
+	if err := handler.app.Leave(ctx, principalFromContext(ctx), scope(input.ScopeInput)); err != nil {
+		return nil, problemFor(err)
+	}
+	return &EmptyOutput{}, nil
+}
+func (handler handlers) heartbeat(ctx context.Context, input *HeartbeatInput) (*HeartbeatOutput, error) {
+	body := input.Body
+	result, err := handler.app.Heartbeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), lobby.HeartbeatRequest{ClientInstanceID: body.ClientInstanceID, MembershipGeneration: body.MembershipGeneration})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &HeartbeatOutput{Body: HeartbeatResult{Version: result.Version, MembershipGeneration: result.MembershipGeneration, LeaseExpiresAt: result.LeaseExpiresAt, DisconnectedUntil: result.DisconnectedUntil}}, nil
+}
+func (handler handlers) release(ctx context.Context, input *ReleaseLeaseInput) (*EmptyOutput, error) {
+	if err := handler.app.ReleaseLease(ctx, principalFromContext(ctx), scope(input.ScopeInput), lobby.ReleaseLeaseRequest{ClientInstanceID: input.ClientInstanceID, MembershipGeneration: input.MembershipGeneration}); err != nil {
+		return nil, problemFor(err)
+	}
+	return &EmptyOutput{}, nil
+}

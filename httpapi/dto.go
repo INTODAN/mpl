@@ -1,0 +1,210 @@
+package httpapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"islandBattles/lobby"
+)
+
+type CreateSessionInput struct {
+	Body CreateSessionBody `json:"-"`
+}
+type CreateSessionBody struct {
+	DisplayName string `json:"display_name" minLength:"1" maxLength:"40"`
+}
+type CreateSessionOutput struct {
+	Body GuestSession `json:"-"`
+}
+type GuestSession struct {
+	PlayerID    string    `json:"player_id" format:"uuid"`
+	AccessToken string    `json:"access_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+type ConnectionTokenInput struct {
+	Body struct{} `json:"-"`
+}
+type ConnectionTokenOutput struct {
+	Body ConnectionToken `json:"-"`
+}
+type ConnectionToken struct {
+	Token        string    `json:"token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	WebsocketURL string    `json:"websocket_url" format:"uri"`
+}
+
+type TeamDefinition struct {
+	Name     string `json:"name" minLength:"1" maxLength:"40"`
+	Capacity int    `json:"capacity" minimum:"1" maximum:"64"`
+}
+type CreateLobbyInput struct {
+	Body CreateLobbyBody `json:"-"`
+}
+type CreateLobbyBody struct {
+	RequestID        string           `json:"request_id" format:"uuid"`
+	GameKey          string           `json:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
+	Name             string           `json:"name" minLength:"1" maxLength:"80"`
+	Capacity         int              `json:"capacity" minimum:"2" maximum:"64"`
+	Teams            []TeamDefinition `json:"teams" minItems:"2" maxItems:"16"`
+	ClientInstanceID string           `json:"client_instance_id" format:"uuid"`
+}
+type JoinLobbyInput struct {
+	Body JoinLobbyBody `json:"-"`
+}
+type JoinLobbyBody struct {
+	GameKey          string `json:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
+	JoinCode         string `json:"join_code" minLength:"8" maxLength:"8"`
+	ClientInstanceID string `json:"client_instance_id" format:"uuid"`
+}
+type ScopeInput struct {
+	GameKey string `path:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
+	LobbyID string `path:"lobby_id" format:"uuid"`
+}
+type CreateLobbyOutput struct {
+	Body Snapshot `json:"-"`
+}
+type JoinLobbyOutput struct {
+	Body Snapshot `json:"-"`
+}
+type SnapshotOutput struct {
+	Body Snapshot `json:"-"`
+}
+
+// NullableUUID distinguishes JSON null (clear) from a valid UUID. Omission is
+// rejected by the containing field's `required` schema tag before unmarshalling.
+type NullableUUID struct{ Value *string }
+
+func (value *NullableUUID) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		value.Value = nil
+		return nil
+	}
+	var parsed string
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	if parsed == "" {
+		return fmt.Errorf("team_id must be a UUID or null")
+	}
+	value.Value = &parsed
+	return nil
+}
+func (NullableUUID) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: "string", Format: "uuid", Nullable: true}
+}
+
+type SelectTeamInput struct {
+	ScopeInput
+	Body SelectTeamBody `json:"-"`
+}
+type SelectTeamBody struct {
+	TeamID NullableUUID `json:"team_id" required:"true"`
+}
+type ReadyInput struct {
+	ScopeInput
+	Body ReadyBody `json:"-"`
+}
+type ReadyBody struct {
+	Ready bool `json:"ready" required:"true"`
+}
+type StartInput struct {
+	ScopeInput
+	Body struct{} `json:"-"`
+}
+type LeaveInput struct{ ScopeInput }
+type EmptyOutput struct{}
+type HeartbeatInput struct {
+	ScopeInput
+	Body HeartbeatBody `json:"-"`
+}
+type HeartbeatBody struct {
+	ClientInstanceID     string `json:"client_instance_id" format:"uuid"`
+	MembershipGeneration int64  `json:"membership_generation" minimum:"1"`
+}
+type HeartbeatOutput struct {
+	Body HeartbeatResult `json:"-"`
+}
+type HeartbeatResult struct {
+	Version              int64      `json:"version"`
+	MembershipGeneration int64      `json:"membership_generation"`
+	LeaseExpiresAt       time.Time  `json:"lease_expires_at"`
+	DisconnectedUntil    *time.Time `json:"disconnected_until"`
+}
+type ReleaseLeaseInput struct {
+	ScopeInput
+	ClientInstanceID     string `path:"client_instance_id" format:"uuid"`
+	MembershipGeneration int64  `query:"generation" minimum:"1" required:"true"`
+}
+
+type Snapshot struct {
+	Lobby                Lobby              `json:"lobby"`
+	Teams                []Team             `json:"teams"`
+	Members              []Member           `json:"members"`
+	StartRoster          []StartRosterEntry `json:"start_roster"`
+	MembershipGeneration int64              `json:"membership_generation"`
+	Channel              string             `json:"channel"`
+}
+type Lobby struct {
+	ID           string      `json:"id"`
+	GameKey      string      `json:"game_key"`
+	Name         string      `json:"name"`
+	JoinCode     string      `json:"join_code"`
+	Capacity     int         `json:"capacity"`
+	Phase        lobby.Phase `json:"phase"`
+	Version      int64       `json:"version"`
+	HostPlayerID *string     `json:"host_player_id"`
+	CreatedAt    time.Time   `json:"created_at"`
+}
+type Team struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Capacity int    `json:"capacity"`
+	Order    int    `json:"order"`
+}
+type Member struct {
+	ID                string     `json:"id"`
+	PlayerID          string     `json:"player_id"`
+	DisplayName       string     `json:"display_name"`
+	Generation        int64      `json:"generation"`
+	Active            bool       `json:"active"`
+	TeamID            *string    `json:"team_id"`
+	Ready             bool       `json:"ready"`
+	JoinedAt          time.Time  `json:"joined_at"`
+	JoinSequence      int64      `json:"join_sequence"`
+	DisconnectedUntil *time.Time `json:"disconnected_until"`
+}
+type StartRosterEntry struct {
+	PlayerID  string `json:"player_id"`
+	TeamID    string `json:"team_id"`
+	MemberID  string `json:"member_id"`
+	TeamOrder int    `json:"team_order"`
+}
+type LobbyInvalidation struct {
+	SchemaVersion int    `json:"schema_version" enum:"1"`
+	EventID       string `json:"event_id"`
+	GameKey       string `json:"game_key"`
+	LobbyID       string `json:"lobby_id"`
+	Version       int64  `json:"version" minimum:"1"`
+	Type          string `json:"type" enum:"lobby.changed"`
+}
+
+func snapshotFromDomain(source lobby.Snapshot) Snapshot {
+	teams := make([]Team, len(source.Teams))
+	for index, team := range source.Teams {
+		teams[index] = Team{ID: team.ID, Name: team.Name, Capacity: team.Capacity, Order: team.Order}
+	}
+	members := make([]Member, len(source.Members))
+	for index, member := range source.Members {
+		members[index] = Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil}
+	}
+	roster := make([]StartRosterEntry, len(source.StartRoster))
+	for index, entry := range source.StartRoster {
+		roster[index] = StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder}
+	}
+	room := source.Lobby
+	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel}
+}
