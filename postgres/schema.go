@@ -8,8 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SchemaTables is the complete generic-lobby schema. It intentionally excludes
-// all Island Battles tables and task 11's data backfill.
+// SchemaTables is the complete generic-lobby schema, independent of game tables.
 var SchemaTables = []string{
 	"lobby_players",
 	"lobby_sessions",
@@ -20,11 +19,10 @@ var SchemaTables = []string{
 	"lobby_start_roster",
 	"lobby_create_requests",
 	"lobby_outbox",
-	"lobby_legacy_records",
 }
 
 // InitializeSchema creates the generic lobby schema atomically and may safely
-// be called more than once. It does not open a connection or run any backfill.
+// be called more than once. It does not open a connection.
 func InitializeSchema(ctx context.Context, db *gorm.DB) error {
 	if db == nil {
 		return errors.New("lobby postgres: nil database")
@@ -41,7 +39,6 @@ func InitializeSchema(ctx context.Context, db *gorm.DB) error {
 			&StartRosterRecord{},
 			&CreateRequestRecord{},
 			&OutboxRecord{},
-			&LegacyRecord{},
 		); err != nil {
 			return err
 		}
@@ -94,7 +91,6 @@ var schemaStatements = []string{
 	`CREATE UNIQUE INDEX IF NOT EXISTS ux_lobby_outbox_invalidation_version ON lobby_outbox (lobby_id, version) WHERE kind = 'invalidation'`,
 	`CREATE INDEX IF NOT EXISTS ix_lobby_outbox_pending_claim ON lobby_outbox (next_attempt_at, claim_deadline) WHERE acknowledged_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS ix_lobby_outbox_scope ON lobby_outbox (lobby_id, kind, acknowledged_at)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS ux_lobby_legacy_source ON lobby_legacy_records (source_table, source_primary_key)`,
 
 	`ALTER TABLE lobby_sessions ADD CONSTRAINT fk_lobby_sessions_player FOREIGN KEY (player_id) REFERENCES lobby_players (id)`,
 	`ALTER TABLE lobby_rooms ADD CONSTRAINT fk_lobby_rooms_host FOREIGN KEY (host_player_id) REFERENCES lobby_players (id)`,
@@ -126,5 +122,4 @@ var schemaStatements = []string{
 	`ALTER TABLE lobby_outbox ADD CONSTRAINT ck_lobby_outbox_kind CHECK (kind IN ('invalidation', 'revocation'))`,
 	`ALTER TABLE lobby_outbox ADD CONSTRAINT ck_lobby_outbox_attempts CHECK (attempts >= 0)`,
 	`ALTER TABLE lobby_outbox ADD CONSTRAINT ck_lobby_outbox_payload CHECK ((kind = 'invalidation' AND lobby_id IS NOT NULL AND version IS NOT NULL AND player_id IS NULL AND generation IS NULL) OR (kind = 'revocation' AND lobby_id IS NOT NULL AND player_id IS NOT NULL AND generation IS NOT NULL))`,
-	`ALTER TABLE lobby_legacy_records ADD CONSTRAINT ck_lobby_legacy_records_migration_version CHECK (migration_version > 0)`,
 }

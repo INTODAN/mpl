@@ -128,20 +128,3 @@ type OutboxRecord struct {
 }
 
 func (OutboxRecord) TableName() string { return "lobby_outbox" }
-
-// LegacyRecord is an archive boundary. It retains source JSON exactly enough
-// for the task 11 backfill without claiming legacy identities as lobby users.
-type LegacyRecord struct {
-	ID               string         `gorm:"column:id;type:uuid;primaryKey"`
-	SourceTable      string         `gorm:"column:source_table;not null"`
-	SourcePrimaryKey string         `gorm:"column:source_primary_key;not null"`
-	OriginalRowJSON  datatypes.JSON `gorm:"column:original_row_json;type:jsonb;not null"`
-	Checksum         string         `gorm:"column:checksum;not null"`
-	SourceCreatedAt  *time.Time     `gorm:"column:source_created_at"`
-	SourceUpdatedAt  *time.Time     `gorm:"column:source_updated_at"`
-	SourceDeletedAt  *time.Time     `gorm:"column:source_deleted_at"`
-	ArchivedAt       time.Time      `gorm:"column:archived_at;not null"`
-	MigrationVersion int64          `gorm:"column:migration_version;not null"`
-}
-
-func (LegacyRecord) TableName() string { return "lobby_legacy_records" }

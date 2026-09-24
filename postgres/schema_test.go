@@ -2,7 +2,7 @@ package postgres_test
 
 import (
 	"context"
-	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,21 +10,24 @@ import (
 	lobbypostgres "islandBattles/lobby/postgres"
 
 	"github.com/google/uuid"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	db := testutil.NewPostgresFixture(t)
-	for _, table := range lobbypostgres.SchemaTables {
-		if !db.Migrator().HasTable(table) {
-			t.Errorf("schema did not create %s", table)
-		}
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, table := range []string{"games", "players", "generations", "maps"} {
-		if db.Migrator().HasTable(table) {
-			t.Errorf("generic lobby schema unexpectedly created %s", table)
-		}
+	expected := []string{
+		"lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
+		"lobby_memberships", "lobby_leases", "lobby_start_roster",
+		"lobby_create_requests", "lobby_outbox",
+	}
+	slices.Sort(tables)
+	slices.Sort(expected)
+	if !slices.Equal(tables, expected) {
+		t.Fatalf("schema tables = %v, want %v", tables, expected)
 	}
 }
 
@@ -248,24 +251,6 @@ func TestSchemaPreservesNullAndFalse(t *testing.T) {
 	mustFind(t, db, &loadedMember, member.ID)
 	if loadedRoom.HostPlayerID != nil || loadedMember.TeamID != nil || loadedMember.DisconnectedUntil != nil || loadedMember.Active || loadedMember.Ready {
 		t.Fatalf("NULL/false fields changed: room=%#v member=%#v", loadedRoom, loadedMember)
-	}
-}
-
-func TestSchemaPreservesLegacyArchiveJSON(t *testing.T) {
-	db := testutil.NewPostgresFixture(t)
-	created := time.Date(2024, 2, 3, 4, 5, 6, 0, time.UTC)
-	deleted := time.Date(2024, 4, 5, 6, 7, 8, 0, time.UTC)
-	original := datatypes.JSON(`{"id":42,"created_at":"2024-02-03T04:05:06Z","deleted_at":null,"nested":{"numeric_id":99}}`)
-	record := lobbypostgres.LegacyRecord{ID: uuid.NewString(), SourceTable: "players", SourcePrimaryKey: "42", OriginalRowJSON: original, Checksum: "sha256:test", SourceCreatedAt: &created, SourceDeletedAt: &deleted, ArchivedAt: time.Now().UTC(), MigrationVersion: 1}
-	mustCreate(t, db, &record)
-	var loaded lobbypostgres.LegacyRecord
-	mustFind(t, db, &loaded, record.ID)
-	var payload map[string]any
-	if err := json.Unmarshal(loaded.OriginalRowJSON, &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload["id"].(float64) != 42 || payload["deleted_at"] != nil || loaded.SourceDeletedAt == nil || !loaded.SourceDeletedAt.Equal(deleted) || loaded.Checksum != record.Checksum {
-		t.Fatalf("legacy archive did not round trip: %#v, %#v", payload, loaded)
 	}
 }
 
