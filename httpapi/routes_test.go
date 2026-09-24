@@ -12,7 +12,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 const testUUID = "11111111-1111-4111-8111-111111111111"
@@ -122,7 +122,7 @@ func TestProblemStatusAndCodeMapping(t *testing.T) {
 		status     int
 		code       string
 	}{
-		{lobby.ErrNotFound, http.StatusNotFound, "not_found"}, {lobby.ErrNotHost, http.StatusForbidden, "not_host"}, {lobby.ErrLobbyFull, http.StatusConflict, "lobby_full"}, {lobby.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid_input"}, {lobby.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"}, {errors.New("SQL password=secret"), http.StatusInternalServerError, "internal_error"},
+		{domain.ErrNotFound, http.StatusNotFound, "not_found"}, {domain.ErrNotHost, http.StatusForbidden, "not_host"}, {domain.ErrLobbyFull, http.StatusConflict, "lobby_full"}, {domain.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid_input"}, {domain.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"}, {errors.New("SQL password=secret"), http.StatusInternalServerError, "internal_error"},
 	} {
 		problem := problemFor(testCase.errorValue).(*Problem)
 		if problem.Status != testCase.status || string(problem.Code) != testCase.code {
@@ -190,56 +190,56 @@ func strconvStatus(status int) string { return fmt.Sprintf("%d", status) }
 
 type fakeAuthenticator struct{}
 
-func (fakeAuthenticator) CreateGuest(context.Context, lobby.CreateGuestRequest) (lobby.GuestSession, error) {
-	return lobby.GuestSession{PlayerID: testUUID, AccessToken: "guest", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+func (fakeAuthenticator) CreateGuest(context.Context, domain.CreateGuestRequest) (domain.GuestSession, error) {
+	return domain.GuestSession{PlayerID: testUUID, AccessToken: "guest", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
 }
-func (fakeAuthenticator) Authenticate(_ context.Context, header string) (lobby.SessionVerification, error) {
+func (fakeAuthenticator) Authenticate(_ context.Context, header string) (domain.SessionVerification, error) {
 	if header != "Bearer good" {
-		return lobby.SessionVerification{}, lobby.ErrUnauthenticated
+		return domain.SessionVerification{}, domain.ErrUnauthenticated
 	}
-	return lobby.SessionVerification{Principal: lobby.Principal{PlayerID: testUUID, SessionID: testUUID, DisplayName: "Bearer Owner"}, ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+	return domain.SessionVerification{Principal: domain.Principal{PlayerID: testUUID, SessionID: testUUID, DisplayName: "Bearer Owner"}, ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
 }
 
 type fakeIssuer struct{}
 
-func (fakeIssuer) IssueConnectionToken(_ context.Context, verification lobby.SessionVerification) (lobby.ConnectionToken, error) {
-	return lobby.ConnectionToken{Token: verification.Principal.PlayerID, ExpiresAt: verification.ExpiresAt, WebsocketURL: "ws://localhost:8000/connection/websocket"}, nil
+func (fakeIssuer) IssueConnectionToken(_ context.Context, verification domain.SessionVerification) (domain.ConnectionToken, error) {
+	return domain.ConnectionToken{Token: verification.Principal.PlayerID, ExpiresAt: verification.ExpiresAt, WebsocketURL: "ws://localhost:8000/connection/websocket"}, nil
 }
 
 type fakeApplication struct {
-	teamRequest     lobby.SelectTeamRequest
-	readyRequest    lobby.ReadyRequest
-	createPrincipal lobby.Principal
+	teamRequest     domain.SelectTeamRequest
+	readyRequest    domain.ReadyRequest
+	createPrincipal domain.Principal
 }
 
-func fakeSnapshot() lobby.Snapshot {
-	return lobby.Snapshot{Lobby: lobby.Lobby{ID: testUUID, GameKey: "island-battles", Name: "Lobby", JoinCode: "SECRETCODE", Capacity: 2, Phase: lobby.PhaseWaiting, Version: 9007199254740993, CreatedAt: time.Unix(0, 0).UTC()}, Teams: []lobby.Team{}, Members: []lobby.Member{}, StartRoster: lobby.StartRoster{}, MembershipGeneration: 1, Channel: "lobby:island-battles:" + testUUID}
+func fakeSnapshot() domain.Snapshot {
+	return domain.Snapshot{Lobby: domain.Lobby{ID: testUUID, GameKey: "island-battles", Name: "Lobby", JoinCode: "SECRETCODE", Capacity: 2, Phase: domain.PhaseWaiting, Version: 9007199254740993, CreatedAt: time.Unix(0, 0).UTC()}, Teams: []domain.Team{}, Members: []domain.Member{}, StartRoster: domain.StartRoster{}, MembershipGeneration: 1, Channel: "lobby:island-battles:" + testUUID}
 }
-func (application *fakeApplication) Create(_ context.Context, principal lobby.Principal, _ lobby.CreateRequest) (lobby.Snapshot, error) {
+func (application *fakeApplication) Create(_ context.Context, principal domain.Principal, _ domain.CreateRequest) (domain.Snapshot, error) {
 	application.createPrincipal = principal
 	return fakeSnapshot(), nil
 }
-func (*fakeApplication) Join(context.Context, lobby.Principal, lobby.JoinRequest) (lobby.Snapshot, error) {
+func (*fakeApplication) Join(context.Context, domain.Principal, domain.JoinRequest) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil
 }
-func (*fakeApplication) Snapshot(context.Context, lobby.Principal, lobby.Scope) (lobby.Snapshot, error) {
+func (*fakeApplication) Snapshot(context.Context, domain.Principal, domain.Scope) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil
 }
-func (application *fakeApplication) SelectTeam(_ context.Context, _ lobby.Principal, _ lobby.Scope, request lobby.SelectTeamRequest) (lobby.Snapshot, error) {
+func (application *fakeApplication) SelectTeam(_ context.Context, _ domain.Principal, _ domain.Scope, request domain.SelectTeamRequest) (domain.Snapshot, error) {
 	application.teamRequest = request
 	return fakeSnapshot(), nil
 }
-func (application *fakeApplication) SetReady(_ context.Context, _ lobby.Principal, _ lobby.Scope, request lobby.ReadyRequest) (lobby.Snapshot, error) {
+func (application *fakeApplication) SetReady(_ context.Context, _ domain.Principal, _ domain.Scope, request domain.ReadyRequest) (domain.Snapshot, error) {
 	application.readyRequest = request
 	return fakeSnapshot(), nil
 }
-func (*fakeApplication) Start(context.Context, lobby.Principal, lobby.Scope) (lobby.Snapshot, error) {
+func (*fakeApplication) Start(context.Context, domain.Principal, domain.Scope) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil
 }
-func (*fakeApplication) Leave(context.Context, lobby.Principal, lobby.Scope) error { return nil }
-func (*fakeApplication) Heartbeat(context.Context, lobby.Principal, lobby.Scope, lobby.HeartbeatRequest) (lobby.HeartbeatResult, error) {
-	return lobby.HeartbeatResult{}, nil
+func (*fakeApplication) Leave(context.Context, domain.Principal, domain.Scope) error { return nil }
+func (*fakeApplication) Heartbeat(context.Context, domain.Principal, domain.Scope, domain.HeartbeatRequest) (domain.HeartbeatResult, error) {
+	return domain.HeartbeatResult{}, nil
 }
-func (*fakeApplication) ReleaseLease(context.Context, lobby.Principal, lobby.Scope, lobby.ReleaseLeaseRequest) error {
+func (*fakeApplication) ReleaseLease(context.Context, domain.Principal, domain.Scope, domain.ReleaseLeaseRequest) error {
 	return nil
 }

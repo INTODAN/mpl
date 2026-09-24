@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby"
 	"islandBattles/lobby/delivery"
+	"islandBattles/lobby/domain"
 )
 
 type clock struct{ now time.Time }
@@ -17,21 +17,21 @@ func (clock clock) Now() time.Time { return clock.now }
 
 type jobs struct {
 	sync.Mutex
-	queue      []lobby.DeliveryJob
+	queue      []domain.DeliveryJob
 	acks       []string
-	retries    []lobby.RetryRequest
-	state      *lobby.MembershipState
+	retries    []domain.RetryRequest
+	state      *domain.MembershipState
 	stateError error
 	ackError   error
 }
 
-func (store *jobs) Claim(ctx context.Context, request lobby.ClaimRequest) ([]lobby.DeliveryJob, error) {
+func (store *jobs) Claim(ctx context.Context, request domain.ClaimRequest) ([]domain.DeliveryJob, error) {
 	store.Lock()
 	defer store.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result := append([]lobby.DeliveryJob{}, store.queue...)
+	result := append([]domain.DeliveryJob{}, store.queue...)
 	store.queue = nil
 	return result, nil
 }
@@ -41,25 +41,25 @@ func (store *jobs) Ack(_ context.Context, id, token string, _ time.Time) (bool, 
 	store.acks = append(store.acks, id+":"+token)
 	return store.ackError == nil, store.ackError
 }
-func (store *jobs) Retry(_ context.Context, request lobby.RetryRequest) (bool, error) {
+func (store *jobs) Retry(_ context.Context, request domain.RetryRequest) (bool, error) {
 	store.Lock()
 	defer store.Unlock()
 	store.retries = append(store.retries, request)
 	return true, nil
 }
-func (store *jobs) CurrentMembership(context.Context, lobby.Scope, string) (*lobby.MembershipState, error) {
+func (store *jobs) CurrentMembership(context.Context, domain.Scope, string) (*domain.MembershipState, error) {
 	return store.state, store.stateError
 }
 
 type transport struct {
 	sync.Mutex
-	publications []lobby.Invalidation
+	publications []domain.Invalidation
 	revocations  []string
 	fail         error
 	block        bool
 }
 
-func (publisher *transport) PublishInvalidation(ctx context.Context, _ string, event lobby.Invalidation) error {
+func (publisher *transport) PublishInvalidation(ctx context.Context, _ string, event domain.Invalidation) error {
 	if publisher.block {
 		<-ctx.Done()
 		return ctx.Err()
@@ -76,14 +76,14 @@ func (publisher *transport) Unsubscribe(_ context.Context, player, channel strin
 	return publisher.fail
 }
 
-func eventJob() lobby.DeliveryJob {
-	return lobby.DeliveryJob{ID: "job", Kind: lobby.JobInvalidation, ClaimToken: "claim", Attempts: 1, Invalidation: &lobby.Invalidation{SchemaVersion: 1, EventID: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", GameKey: "island-battles", LobbyID: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb", Version: 5, Type: "lobby.changed"}}
+func eventJob() domain.DeliveryJob {
+	return domain.DeliveryJob{ID: "job", Kind: domain.JobInvalidation, ClaimToken: "claim", Attempts: 1, Invalidation: &domain.Invalidation{SchemaVersion: 1, EventID: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", GameKey: "island-battles", LobbyID: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb", Version: 5, Type: "lobby.changed"}}
 }
 
 func TestFailedDeliveryPersistsRetryWithoutChangingEvent(t *testing.T) {
 	now := time.Now().UTC()
 	job := eventJob()
-	store := &jobs{queue: []lobby.DeliveryJob{job}}
+	store := &jobs{queue: []domain.DeliveryJob{job}}
 	publisher := &transport{fail: errors.New("secret server diagnostic")}
 	worker, err := delivery.NewWorker(store, publisher, clock{now}, delivery.DefaultConfig())
 	if err != nil {
@@ -96,7 +96,7 @@ func TestFailedDeliveryPersistsRetryWithoutChangingEvent(t *testing.T) {
 		t.Fatalf("incorrect retry: %+v", store)
 	}
 	publisher.fail = nil
-	store.queue = []lobby.DeliveryJob{job}
+	store.queue = []domain.DeliveryJob{job}
 	if err := worker.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestStaleRevocationDoesNotUnsubscribeNewMembership(t *testing.T) {
 		generation  int64
 		unsubscribe bool
 	}{{true, 2, false}, {true, 1, true}, {false, 2, true}} {
-		store := &jobs{state: &lobby.MembershipState{Generation: test.generation, Active: test.active}, queue: []lobby.DeliveryJob{{ID: "revoke", Kind: lobby.JobRevocation, ClaimToken: "claim", Revocation: &lobby.Revocation{PlayerID: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", Scope: lobby.Scope{GameKey: "island-battles", LobbyID: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"}, Generation: 1}}}}
+		store := &jobs{state: &domain.MembershipState{Generation: test.generation, Active: test.active}, queue: []domain.DeliveryJob{{ID: "revoke", Kind: domain.JobRevocation, ClaimToken: "claim", Revocation: &domain.Revocation{PlayerID: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", Scope: domain.Scope{GameKey: "island-battles", LobbyID: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"}, Generation: 1}}}}
 		publisher := &transport{}
 		worker, _ := delivery.NewWorker(store, publisher, clock{time.Now()}, delivery.DefaultConfig())
 		if err := worker.RunOnce(context.Background()); err != nil {
@@ -125,8 +125,8 @@ func TestStaleRevocationDoesNotUnsubscribeNewMembership(t *testing.T) {
 
 func TestDeliveryFailureDoesNotStarveOtherJobs(t *testing.T) {
 	valid := eventJob()
-	invalid := lobby.DeliveryJob{ID: "invalid", Kind: "unknown", ClaimToken: "bad", Attempts: 1000}
-	store := &jobs{queue: []lobby.DeliveryJob{invalid, valid}}
+	invalid := domain.DeliveryJob{ID: "invalid", Kind: "unknown", ClaimToken: "bad", Attempts: 1000}
+	store := &jobs{queue: []domain.DeliveryJob{invalid, valid}}
 	publisher := &transport{}
 	now := time.Now()
 	worker, _ := delivery.NewWorker(store, publisher, clock{now}, delivery.DefaultConfig())
@@ -139,7 +139,7 @@ func TestDeliveryFailureDoesNotStarveOtherJobs(t *testing.T) {
 }
 
 func TestDeliveryCancellationAndLostAcknowledgement(t *testing.T) {
-	store := &jobs{queue: []lobby.DeliveryJob{eventJob()}, ackError: errors.New("connection lost")}
+	store := &jobs{queue: []domain.DeliveryJob{eventJob()}, ackError: errors.New("connection lost")}
 	publisher := &transport{}
 	worker, _ := delivery.NewWorker(store, publisher, clock{time.Now()}, delivery.DefaultConfig())
 	if err := worker.RunOnce(context.Background()); err == nil {
@@ -148,7 +148,7 @@ func TestDeliveryCancellationAndLostAcknowledgement(t *testing.T) {
 	if len(store.retries) != 0 || len(publisher.publications) != 1 {
 		t.Fatal("ack failure repeated original mutation")
 	}
-	store.queue = []lobby.DeliveryJob{eventJob()}
+	store.queue = []domain.DeliveryJob{eventJob()}
 	publisher.block = true
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

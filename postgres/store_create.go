@@ -6,39 +6,39 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-func canonicalCreate(request lobby.CreateRequest) (lobby.CreateRequest, error) {
-	if lobby.ValidateUUID(request.RequestID) != nil || lobby.ValidateUUID(request.ClientInstanceID) != nil || lobby.ValidateGameKey(request.GameKey) != nil {
-		return request, lobby.ErrInvalidInput
+func canonicalCreate(request domain.CreateRequest) (domain.CreateRequest, error) {
+	if domain.ValidateUUID(request.RequestID) != nil || domain.ValidateUUID(request.ClientInstanceID) != nil || domain.ValidateGameKey(request.GameKey) != nil {
+		return request, domain.ErrInvalidInput
 	}
 	var err error
-	request.Name, err = lobby.NormalizeName(request.Name, 80)
+	request.Name, err = domain.NormalizeName(request.Name, 80)
 	if err != nil {
 		return request, err
 	}
-	request.Teams, err = lobby.ValidateTeamDefinitions(request.Teams, request.Capacity)
+	request.Teams, err = domain.ValidateTeamDefinitions(request.Teams, request.Capacity)
 	return request, err
 }
-func (store *Store) Create(ctx context.Context, principal lobby.Principal, request lobby.CreateRequest, aggregate lobby.Aggregate) (lobby.Snapshot, error) {
+func (store *Store) Create(ctx context.Context, principal domain.Principal, request domain.CreateRequest, aggregate domain.Aggregate) (domain.Snapshot, error) {
 	canonical, err := canonicalCreate(request)
 	if err != nil {
-		return lobby.Snapshot{}, err
+		return domain.Snapshot{}, err
 	}
-	if lobby.ValidateUUID(principal.PlayerID) != nil {
-		return lobby.Snapshot{}, lobby.ErrUnauthenticated
+	if domain.ValidateUUID(principal.PlayerID) != nil {
+		return domain.Snapshot{}, domain.ErrUnauthenticated
 	}
 	payload, err := json.Marshal(canonical)
 	if err != nil {
-		return lobby.Snapshot{}, storageError(err)
+		return domain.Snapshot{}, storageError(err)
 	}
 	fingerprint := sha256.Sum256(payload)
-	var response lobby.Snapshot
+	var response domain.Snapshot
 	err = store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Insert-first uniqueness serializes requests without a check/write gap.
 		// The temporary response cannot escape this transaction; rollback removes it.
@@ -53,35 +53,35 @@ func (store *Store) Create(ctx context.Context, principal lobby.Principal, reque
 				return err
 			}
 			if len(records) != 1 {
-				return lobby.ErrUnavailable
+				return domain.ErrUnavailable
 			}
 			if !bytes.Equal(records[0].PayloadHash, fingerprint[:]) {
-				return lobby.ErrIdempotencyConflict
+				return domain.ErrIdempotencyConflict
 			}
 			return json.Unmarshal(records[0].ResponseJSON, &response)
 		}
 		aggregate = aggregate.DeepCopy()
 		if aggregate.Lobby.Version != 1 || aggregate.Lobby.GameKey != canonical.GameKey {
-			return lobby.ErrInvalidInput
+			return domain.ErrInvalidInput
 		}
 		room := roomRecord(aggregate.Lobby)
 		if err := tx.Create(&room).Error; err != nil {
 			if isCodeCollision(err) {
-				return lobby.ErrJoinCodeCollision
+				return domain.ErrJoinCodeCollision
 			}
 			return err
 		}
 		if err := persistChildren(tx, aggregate, true); err != nil {
 			return err
 		}
-		if err := store.insertJobs(tx, aggregate.Lobby, lobby.Change{PublicChanged: true}); err != nil {
+		if err := store.insertJobs(tx, aggregate.Lobby, domain.Change{PublicChanged: true}); err != nil {
 			return err
 		}
 		stored, err := loadAggregate(tx, aggregate.Lobby.Scope(), false)
 		if err != nil {
 			return err
 		}
-		response, err = lobby.BuildSnapshot(stored, principal.PlayerID)
+		response, err = domain.BuildSnapshot(stored, principal.PlayerID)
 		if err != nil {
 			return err
 		}
@@ -95,11 +95,11 @@ func (store *Store) Create(ctx context.Context, principal lobby.Principal, reque
 		}
 		// First response and replay have the same public representation, including
 		// UTC/timestamp precision and exclusion of internal-only room fields.
-		response = lobby.Snapshot{}
+		response = domain.Snapshot{}
 		return json.Unmarshal(body, &response)
 	})
 	if err != nil {
-		return lobby.Snapshot{}, storageError(err)
+		return domain.Snapshot{}, storageError(err)
 	}
 	return response, nil
 }

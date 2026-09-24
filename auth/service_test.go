@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby"
 	"islandBattles/lobby/auth"
+	"islandBattles/lobby/domain"
 	"islandBattles/lobby/internal/testutil"
 	lobbypostgres "islandBattles/lobby/postgres"
 
@@ -38,7 +38,7 @@ func (failingIdentifiers) Bytes(int) ([]byte, error) {
 
 func TestGuestCreationStoresOnlyCredentialHash(t *testing.T) {
 	service, _, db, _ := newService(t)
-	created, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "  Ada  "})
+	created, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "  Ada  "})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestGuestCreationStoresOnlyCredentialHash(t *testing.T) {
 
 func TestGuestsWithSameDisplayNameRemainDistinct(t *testing.T) {
 	service, _, _, _ := newService(t)
-	first, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	first, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	second, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,9 +80,9 @@ func TestGuestCreationIsAtomic(t *testing.T) {
 	_, identities, db, clock := newService(t)
 	playerID, sessionID := uuid.NewString(), uuid.NewString()
 	err := identities.CreateGuest(context.Background(),
-		lobby.Player{ID: playerID, DisplayName: "Ada", CreatedAt: clock.now},
+		domain.Player{ID: playerID, DisplayName: "Ada", CreatedAt: clock.now},
 		// The session refers to another player, forcing its FK insert to fail.
-		lobby.Session{ID: sessionID, PlayerID: uuid.NewString(), BearerHash: lobby.CredentialHash{1}, CreatedAt: clock.now, ExpiresAt: clock.now.Add(time.Hour)},
+		domain.Session{ID: sessionID, PlayerID: uuid.NewString(), BearerHash: domain.CredentialHash{1}, CreatedAt: clock.now, ExpiresAt: clock.now.Add(time.Hour)},
 	)
 	if err == nil {
 		t.Fatal("forced session insertion failure succeeded")
@@ -98,11 +98,11 @@ func TestGuestCreationIsAtomic(t *testing.T) {
 
 func TestGuestCreationRandomnessFailureHasNoWrites(t *testing.T) {
 	_, identities, db, clock := newService(t)
-	service, err := auth.NewService(identities, clock, lobby.DefaultPolicy("island-battles"), failingIdentifiers{}, []byte(signingSecret), "wss://public.example")
+	service, err := auth.NewService(identities, clock, domain.DefaultPolicy("island-battles"), failingIdentifiers{}, []byte(signingSecret), "wss://public.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"}); !errors.Is(err, lobby.ErrUnavailable) || created.AccessToken != "" {
+	if created, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"}); !errors.Is(err, domain.ErrUnavailable) || created.AccessToken != "" {
 		t.Fatalf("randomness failure result = %#v, %v", created, err)
 	}
 	var count int64
@@ -116,7 +116,7 @@ func TestGuestCreationRandomnessFailureHasNoWrites(t *testing.T) {
 
 func TestGuestHasExactlyOneSession(t *testing.T) {
 	service, _, db, clock := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestGuestHasExactlyOneSession(t *testing.T) {
 
 func TestAuthenticateRejectsInvalidCredentials(t *testing.T) {
 	service, _, db, clock := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestAuthenticateRejectsInvalidCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, header := range []string{"", "Bearer ", "bearer " + guest.AccessToken, "Bearer not-base64!", "Bearer " + unknown, "Bearer " + expired} {
-		if _, err := service.Authenticate(context.Background(), header); !errors.Is(err, lobby.ErrUnauthenticated) {
+		if _, err := service.Authenticate(context.Background(), header); !errors.Is(err, domain.ErrUnauthenticated) {
 			t.Errorf("Authenticate(%q) error = %v, want unauthenticated", header, err)
 		}
 	}
@@ -154,11 +154,11 @@ func TestAuthenticateRejectsInvalidCredentials(t *testing.T) {
 
 func TestAuthenticateIgnoresClaimedIdentity(t *testing.T) {
 	service, _, _, _ := newService(t)
-	first, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	first, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Grace"})
+	second, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Grace"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestAuthenticateIgnoresClaimedIdentity(t *testing.T) {
 
 func TestConnectionTokenClaimsAndExpiry(t *testing.T) {
 	service, _, db, clock := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestConnectionTokenClaimsAndExpiry(t *testing.T) {
 
 func TestConnectionTokenRefreshHasNoLobbySideEffects(t *testing.T) {
 	service, _, db, _ := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,12 +227,12 @@ func TestConnectionTokenRefreshHasNoLobbySideEffects(t *testing.T) {
 
 func TestConnectionTokenFailsClosed(t *testing.T) {
 	_, identities, _, clock := newService(t)
-	policy := lobby.DefaultPolicy("island-battles")
-	if _, err := auth.NewService(identities, clock, policy, lobby.CryptoIdentifiers{}, nil, "wss://public.example"); err == nil {
+	policy := domain.DefaultPolicy("island-battles")
+	if _, err := auth.NewService(identities, clock, policy, domain.CryptoIdentifiers{}, nil, "wss://public.example"); err == nil {
 		t.Fatal("empty signing secret configured successfully")
 	}
 	service, _, db, _ := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,20 +242,20 @@ func TestConnectionTokenFailsClosed(t *testing.T) {
 	}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if token, err := service.IssueConnectionToken(canceled, verification); !errors.Is(err, lobby.ErrUnavailable) || token.Token != "" {
+	if token, err := service.IssueConnectionToken(canceled, verification); !errors.Is(err, domain.ErrUnavailable) || token.Token != "" {
 		t.Fatalf("cancelled issuance = %#v, %v", token, err)
 	}
 	if err := db.Model(&lobbypostgres.SessionRecord{}).Where(&lobbypostgres.SessionRecord{PlayerID: guest.PlayerID}).Update("expires_at", clock.now).Error; err != nil {
 		t.Fatal(err)
 	}
-	if token, err := service.IssueConnectionToken(context.Background(), verification); !errors.Is(err, lobby.ErrUnauthenticated) || token.Token != "" {
+	if token, err := service.IssueConnectionToken(context.Background(), verification); !errors.Is(err, domain.ErrUnauthenticated) || token.Token != "" {
 		t.Fatalf("expired issuance = %#v, %v", token, err)
 	}
 }
 
 func TestLookupByPlayerHonorsSessionExpiry(t *testing.T) {
 	service, identities, db, clock := newService(t)
-	guest, err := service.CreateGuest(context.Background(), lobby.CreateGuestRequest{DisplayName: "Ada"})
+	guest, err := service.CreateGuest(context.Background(), domain.CreateGuestRequest{DisplayName: "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestLookupByPlayerHonorsSessionExpiry(t *testing.T) {
 	if err != nil || verification == nil || !verification.ExpiresAt.Equal(clock.now) {
 		t.Fatalf("LookupByPlayer = %#v, %v", verification, err)
 	}
-	if _, err := service.Authenticate(context.Background(), "Bearer "+guest.AccessToken); !errors.Is(err, lobby.ErrUnauthenticated) {
+	if _, err := service.Authenticate(context.Background(), "Bearer "+guest.AccessToken); !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatalf("exact expiry Authenticate error = %v", err)
 	}
 }
@@ -279,7 +279,7 @@ func newService(t *testing.T) (*auth.Service, *lobbypostgres.IdentityStore, *gor
 		t.Fatal(err)
 	}
 	clock := &testClock{now: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)}
-	service, err := auth.NewService(identities, clock, lobby.DefaultPolicy("island-battles"), lobby.CryptoIdentifiers{}, []byte(signingSecret), "wss://lobby.example.test/connection/websocket")
+	service, err := auth.NewService(identities, clock, domain.DefaultPolicy("island-battles"), domain.CryptoIdentifiers{}, []byte(signingSecret), "wss://lobby.example.test/connection/websocket")
 	if err != nil {
 		t.Fatal(err)
 	}

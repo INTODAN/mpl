@@ -5,19 +5,20 @@ package realtime
 import (
 	"context"
 	"errors"
-	"islandBattles/lobby"
+	"islandBattles/lobby/application"
+	"islandBattles/lobby/domain"
 )
 
 type Authorizer struct {
-	identities lobby.IdentityStore
-	store      lobby.Store
-	clock      lobby.Clock
-	policy     lobby.Policy
+	identities domain.IdentityStore
+	store      domain.Store
+	clock      domain.Clock
+	policy     domain.Policy
 }
 
-func NewAuthorizer(identities lobby.IdentityStore, store lobby.Store, clock lobby.Clock, policy lobby.Policy) (*Authorizer, error) {
+func NewAuthorizer(identities domain.IdentityStore, store domain.Store, clock domain.Clock, policy domain.Policy) (*Authorizer, error) {
 	if identities == nil || store == nil || clock == nil {
-		return nil, lobby.ErrInvalidInput
+		return nil, domain.ErrInvalidInput
 	}
 	if err := policy.Validate(); err != nil {
 		return nil, err
@@ -25,47 +26,47 @@ func NewAuthorizer(identities lobby.IdentityStore, store lobby.Store, clock lobb
 	return &Authorizer{identities: identities, store: store, clock: clock, policy: policy}, nil
 }
 
-func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerID, channelName string) (lobby.SubscriptionAuthorization, error) {
-	if lobby.ValidateUUID(playerID) != nil {
-		return lobby.SubscriptionAuthorization{}, lobby.ErrPermissionDenied
+func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerID, channelName string) (domain.SubscriptionAuthorization, error) {
+	if domain.ValidateUUID(playerID) != nil {
+		return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 	}
-	channel, err := lobby.ParseChannel(channelName)
+	channel, err := domain.ParseChannel(channelName)
 	if err != nil {
-		return lobby.SubscriptionAuthorization{}, lobby.ErrPermissionDenied
+		return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 	}
 	identity, err := authorizer.identities.LookupByPlayer(ctx, playerID)
 	if err != nil {
-		return lobby.SubscriptionAuthorization{}, lobby.ErrUnavailable
+		return domain.SubscriptionAuthorization{}, domain.ErrUnavailable
 	}
 	now := authorizer.clock.Now().UTC()
 	if identity == nil || identity.Principal.PlayerID != playerID || !now.Before(identity.ExpiresAt) {
-		return lobby.SubscriptionAuthorization{}, lobby.ErrUnauthenticated
+		return domain.SubscriptionAuthorization{}, domain.ErrUnauthenticated
 	}
-	if channel.Namespace == lobby.ChannelPlayer {
+	if channel.Namespace == domain.ChannelPlayer {
 		if channel.PlayerID != playerID {
-			return lobby.SubscriptionAuthorization{}, lobby.ErrPermissionDenied
+			return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 		}
 	} else {
 		if authorizer.policy.ValidateGame(channel.Scope.GameKey) != nil {
-			return lobby.SubscriptionAuthorization{}, lobby.ErrPermissionDenied
+			return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 		}
-		_, err = lobby.TransactNormalized(ctx, authorizer.store, authorizer.clock, authorizer.policy, channel.Scope, func(aggregate *lobby.Aggregate) (lobby.Change, error) {
-			member := lobby.FindMember(aggregate, playerID)
+		_, err = application.TransactNormalized(ctx, authorizer.store, authorizer.clock, authorizer.policy, channel.Scope, func(aggregate *domain.Aggregate) (domain.Change, error) {
+			member := domain.FindMember(aggregate, playerID)
 			if member == nil || !member.Active {
-				return lobby.Change{}, lobby.ErrPermissionDenied
+				return domain.Change{}, domain.ErrPermissionDenied
 			}
-			return lobby.Change{}, nil
+			return domain.Change{}, nil
 		})
 		if err != nil {
-			if errors.Is(err, lobby.ErrNotFound) || errors.Is(err, lobby.ErrPermissionDenied) {
-				return lobby.SubscriptionAuthorization{}, lobby.ErrPermissionDenied
+			if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrPermissionDenied) {
+				return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 			}
-			return lobby.SubscriptionAuthorization{}, lobby.ErrUnavailable
+			return domain.SubscriptionAuthorization{}, domain.ErrUnavailable
 		}
 	}
 	allowedUntil := now.Add(authorizer.policy.SubscriptionDuration)
 	if identity.ExpiresAt.Before(allowedUntil) {
 		allowedUntil = identity.ExpiresAt
 	}
-	return lobby.SubscriptionAuthorization{AllowedUntil: allowedUntil}, nil
+	return domain.SubscriptionAuthorization{AllowedUntil: allowedUntil}, nil
 }

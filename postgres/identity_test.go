@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 	"islandBattles/lobby/internal/testutil"
 	lobbypostgres "islandBattles/lobby/postgres"
 
@@ -20,7 +20,7 @@ func TestIdentityStoreLookupByPlayerReturnsStoredIdentity(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	playerID, sessionID := uuid.NewString(), uuid.NewString()
-	if err := store.CreateGuest(context.Background(), lobby.Player{ID: playerID, DisplayName: "Stored Name", CreatedAt: now}, lobby.Session{ID: sessionID, PlayerID: playerID, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+	if err := store.CreateGuest(context.Background(), domain.Player{ID: playerID, DisplayName: "Stored Name", CreatedAt: now}, domain.Session{ID: sessionID, PlayerID: playerID, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	verification, err := store.LookupByPlayer(context.Background(), playerID)
@@ -40,7 +40,7 @@ func TestIdentityStoreCreateGuestRollsBackPlayerOnSessionFailure(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	playerID := uuid.NewString()
-	err = store.CreateGuest(context.Background(), lobby.Player{ID: playerID, DisplayName: "Ada", CreatedAt: now}, lobby.Session{ID: uuid.NewString(), PlayerID: uuid.NewString(), CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
+	err = store.CreateGuest(context.Background(), domain.Player{ID: playerID, DisplayName: "Ada", CreatedAt: now}, domain.Session{ID: uuid.NewString(), PlayerID: uuid.NewString(), CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
 	if err == nil {
 		t.Fatal("session foreign key failure unexpectedly succeeded")
 	}

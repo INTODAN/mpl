@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 type CreateSessionInput struct {
@@ -149,15 +149,15 @@ type Snapshot struct {
 	Channel              string             `json:"channel"`
 }
 type Lobby struct {
-	ID           string      `json:"id"`
-	GameKey      string      `json:"game_key"`
-	Name         string      `json:"name"`
-	JoinCode     string      `json:"join_code"`
-	Capacity     int         `json:"capacity"`
-	Phase        lobby.Phase `json:"phase"`
-	Version      int64       `json:"version"`
-	HostPlayerID *string     `json:"host_player_id"`
-	CreatedAt    time.Time   `json:"created_at"`
+	ID           string       `json:"id"`
+	GameKey      string       `json:"game_key"`
+	Name         string       `json:"name"`
+	JoinCode     string       `json:"join_code"`
+	Capacity     int          `json:"capacity"`
+	Phase        domain.Phase `json:"phase"`
+	Version      int64        `json:"version"`
+	HostPlayerID *string      `json:"host_player_id"`
+	CreatedAt    time.Time    `json:"created_at"`
 }
 type Team struct {
 	ID       string `json:"id"`
@@ -192,7 +192,7 @@ type LobbyInvalidation struct {
 	Type          string `json:"type" enum:"lobby.changed"`
 }
 
-func snapshotFromDomain(source lobby.Snapshot) Snapshot {
+func snapshotFromDomain(source domain.Snapshot) Snapshot {
 	teams := make([]Team, len(source.Teams))
 	for index, team := range source.Teams {
 		teams[index] = Team{ID: team.ID, Name: team.Name, Capacity: team.Capacity, Order: team.Order}

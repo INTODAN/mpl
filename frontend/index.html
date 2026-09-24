@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game lobby</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">L</span> Lobby</div>
+      <span class="tag">Temporary playground</span>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">A place to play together</p>
+      <h1>Bring a friend.</h1>
+      <p>Create a lobby, share the code, and get ready to play.</p>
+    </section>
+
+    <div id="notice" class="notice" role="alert" hidden></div>
+
+    <section class="card demo-setup" aria-label="Quick demo setup">
+      <div><strong>Try a two-player demo</strong><p>Alex on Blue, Sam on Red. Both ready in separate tabs.</p></div>
+      <button id="demo-button" class="primary" type="button">New demo lobby</button>
+      <a id="demo-player-link" target="_blank" rel="noopener" hidden>Open second player tab</a>
+    </section>
+
+    <section id="entry-panel" aria-label="Connect to a lobby">
+      <div class="identity card">
+        <label>Your name
+          <input id="display-name" maxlength="40" autocomplete="nickname" placeholder="e.g. Alex" required>
+        </label>
+        <label>Choose a game
+          <select id="game"><option value="island-battles">Island Battles</option></select>
+        </label>
+        <button id="change-player" class="text-button" type="button" hidden>Change player</button>
+      </div>
+
+      <div class="entry-grid">
+        <form id="create-form" class="card">
+          <span class="step">01 / HOST</span>
+          <h2>Start a lobby</h2>
+          <p>Make a space for you and one other player.</p>
+          <label>Lobby name
+            <input id="lobby-name" maxlength="80" placeholder="Your lobby name (optional)">
+          </label>
+          <button id="create-button" class="primary" type="submit">Create lobby <span aria-hidden="true">↗</span></button>
+        </form>
+
+        <form id="join-form" class="card">
+          <span class="step">02 / JOIN</span>
+          <h2>Join a friend</h2>
+          <p>Enter the eight-character code they shared.</p>
+          <label>Join code
+            <input id="join-code" class="code-input" minlength="8" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCDEFGH" required>
+          </label>
+          <button id="join-button" class="secondary" type="submit">Join lobby <span aria-hidden="true">→</span></button>
+        </form>
+      </div>
+      <p class="hint">Trying it yourself? Open this page in two separate tabs and use a different name in each.</p>
+    </section>
+
+    <section id="room-panel" class="card room" aria-label="Your lobby" hidden>
+      <div class="room-heading">
+        <div><p id="room-game" class="eyebrow"></p><h2 id="room-name"></h2></div>
+        <span id="connection" class="connection" role="status">Connected</span>
+      </div>
+      <div class="invite">
+        <div><label for="room-code">Invite your friend</label><p>Share this code to join the same lobby.</p></div>
+        <div class="invite-code"><input id="room-code" readonly aria-label="Lobby join code"><button id="copy-code" class="secondary" type="button">Copy code</button></div>
+      </div>
+      <div class="section-heading"><h3>Players <span id="player-count"></span></h3><span id="phase" class="tag">Waiting</span></div>
+      <div id="players" class="player-grid" aria-live="polite"></div>
+      <div id="waiting-controls" class="controls">
+        <label>Your team<select id="team-select"><option value="">Choose a team</option></select></label>
+        <button id="ready-button" class="secondary" type="button">Mark ready</button>
+        <button id="start-button" class="primary" type="button" hidden>Start lobby</button>
+      </div>
+      <p id="room-hint" class="hint" role="status"></p>
+      <footer class="room-footer"><span id="playing-as"></span><button id="leave-button" class="text-button" type="button">Leave lobby</button></footer>
+    </section>
+    <section id="result-panel" class="card game-result" aria-label="Game result" hidden>
+      <p id="result-status" role="status">Preparing the game…</p>
+      <button id="retry-game" class="secondary" type="button" hidden>Retry starting game</button>
+      <iframe id="game-result" title="Game replay" sandbox="allow-scripts" hidden></iframe>
+    </section>
+    <footer class="page-footer">One lobby. Two players. Let’s get started.</footer>
+  </main>
+</body>
+</html>

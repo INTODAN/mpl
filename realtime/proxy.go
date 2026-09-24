@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 const SubscribePath = "/internal/lobby/centrifugo/subscribe"
@@ -16,13 +16,13 @@ const RefreshPath = "/internal/lobby/centrifugo/sub-refresh"
 const ProxySecretHeader = "X-Lobby-Proxy-Secret"
 
 type Proxy struct {
-	authorizer lobby.SubscriptionAuthorizer
+	authorizer domain.SubscriptionAuthorizer
 	secret     string
 }
 
-func NewProxy(authorizer lobby.SubscriptionAuthorizer, secret string) (*Proxy, error) {
+func NewProxy(authorizer domain.SubscriptionAuthorizer, secret string) (*Proxy, error) {
 	if authorizer == nil || secret == "" {
-		return nil, lobby.ErrInvalidInput
+		return nil, domain.ErrInvalidInput
 	}
 	return &Proxy{authorizer: authorizer, secret: secret}, nil
 }
@@ -64,7 +64,7 @@ func (proxy *Proxy) ServeHTTP(response http.ResponseWriter, request *http.Reques
 	}
 	authorization, err := proxy.authorizer.AuthorizeSubscription(request.Context(), input.User, input.Channel)
 	if err != nil {
-		if !errors.Is(err, lobby.ErrPermissionDenied) && !errors.Is(err, lobby.ErrUnauthenticated) && !errors.Is(err, lobby.ErrNotFound) {
+		if !errors.Is(err, domain.ErrPermissionDenied) && !errors.Is(err, domain.ErrUnauthenticated) && !errors.Is(err, domain.ErrNotFound) {
 			http.Error(response, "temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}

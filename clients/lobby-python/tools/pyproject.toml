@@ -1,0 +1,11 @@
+[project]
+name = "lobby-python-generator-tools"
+version = "1.0.0"
+requires-python = ">=3.14"
+dependencies = [
+    "openapi-python-client==0.29.0",
+    "ruff==0.14.14",
+]
+
+[tool.uv]
+package = false

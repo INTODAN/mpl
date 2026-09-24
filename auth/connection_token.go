@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 type jwtHeader struct {
@@ -25,32 +25,32 @@ type jwtClaims struct {
 // IssueConnectionToken rechecks the durable one-session identity before signing
 // a short connection JWT. This prevents an arbitrary constructed verification
 // value from becoming authority and creates no lobby-side state.
-func (service *Service) IssueConnectionToken(ctx context.Context, verification lobby.SessionVerification) (lobby.ConnectionToken, error) {
+func (service *Service) IssueConnectionToken(ctx context.Context, verification domain.SessionVerification) (domain.ConnectionToken, error) {
 	if err := ctx.Err(); err != nil {
-		return lobby.ConnectionToken{}, unavailable(err)
+		return domain.ConnectionToken{}, unavailable(err)
 	}
-	if lobby.ValidateUUID(verification.Principal.PlayerID) != nil || lobby.ValidateUUID(verification.Principal.SessionID) != nil {
-		return lobby.ConnectionToken{}, lobby.ErrUnauthenticated
+	if domain.ValidateUUID(verification.Principal.PlayerID) != nil || domain.ValidateUUID(verification.Principal.SessionID) != nil {
+		return domain.ConnectionToken{}, domain.ErrUnauthenticated
 	}
 	stored, err := service.identities.LookupByPlayer(ctx, verification.Principal.PlayerID)
 	if err != nil {
-		return lobby.ConnectionToken{}, unavailable(err)
+		return domain.ConnectionToken{}, unavailable(err)
 	}
 	now := service.clock.Now().UTC()
 	if stored == nil || !now.Before(stored.ExpiresAt.UTC()) ||
 		stored.Principal.PlayerID != verification.Principal.PlayerID ||
 		subtle.ConstantTimeCompare([]byte(stored.Principal.SessionID), []byte(verification.Principal.SessionID)) != 1 {
-		return lobby.ConnectionToken{}, lobby.ErrUnauthenticated
+		return domain.ConnectionToken{}, domain.ErrUnauthenticated
 	}
 	if err := ctx.Err(); err != nil {
-		return lobby.ConnectionToken{}, unavailable(err)
+		return domain.ConnectionToken{}, unavailable(err)
 	}
 	expiresAt := minTime(now.Add(service.policy.ConnectionTokenDuration), stored.ExpiresAt)
 	token, err := service.signConnectionJWT(stored.Principal.PlayerID, now.Unix(), expiresAt.Unix())
 	if err != nil {
-		return lobby.ConnectionToken{}, unavailable(err)
+		return domain.ConnectionToken{}, unavailable(err)
 	}
-	return lobby.ConnectionToken{Token: token, ExpiresAt: expiresAt, WebsocketURL: service.publicWebsocketURL}, nil
+	return domain.ConnectionToken{Token: token, ExpiresAt: expiresAt, WebsocketURL: service.publicWebsocketURL}, nil
 }
 
 func (service *Service) signConnectionJWT(subject string, issuedAt, expiresAt int64) (string, error) {

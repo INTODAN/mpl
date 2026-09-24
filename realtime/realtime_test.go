@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/centrifugal/gocent/v3"
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 	"islandBattles/lobby/realtime"
 )
 
@@ -31,9 +31,9 @@ type fakeAuthorizer struct {
 	until time.Time
 }
 
-func (authorizer *fakeAuthorizer) AuthorizeSubscription(context.Context, string, string) (lobby.SubscriptionAuthorization, error) {
+func (authorizer *fakeAuthorizer) AuthorizeSubscription(context.Context, string, string) (domain.SubscriptionAuthorization, error) {
 	authorizer.calls++
-	return lobby.SubscriptionAuthorization{AllowedUntil: authorizer.until}, authorizer.err
+	return domain.SubscriptionAuthorization{AllowedUntil: authorizer.until}, authorizer.err
 }
 
 func TestProxyWireEnvelopesAndTrustedSecret(t *testing.T) {
@@ -45,9 +45,9 @@ func TestProxyWireEnvelopesAndTrustedSecret(t *testing.T) {
 	}{
 		{"subscribe allow", realtime.SubscribePath, "secret", nil, 200, `{"result":{"expire_at":12345}}`},
 		{"refresh allow", realtime.RefreshPath, "secret", nil, 200, `{"result":{"expire_at":12345}}`},
-		{"subscribe deny", realtime.SubscribePath, "secret", lobby.ErrPermissionDenied, 200, `{"error":{"code":403,"message":"permission denied"}}`},
-		{"refresh deny", realtime.RefreshPath, "secret", lobby.ErrUnauthenticated, 200, `{"result":{"expired":true}}`},
-		{"transient", realtime.RefreshPath, "secret", lobby.ErrUnavailable, 503, "temporarily unavailable"},
+		{"subscribe deny", realtime.SubscribePath, "secret", domain.ErrPermissionDenied, 200, `{"error":{"code":403,"message":"permission denied"}}`},
+		{"refresh deny", realtime.RefreshPath, "secret", domain.ErrUnauthenticated, 200, `{"result":{"expired":true}}`},
+		{"transient", realtime.RefreshPath, "secret", domain.ErrUnavailable, 503, "temporarily unavailable"},
 		{"forged", realtime.SubscribePath, "wrong", nil, 401, "unauthorized"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -85,32 +85,32 @@ func TestProxyRejectsMalformedAndOversizedBody(t *testing.T) {
 }
 
 type identityStore struct {
-	lobby.IdentityStore
-	identity *lobby.SessionVerification
+	domain.IdentityStore
+	identity *domain.SessionVerification
 	err      error
 }
 
-func (store identityStore) LookupByPlayer(context.Context, string) (*lobby.SessionVerification, error) {
+func (store identityStore) LookupByPlayer(context.Context, string) (*domain.SessionVerification, error) {
 	return store.identity, store.err
 }
 
 type aggregateStore struct {
-	lobby.Store
-	aggregate lobby.Aggregate
+	domain.Store
+	aggregate domain.Aggregate
 	err       error
 }
 
-func (store *aggregateStore) Transact(_ context.Context, scope lobby.Scope, mutation lobby.Mutation) (lobby.Aggregate, error) {
+func (store *aggregateStore) Transact(_ context.Context, scope domain.Scope, mutation domain.Mutation) (domain.Aggregate, error) {
 	if store.err != nil {
-		return lobby.Aggregate{}, store.err
+		return domain.Aggregate{}, store.err
 	}
 	if scope != store.aggregate.Lobby.Scope() {
-		return lobby.Aggregate{}, lobby.ErrNotFound
+		return domain.Aggregate{}, domain.ErrNotFound
 	}
 	candidate := store.aggregate.DeepCopy()
 	change, err := mutation(&candidate)
 	if err != nil {
-		return lobby.Aggregate{}, err
+		return domain.Aggregate{}, err
 	}
 	if change.PublicChanged {
 		candidate.Lobby.Version++
@@ -122,9 +122,9 @@ func (store *aggregateStore) Transact(_ context.Context, scope lobby.Scope, muta
 func TestRoomAndPrivateAuthorizationIsolation(t *testing.T) {
 	now := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 	clock := &fixedClock{now}
-	store := &aggregateStore{aggregate: lobby.Aggregate{Lobby: lobby.Lobby{ID: room, GameKey: "island-battles", Phase: lobby.PhaseWaiting, HostPlayerID: ptr(actor), Version: 1}, Members: []lobby.Member{{ID: actor, PlayerID: actor, Active: true, Generation: 1, JoinSequence: 1}}, Leases: []lobby.Lease{{PlayerID: actor, Generation: 1, ExpiresAt: now.Add(time.Minute)}}}}
-	identity := &lobby.SessionVerification{Principal: lobby.Principal{PlayerID: actor}, ExpiresAt: now.Add(30 * time.Second)}
-	authorizer, _ := realtime.NewAuthorizer(identityStore{identity: identity}, store, clock, lobby.DefaultPolicy("island-battles", "quiz-demo"))
+	store := &aggregateStore{aggregate: domain.Aggregate{Lobby: domain.Lobby{ID: room, GameKey: "island-battles", Phase: domain.PhaseWaiting, HostPlayerID: ptr(actor), Version: 1}, Members: []domain.Member{{ID: actor, PlayerID: actor, Active: true, Generation: 1, JoinSequence: 1}}, Leases: []domain.Lease{{PlayerID: actor, Generation: 1, ExpiresAt: now.Add(time.Minute)}}}}
+	identity := &domain.SessionVerification{Principal: domain.Principal{PlayerID: actor}, ExpiresAt: now.Add(30 * time.Second)}
+	authorizer, _ := realtime.NewAuthorizer(identityStore{identity: identity}, store, clock, domain.DefaultPolicy("island-battles", "quiz-demo"))
 	for _, name := range []string{channel, "player:" + actor} {
 		allowed, err := authorizer.AuthorizeSubscription(context.Background(), actor, name)
 		if err != nil || !allowed.AllowedUntil.Equal(identity.ExpiresAt) {
@@ -138,14 +138,14 @@ func TestRoomAndPrivateAuthorizationIsolation(t *testing.T) {
 	}
 	identity.ExpiresAt = now.Add(time.Hour)
 	clock.now = now.Add(2 * time.Minute)
-	if _, err := authorizer.AuthorizeSubscription(context.Background(), actor, channel); !errors.Is(err, lobby.ErrPermissionDenied) {
+	if _, err := authorizer.AuthorizeSubscription(context.Background(), actor, channel); !errors.Is(err, domain.ErrPermissionDenied) {
 		t.Fatalf("overdue member allowed: %v", err)
 	}
 	if store.aggregate.Members[0].Active || store.aggregate.Lobby.Version != 2 {
 		t.Fatal("denied authorization rolled back cleanup")
 	}
 	clock.now = identity.ExpiresAt
-	if _, err := authorizer.AuthorizeSubscription(context.Background(), actor, "player:"+actor); !errors.Is(err, lobby.ErrUnauthenticated) {
+	if _, err := authorizer.AuthorizeSubscription(context.Background(), actor, "player:"+actor); !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatal("expired identity allowed")
 	}
 }
@@ -162,7 +162,7 @@ func TestTransportPayloadAndUnsubscribeScope(t *testing.T) {
 	}))
 	defer server.Close()
 	transport, _ := realtime.NewTransport(gocent.New(gocent.Config{Addr: server.URL, Key: "server-only"}))
-	event := lobby.Invalidation{SchemaVersion: 1, EventID: other, GameKey: "island-battles", LobbyID: room, Version: 42, Type: "lobby.changed"}
+	event := domain.Invalidation{SchemaVersion: 1, EventID: other, GameKey: "island-battles", LobbyID: room, Version: 42, Type: "lobby.changed"}
 	if err := transport.PublishInvalidation(context.Background(), channel, event); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestTransportPayloadAndUnsubscribeScope(t *testing.T) {
 	if _, present := revoke["client"]; present {
 		t.Fatal("socket-specific revocation")
 	}
-	if err := transport.PublishInvalidation(context.Background(), "player:"+actor, event); !errors.Is(err, lobby.ErrInvalidInput) {
+	if err := transport.PublishInvalidation(context.Background(), "player:"+actor, event); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatal("wrong publication scope accepted")
 	}
 }

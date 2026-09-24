@@ -6,14 +6,14 @@ import (
 	"encoding/base64"
 	"strings"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 func encodeBearer(random []byte) string {
 	return base64.RawURLEncoding.EncodeToString(random)
 }
 
-func hashBearer(bearer string) lobby.CredentialHash {
+func hashBearer(bearer string) domain.CredentialHash {
 	return sha256.Sum256([]byte(bearer))
 }
 

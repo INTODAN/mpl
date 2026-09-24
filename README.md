@@ -1,20 +1,61 @@
-# Generic lobby domain
+# Generic lobby component
 
-The root package owns domain records, policy, pure helpers, application services and repository ports. `auth`, `postgres`, `httpapi`, `realtime`, and `delivery` import inward. The root must never import those adapters, Huma/GORM/gocent, or `backend`. Importing this package performs no I/O. The only non-standard helper dependency is Unicode case folding from `golang.org/x/text/cases`.
+This directory is a self-contained component of the Island Battles monorepo. It owns the Go library, API contracts, client SDKs, examples, transport configuration, documentation, and shared test tooling.
 
-Service construction and transaction helpers:
-
-```go
-func NewService(store Store, clock Clock, identifiers IdentifierSource, policy Policy) (*Service, error)
-
-// Private service dependencies:
-// store Store; clock Clock; identifiers IdentifierSource; policy Policy
-func (service *Service) runMutation(ctx context.Context, scope Scope, command timedMutation) (Aggregate, error)
-// timedMutation is func(*Aggregate, time.Time) (Change, error)
-func TransactNormalized(ctx context.Context, store Store, clock Clock, policy Policy, scope Scope, command Mutation) (Aggregate, error)
+```text
+lobby/
+  go.mod, go.sum       Independent Go module
+  domain/             Types, ports, errors, policies, and pure state rules
+  application/        Membership commands, teams, leases, binding, and sweeping
+  auth/               Guest credentials and connection tokens
+  postgres/           Persistence and schema
+  httpapi/            HTTP routes and DTOs
+  frontend/           Temporary browser playground and embedded asset handler
+  realtime/           Centrifugo authorization and transport
+  delivery/           Durable event delivery
+  internal/           Shared implementation helpers and test fixtures
+  api/                OpenAPI and event schema artifacts
+  cmd/                Offline OpenAPI exporter
+  clients/            Go example and Python SDK, wrapper, CLI, and generator
+  centrifugo/         Shared transport configuration
+  integration/        Live tests and configurable host runner
+  scripts/            Shared acceptance entry point
+  docs/               Architecture and implementation records
 ```
 
-The pure expiry normalizer is:
+All commands in this README run from this directory:
+
+```sh
+GOWORK=off go test ./...
+GOWORK=off go vet ./...
+go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --check
+uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
+```
+
+Go database tests use disposable PostgreSQL containers. Live tests additionally need a host application implementing the lobby endpoints; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the host application's suite.
+
+The module path remains `islandBattles/lobby`. Go consumers import `islandBattles/lobby/domain` for contracts and `islandBattles/lobby/application` for services; there is no root Go package or compatibility alias layer. It has no dependency or filesystem replacement pointing to the parent repository. To extract it, copy this directory, verify with `GOWORK=off`, then choose the published repository's module path and update imports. The monorepo's `go.work` and root `go.mod` local replacement are consumer-side wiring only. A plain `go test ./...` at the monorepo root tests the host module; use `go test ./... ./lobby/...` there to test both modules.
+
+## Temporary browser frontend
+
+The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose Island Battles, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed.
+
+## Domain and application services
+
+`domain/` owns records, request types, errors, policies, state helpers, and repository ports. `application/` owns commands and coordinates those contracts: `membership.go` groups create/join/snapshot, while teams, lifecycle, leases, binding, and sweeping have focused files. Tests live beside the package they exercise.
+
+Application services depend on domain contracts. Auth, PostgreSQL, HTTP, realtime, and delivery adapters depend inward on the domain and, where needed, application services. Neither inner package imports an adapter, Huma/GORM/gocent, or the game backend. Shared nullable-field helpers stay private under `internal/optional`. Importing a package performs no I/O.
+
+Service construction and transaction helpers live in `application`:
+
+```go
+service, err := application.NewService(store, clock, identifiers, policy)
+aggregate, err := application.TransactNormalized(ctx, store, clock, policy, scope, command)
+```
+
+The constructor accepts `domain.Store`, `domain.Clock`, `domain.IdentifierSource`, and `domain.Policy`. Transaction callbacks use `domain.Mutation`. The service keeps its dependencies and timed mutation helper private.
+
+The pure expiry normalizer lives in `domain`:
 
 ```go
 func NormalizeExpired(aggregate *Aggregate, now time.Time, policy Policy) (Change, error)
@@ -68,3 +109,24 @@ Policy defaults are explicit: `DefaultPolicy("island-battles", "quiz-demo")` sup
 `BuildSnapshot` filters inactive history, orders active members and teams, copies nullable fields and the frozen roster, emits non-null arrays and excludes leases/session information. Its caller must normalize under lock before building the response. The HTTP adapter separately enforces presence for required nullable `team_id` and required boolean `ready` before creating domain requests.
 
 Production dependencies are `SystemClock{}` (UTC wall clock) and `CryptoIdentifiers{}` (cryptographic UUIDv4, unbiased join-code sampling, random byte slices). Their methods perform clock/random reads only when called; pure validation/copy helpers do not use them. `Bytes` rejects negative lengths without panicking.
+
+## Binding a game to a started lobby
+
+Game integrations reuse three entry points:
+
+- `application.NewGameBinding(gameKey, snapshotReader, persist)` checks scope, current membership, host, started phase, and frozen roster/team consistency on every request, including replays. The callback receives all configured teams in order and returns the game's own result type. Use the lobby application as the snapshot reader so membership expiry is normalized before authorization.
+- `httpapi.RegisterGameBinding(api, operation, binding, authenticator)` registers a game-owned POST endpoint accepting `{game_key, lobby_id}`. It supplies bearer authentication, principal extraction, typed success responses, and shared problem responses. The operation supplies its path, ID, tags, and description. Game endpoints are registered explicitly and remain outside the lobby-only SDK export.
+- `postgres.BindOnce(database, uniqueLobbyConstraint, load, create)` supplies the transaction and concurrent-conflict recovery for PostgreSQL-backed games. `load` returns nil when absent and an error for incomplete stored game state. `create` writes the game and its associated state using the supplied transaction. Only a conflict on the specified unique lobby-link constraint triggers a reload; all other errors roll back and propagate. Pass a database with the request context attached.
+
+A game's constructor only selects its key and connects its persistence callback:
+
+```go
+binding, err := application.NewGameBinding("quiz-demo", lobbyService,
+    func(ctx context.Context, started domain.Snapshot) (QuizMatch, error) {
+        return quizStore.Bind(ctx, started)
+    })
+```
+
+`quizStore.Bind` owns the game's schema, result type, and translation of lobby teams into game state. It must atomically create or return the same game for the lobby; PostgreSQL integrations can use `BindOnce` for that orchestration. It must not start external side effects inside the transaction. No game rows are created by the normal lobby start operation.
+
+Island Battles connects these helpers through `backend/lobbyadapter`, with game-specific persistence in `backend/dal/lobby_binding.go` and model migration in `backend/dependencies/database.go`. The adapter uses the actual model types directly, without re-exporting aliases. It translates team order to numeric simulation colors and validates that persisted mappings match on replay. Generic lobby code does not import the backend or assume numeric game IDs or team colors.

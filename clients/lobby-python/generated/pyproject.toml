@@ -1,0 +1,25 @@
+[project]
+name = "lobby-api-client"
+version = "1.0.0"
+description = "A client library for accessing Generic Lobby API"
+authors = []
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "httpx>=0.23.1,<0.29.0",
+    "attrs>=22.2.0",
+]
+
+[tool.uv.build-backend]
+module-name = "lobby_api_client"
+module-root = ""
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "I", "UP"]

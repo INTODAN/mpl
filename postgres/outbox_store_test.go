@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 	"islandBattles/lobby/postgres"
 )
 
-func claimStoreJobs(t *testing.T, fixture *storeFixture, now time.Time, limit int) []lobby.DeliveryJob {
+func claimStoreJobs(t *testing.T, fixture *storeFixture, now time.Time, limit int) []domain.DeliveryJob {
 	t.Helper()
-	jobs, err := fixture.store.Claim(context.Background(), lobby.ClaimRequest{Now: now, Limit: limit, ClaimDuration: time.Minute})
+	jobs, err := fixture.store.Claim(context.Background(), domain.ClaimRequest{Now: now, Limit: limit, ClaimDuration: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,24 +19,24 @@ func claimStoreJobs(t *testing.T, fixture *storeFixture, now time.Time, limit in
 }
 func TestDeliveryClaimsAreExclusive(t *testing.T) {
 	fixture := newStoreFixture(t)
-	_, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *lobby.Aggregate) (lobby.Change, error) {
+	_, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
 		aggregate.Lobby.Name = "Changed"
-		return lobby.Change{PublicChanged: true}, nil
+		return domain.Change{PublicChanged: true}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := postgres.NewStore(fixture.db, fixture.clock, lobby.CryptoIdentifiers{})
+	other, err := postgres.NewStore(fixture.db, fixture.clock, domain.CryptoIdentifiers{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	barrier := make(chan struct{})
-	results := make(chan []lobby.DeliveryJob, 2)
+	results := make(chan []domain.DeliveryJob, 2)
 	failures := make(chan error, 2)
 	for _, store := range []*postgres.Store{fixture.store, other} {
 		go func() {
 			<-barrier
-			jobs, err := store.Claim(context.Background(), lobby.ClaimRequest{Now: fixture.clock.now, Limit: 1, ClaimDuration: time.Minute})
+			jobs, err := store.Claim(context.Background(), domain.ClaimRequest{Now: fixture.clock.now, Limit: 1, ClaimDuration: time.Minute})
 			results <- jobs
 			failures <- err
 		}()
@@ -85,7 +85,7 @@ func TestStaleClaimCannotAckOrRetry(t *testing.T) {
 	if affected, err := fixture.store.Ack(context.Background(), first.ID, first.ClaimToken, expired); err != nil || affected {
 		t.Fatal("stale token acknowledged", err)
 	}
-	if affected, err := fixture.store.Retry(context.Background(), lobby.RetryRequest{JobID: first.ID, ClaimToken: first.ClaimToken, Now: expired, NextAttemptAt: expired.Add(time.Hour), ErrorSummary: "transient"}); err != nil || affected {
+	if affected, err := fixture.store.Retry(context.Background(), domain.RetryRequest{JobID: first.ID, ClaimToken: first.ClaimToken, Now: expired, NextAttemptAt: expired.Add(time.Hour), ErrorSummary: "transient"}); err != nil || affected {
 		t.Fatal("stale token rescheduled", err)
 	}
 	if affected, err := fixture.store.Ack(context.Background(), second.ID, second.ClaimToken, expired); err != nil || !affected {
@@ -109,7 +109,7 @@ func TestDeliveryRetryPersistsOriginalEventAndBackoff(t *testing.T) {
 	fixture := newStoreFixture(t)
 	first := claimStoreJobs(t, fixture, fixture.clock.now, 1)[0]
 	next := fixture.clock.now.Add(5 * time.Minute)
-	if affected, err := fixture.store.Retry(context.Background(), lobby.RetryRequest{JobID: first.ID, ClaimToken: first.ClaimToken, Now: fixture.clock.now, NextAttemptAt: next, ErrorSummary: "transport unavailable"}); err != nil || !affected {
+	if affected, err := fixture.store.Retry(context.Background(), domain.RetryRequest{JobID: first.ID, ClaimToken: first.ClaimToken, Now: fixture.clock.now, NextAttemptAt: next, ErrorSummary: "transport unavailable"}); err != nil || !affected {
 		t.Fatal("retry did not persist", err)
 	}
 	if jobs := claimStoreJobs(t, fixture, next.Add(-time.Microsecond), 1); len(jobs) != 0 {

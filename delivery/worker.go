@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 type Config struct {
@@ -25,15 +25,15 @@ func DefaultConfig() Config {
 }
 
 type Worker struct {
-	store     lobby.DeliveryStore
-	transport lobby.RealtimeTransport
-	clock     lobby.Clock
+	store     domain.DeliveryStore
+	transport domain.RealtimeTransport
+	clock     domain.Clock
 	config    Config
 }
 
-func NewWorker(store lobby.DeliveryStore, transport lobby.RealtimeTransport, clock lobby.Clock, config Config) (*Worker, error) {
+func NewWorker(store domain.DeliveryStore, transport domain.RealtimeTransport, clock domain.Clock, config Config) (*Worker, error) {
 	if store == nil || transport == nil || clock == nil || config.BatchSize < 1 || config.BatchSize > 64 || config.NetworkTimeout <= 0 || config.ClaimDuration <= config.NetworkTimeout || config.PollInterval <= 0 || config.RetryMinimum <= 0 || config.RetryMaximum < config.RetryMinimum {
-		return nil, lobby.ErrInvalidInput
+		return nil, domain.ErrInvalidInput
 	}
 	return &Worker{store: store, transport: transport, clock: clock, config: config}, nil
 }
@@ -41,7 +41,7 @@ func NewWorker(store lobby.DeliveryStore, transport lobby.RealtimeTransport, clo
 // RunOnce starts at most BatchSize attempts. Every claim begins promptly, so a
 // slow earlier publication cannot consume a later job's entire claim lifetime.
 func (worker *Worker) RunOnce(ctx context.Context) error {
-	jobs, err := worker.store.Claim(ctx, lobby.ClaimRequest{Now: worker.clock.Now().UTC(), Limit: worker.config.BatchSize, ClaimDuration: worker.config.ClaimDuration})
+	jobs, err := worker.store.Claim(ctx, domain.ClaimRequest{Now: worker.clock.Now().UTC(), Limit: worker.config.BatchSize, ClaimDuration: worker.config.ClaimDuration})
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (worker *Worker) RunOnce(ctx context.Context) error {
 	var pending sync.WaitGroup
 	for _, job := range jobs {
 		pending.Add(1)
-		go func(job lobby.DeliveryJob) { defer pending.Done(); results <- worker.attempt(ctx, job) }(job)
+		go func(job domain.DeliveryJob) { defer pending.Done(); results <- worker.attempt(ctx, job) }(job)
 	}
 	pending.Wait()
 	close(results)
@@ -62,25 +62,25 @@ func (worker *Worker) RunOnce(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-func (worker *Worker) attempt(ctx context.Context, job lobby.DeliveryJob) error {
+func (worker *Worker) attempt(ctx context.Context, job domain.DeliveryJob) error {
 	networkContext, cancel := context.WithTimeout(ctx, worker.config.NetworkTimeout)
 	defer cancel()
 	var attemptError error
 	switch job.Kind {
-	case lobby.JobInvalidation:
+	case domain.JobInvalidation:
 		if job.Invalidation == nil || job.Revocation != nil {
-			attemptError = lobby.ErrInvalidInput
+			attemptError = domain.ErrInvalidInput
 			break
 		}
-		channel, err := lobby.RoomChannel(lobby.Scope{GameKey: job.Invalidation.GameKey, LobbyID: job.Invalidation.LobbyID})
+		channel, err := domain.RoomChannel(domain.Scope{GameKey: job.Invalidation.GameKey, LobbyID: job.Invalidation.LobbyID})
 		if err != nil {
 			attemptError = err
 			break
 		}
 		attemptError = worker.transport.PublishInvalidation(networkContext, channel, *job.Invalidation)
-	case lobby.JobRevocation:
+	case domain.JobRevocation:
 		if job.Revocation == nil || job.Invalidation != nil {
-			attemptError = lobby.ErrInvalidInput
+			attemptError = domain.ErrInvalidInput
 			break
 		}
 		state, err := worker.store.CurrentMembership(networkContext, job.Revocation.Scope, job.Revocation.PlayerID)
@@ -91,14 +91,14 @@ func (worker *Worker) attempt(ctx context.Context, job lobby.DeliveryJob) error 
 		if state != nil && state.Active && state.Generation > job.Revocation.Generation {
 			break
 		}
-		channel, err := lobby.RoomChannel(job.Revocation.Scope)
+		channel, err := domain.RoomChannel(job.Revocation.Scope)
 		if err != nil {
 			attemptError = err
 			break
 		}
 		attemptError = worker.transport.Unsubscribe(networkContext, job.Revocation.PlayerID, channel)
 	default:
-		attemptError = lobby.ErrInvalidInput
+		attemptError = domain.ErrInvalidInput
 	}
 	now := worker.clock.Now().UTC()
 	if attemptError == nil {
@@ -107,7 +107,7 @@ func (worker *Worker) attempt(ctx context.Context, job lobby.DeliveryJob) error 
 	}
 	// A fixed summary intentionally excludes URLs, credentials, raw SQL, and
 	// publisher error bodies. Detailed failures remain available to the caller.
-	_, retryError := worker.store.Retry(ctx, lobby.RetryRequest{JobID: job.ID, ClaimToken: job.ClaimToken, Now: now, NextAttemptAt: now.Add(worker.backoff(job.Attempts)), ErrorSummary: "lobby delivery attempt failed"})
+	_, retryError := worker.store.Retry(ctx, domain.RetryRequest{JobID: job.ID, ClaimToken: job.ClaimToken, Now: now, NextAttemptAt: now.Add(worker.backoff(job.Attempts)), ErrorSummary: "lobby delivery attempt failed"})
 	return errors.Join(attemptError, retryError)
 }
 

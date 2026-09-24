@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "game_key": {
+      "type": "string"
+    },
+    "lobby_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "enum": [
+        1
+      ],
+      "format": "int64",
+      "type": "integer"
+    },
+    "type": {
+      "enum": [
+        "lobby.changed"
+      ],
+      "type": "string"
+    },
+    "version": {
+      "format": "int64",
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "game_key",
+    "lobby_id",
+    "version",
+    "type"
+  ],
+  "title": "LobbyInvalidation",
+  "type": "object"
+}

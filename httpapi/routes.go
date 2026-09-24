@@ -8,7 +8,7 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 )
 
 const basePath = "/lobby/v1"
@@ -17,7 +17,7 @@ var lobbyBearer = []map[string][]string{{"LobbyBearer": {}}}
 
 // Register installs the public lobby API. app, authenticator and issuer are
 // invoked only while serving requests, so offline OpenAPI export may use fakes.
-func Register(api huma.API, app lobby.Application, authenticator lobby.Authenticator, issuer lobby.ConnectionTokenIssuer) {
+func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer) {
 	registerSchemas(api)
 	handler := handlers{app: app, authenticator: authenticator, issuer: issuer}
 	group := huma.NewGroup(api, basePath)

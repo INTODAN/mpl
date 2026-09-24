@@ -1,15 +1,15 @@
 package httpapi
 
 import (
-	"islandBattles/lobby"
+	"islandBattles/lobby/domain"
 	"net/http"
 )
 
 type Problem struct {
-	Title  string          `json:"title"`
-	Status int             `json:"status"`
-	Detail string          `json:"detail"`
-	Code   lobby.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,stale_membership,idempotency_conflict,invalid_input,unavailable,internal_error"`
+	Title  string           `json:"title"`
+	Status int              `json:"status"`
+	Detail string           `json:"detail"`
+	Code   domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,stale_membership,idempotency_conflict,invalid_input,unavailable,internal_error"`
 }
 
 func (problem *Problem) Error() string             { return problem.Detail }
@@ -17,21 +17,21 @@ func (problem *Problem) GetStatus() int            { return problem.Status }
 func (problem *Problem) ContentType(string) string { return "application/problem+json" }
 
 func problemFor(errorValue error) error {
-	code := lobby.ErrorCodeOf(errorValue)
+	code := domain.ErrorCodeOf(errorValue)
 	status := http.StatusInternalServerError
 	detail := "internal server error"
 	switch code {
-	case lobby.CodeUnauthenticated:
+	case domain.CodeUnauthenticated:
 		status, detail = http.StatusUnauthorized, "authentication required"
-	case lobby.CodeNotFound:
+	case domain.CodeNotFound:
 		status, detail = http.StatusNotFound, "lobby not found"
-	case lobby.CodeNotHost:
+	case domain.CodeNotHost:
 		status, detail = http.StatusForbidden, "host required"
-	case lobby.CodeLobbyFull, lobby.CodeTeamFull, lobby.CodePhaseConflict, lobby.CodeNotReady, lobby.CodeStaleMembership, lobby.CodeIdempotencyConflict:
+	case domain.CodeLobbyFull, domain.CodeTeamFull, domain.CodePhaseConflict, domain.CodeNotReady, domain.CodeStaleMembership, domain.CodeIdempotencyConflict:
 		status, detail = http.StatusConflict, errorValue.Error()
-	case lobby.CodeInvalidInput:
+	case domain.CodeInvalidInput:
 		status, detail = http.StatusUnprocessableEntity, "invalid input"
-	case lobby.CodeUnavailable:
+	case domain.CodeUnavailable:
 		status, detail = http.StatusServiceUnavailable, "service temporarily unavailable"
 	default:
 		code = "internal_error"
