@@ -10,7 +10,7 @@ To set up players manually:
 2. Open the same page in another tab, browser, or device. Enter another name and join using the eight-character code.
 3. Each player chooses a different team and marks ready. The host can then start the lobby.
 
-New lobbies have two seats. Starting freezes the roster and the host backend launches the selected game. For Island Battles, both players see an automatic battle replay with play/pause, a turn slider, and a final result. These controls only change playback; players cannot command the troops. On another device, use the host's reachable address instead of `localhost`.
+New lobbies have two seats. Starting freezes the roster and the host backend launches the selected game. For Island Battles, the game initializes generation one and waits for every roster player to send commands and complete their turn through the [Island Battles Python client](../../clients/island-battles-python/README.md). Disconnected players remain part of the turn barrier. The replay view below shows recorded game state; its playback controls do not issue gameplay commands. On another device, use the host's reachable address instead of `localhost`.
 
 Guest credentials and the current room are saved in `sessionStorage`, so independently opened tabs can act as separate players and a reload restores the current player. A browser's **Duplicate tab** action may copy that identity; open a fresh tab using the URL to test a second player. **Leave lobby** removes the player immediately. Closing a tab relies on the server's lease expiry and grace period.
 

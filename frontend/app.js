@@ -269,7 +269,7 @@ function render() {
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
   $("start-button").disabled = busy || members.length < 2 || !members.every((member) => member.ready && member.team_id && !member.disconnected_until);
-  $("room-hint").textContent = !waiting ? "The game plays automatically. Watch its replay below." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
+  $("room-hint").textContent = !waiting ? "Island Battles waits for player commands through the Python client. The replay below shows recorded game state." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
   if (!waiting) loadResult();
 }
