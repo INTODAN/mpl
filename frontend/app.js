@@ -93,6 +93,7 @@ function dropRoom() {
   resultRequest = null;
   resultRoom = null;
   $("game-result").removeAttribute("srcdoc");
+  $("game-result").style.removeProperty("height");
   $("game-result").hidden = true;
   $("result-status").hidden = false;
   $("result-status").textContent = "Preparing the game…";
@@ -269,6 +270,14 @@ function displayGeneration() {
   }
 }
 $("game-result").addEventListener("load", displayGeneration);
+window.addEventListener("message", (event) => {
+  const frame = $("game-result");
+  // The sandboxed game has an opaque origin; bind sizing to this exact frame.
+  if (event.source !== frame.contentWindow || event.data?.type !== "game.result-size") return;
+  const height = event.data.height;
+  if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) return;
+  frame.style.height = `${Math.ceil(height)}px`;
+});
 
 async function ensureGamePlayer() {
   const moduleURL = games[snapshot?.lobby.game_key]?.playerModule;
