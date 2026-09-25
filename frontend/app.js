@@ -3,7 +3,7 @@
 const $ = (id) => document.getElementById(id);
 const storageKey = "lobby-playground";
 const games = {
-  "island-battles": { name: "Island Battles", resultURL: (lobbyID) => `/game/from-lobby/${encodeURIComponent(lobbyID)}/replay` },
+  "island-battles": { name: "Island Battles", resultURL: (lobbyID) => `/game/from-lobby/${encodeURIComponent(lobbyID)}/replay`, playerModule: "/game/demo/example-player.mjs" },
 };
 let saved;
 try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch { /* Start a fresh tab. */ }
@@ -12,10 +12,17 @@ let snapshot = null;
 let busy = false;
 let timer;
 let roomEpoch = 0;
-let lastHeartbeat = 0;
+let heartbeatTimer;
+let realtime = null;
+let realtimeLoading = null;
+let lobbySubscription = null;
+let syncing = false;
 let teamOptions = "";
 let resultRoom = null;
 let resultRequest = null;
+let gamePlayer = null;
+let playerLoading = false;
+let latestGameState = null;
 
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -68,11 +75,20 @@ async function api(path, method = "GET", body) {
 
 function dropRoom() {
   clearTimeout(timer);
+  clearTimeout(heartbeatTimer);
   roomEpoch++;
   if (state.room) $("join-code").value = state.room.join_code || "";
   state.room = null;
+  delete state.demoPlayer;
+  gamePlayer?.stop();
+  gamePlayer = null;
+  realtime?.disconnect();
+  realtime = null;
+  realtimeLoading = null;
+  lobbySubscription = null;
+  playerLoading = false;
+  latestGameState = null;
   snapshot = null;
-  lastHeartbeat = 0;
   resultRequest?.abort();
   resultRequest = null;
   resultRoom = null;
@@ -142,29 +158,31 @@ function acceptSnapshot(next) {
   state.pendingCreate = null;
   save();
   render();
+  void ensureRealtime();
+  if (!heartbeatTimer) heartbeatTimer = setTimeout(heartbeat, 15000);
 }
 
-function scheduleSync(delay = 2000) {
+function scheduleSync(delay = 0) {
   clearTimeout(timer);
   if (state.room) timer = setTimeout(sync, delay);
 }
 
 async function sync() {
   if (!state.room) return;
-  if (busy) { scheduleSync(); return; }
+  if (busy || syncing) { scheduleSync(100); return; }
+  syncing = true;
   const epoch = roomEpoch;
   const room = state.room;
   try {
-    if (Date.now() - lastHeartbeat >= 15000) {
-      await api(`${roomPath(room)}/heartbeat`, "POST", {
-        client_instance_id: state.clientInstanceID, membership_generation: room.membership_generation,
-      });
-      if (epoch !== roomEpoch) return;
-      lastHeartbeat = Date.now();
-    }
     const next = await api(roomPath(room));
     if (epoch !== roomEpoch) return;
     acceptSnapshot(next);
+    if (state.demoPlayer && next.lobby.phase === "waiting" && next.lobby.host_player_id === state.session.player_id &&
+        next.members.length === 2 && next.members.every((member) => member.ready && member.team_id && !member.disconnected_until)) {
+      const started = await api(`${roomPath(room)}/start`, "POST", {});
+      if (epoch !== roomEpoch) return;
+      acceptSnapshot(started);
+    }
     $("connection").textContent = "Connected";
     $("connection").classList.remove("reconnecting");
   } catch (error) {
@@ -175,8 +193,67 @@ async function sync() {
     } else {
       $("connection").textContent = "Reconnecting…";
       $("connection").classList.add("reconnecting");
+      // Retry failed reconciliation; successful idle subscriptions make no GETs.
+      scheduleSync(2000);
     }
-  } finally { scheduleSync(); }
+  } finally { syncing = false; }
+}
+
+async function heartbeat() {
+  heartbeatTimer = null;
+  if (!state.room) return;
+  const epoch = roomEpoch;
+  try {
+    await api(`${roomPath()}/heartbeat`, "POST", {
+      client_instance_id: state.clientInstanceID, membership_generation: state.room.membership_generation,
+    });
+  } catch (error) {
+    if (epoch === roomEpoch && (error.status === 401 || error.code === "not_found" || error.code === "stale_membership")) {
+      reportError(error);
+      render();
+    }
+  } finally {
+    if (epoch === roomEpoch && state.room) heartbeatTimer = setTimeout(heartbeat, 15000);
+  }
+}
+
+function ensureRealtime() {
+  if (realtime || realtimeLoading || !snapshot) return realtimeLoading || Promise.resolve(realtime);
+  const epoch = roomEpoch;
+  const channel = snapshot.channel;
+  realtimeLoading = (async () => {
+    const token = await api("/connection-token", "POST", {});
+    if (epoch !== roomEpoch) return null;
+    const client = new Centrifuge(token.websocket_url, {
+      token: token.token,
+      getToken: async () => (await api("/connection-token", "POST", {})).token,
+    });
+    realtime = client;
+    const connection = (connected) => {
+      if (epoch !== roomEpoch) return;
+      $("connection").textContent = connected ? "Live updates connected" : "Reconnecting…";
+      $("connection").classList.toggle("reconnecting", !connected);
+    };
+    client.on("connected", () => connection(true));
+    client.on("connecting", () => connection(false));
+    client.on("disconnected", () => connection(false));
+    lobbySubscription = client.newSubscription(channel, { recoverable: true, positioned: true });
+    lobbySubscription.on("subscribed", () => { if (epoch === roomEpoch) scheduleSync(); });
+    lobbySubscription.on("publication", ({ data }) => {
+      if (epoch === roomEpoch && data?.type === "lobby.changed" && data.schema_version === 1 &&
+          data.lobby_id === snapshot.lobby.id && data.game_key === snapshot.lobby.game_key && data.version > snapshot.lobby.version) scheduleSync();
+    });
+    lobbySubscription.subscribe();
+    client.connect();
+    return client;
+  })().catch((error) => {
+    if (epoch === roomEpoch) {
+      if (error.status === 401) { reportError(error); render(); }
+      else setTimeout(() => { if (epoch === roomEpoch) void ensureRealtime(); }, 2000);
+    }
+    return null;
+  }).finally(() => { if (epoch === roomEpoch) realtimeLoading = null; });
+  return realtimeLoading;
 }
 
 function element(tag, className, text) {
@@ -185,6 +262,59 @@ function element(tag, className, text) {
   node.textContent = text;
   return node;
 }
+
+function displayGeneration() {
+  if (latestGameState && resultRoom === state.room?.lobby_id) {
+    $("game-result").contentWindow?.postMessage({ type: "island-battles.generation", state: latestGameState }, "*");
+  }
+}
+$("game-result").addEventListener("load", displayGeneration);
+
+async function ensureGamePlayer() {
+  const moduleURL = games[snapshot?.lobby.game_key]?.playerModule;
+  if (!moduleURL || gamePlayer || playerLoading) return;
+  playerLoading = true;
+  const epoch = roomEpoch;
+  try {
+    const { ExamplePlayer } = await import(moduleURL);
+    const client = await ensureRealtime();
+    if (epoch !== roomEpoch) return;
+    if (!client) return;
+    gamePlayer = new ExamplePlayer({
+      lobbyID: snapshot.lobby.id, playerID: state.session.player_id, credential: state.session.access_token,
+      subscription: client.newSubscription(`player:${state.session.player_id}`),
+      enabled: Boolean(state.demoPlayer?.enabled), pending: state.demoPlayer?.pending || null,
+      savePending: (pending) => {
+        if (epoch === roomEpoch && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
+      },
+      onState: (generation) => {
+        if (epoch !== roomEpoch) return;
+        latestGameState = generation;
+        displayGeneration();
+      },
+      onStatus: (title, detail) => {
+        if (epoch !== roomEpoch) return;
+        $("example-status").textContent = title;
+        $("example-detail").textContent = detail;
+        $("example-toggle").textContent = gamePlayer.enabled ? "Pause this player" : "Resume this player";
+      },
+    });
+    gamePlayer.start();
+  } catch {
+    if (epoch === roomEpoch) $("example-detail").textContent = "Could not load the example player. Retrying…";
+  } finally {
+    if (epoch === roomEpoch) playerLoading = false;
+  }
+}
+
+$("example-toggle").addEventListener("click", () => {
+  if (!state.demoPlayer || !gamePlayer) return;
+  state.demoPlayer.enabled = !gamePlayer.enabled;
+  gamePlayer.setEnabled(state.demoPlayer.enabled);
+  $("example-toggle").textContent = gamePlayer.enabled ? "Pause this player" : "Resume this player";
+  $("example-status").textContent = gamePlayer.enabled ? "Example player running" : "Paused";
+  save();
+});
 
 // The game owns the result document. The lobby only loads and displays it.
 async function loadResult() {
@@ -206,6 +336,7 @@ async function loadResult() {
     $("game-result").hidden = false;
     $("result-status").hidden = true;
     $("retry-game").hidden = true;
+    if (state.demoPlayer) $("result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     if (controller !== resultRequest) return;
     $("result-status").hidden = false;
@@ -221,6 +352,7 @@ function render() {
   $("entry-panel").hidden = Boolean(snapshot);
   $("room-panel").hidden = !snapshot;
   $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games[snapshot.lobby.game_key]?.resultURL;
+  $("example-controls").hidden = !state.demoPlayer || snapshot?.lobby.phase !== "started";
   $("display-name").readOnly = Boolean(state.session);
   $("change-player").hidden = !state.session;
   for (const id of ["create-button", "join-button", "change-player", "leave-button", "demo-button"]) $(id).disabled = busy;
@@ -269,9 +401,9 @@ function render() {
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
   $("start-button").disabled = busy || members.length < 2 || !members.every((member) => member.ready && member.team_id && !member.disconnected_until);
-  $("room-hint").textContent = !waiting ? "Island Battles waits for player commands through the Python client. The replay below shows recorded game state." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
+  $("room-hint").textContent = !waiting ? state.demoPlayer ? "Each tab plays one soldier per generation. Keep both tabs open; pause either player to hold the next turn." : "Island Battles waits for player commands through the Python client. The board follows recorded generations live." : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
-  if (!waiting) loadResult();
+  if (!waiting) { loadResult(); ensureGamePlayer(); }
 }
 
 async function createLobby(name) {
@@ -306,7 +438,7 @@ $("demo-button").addEventListener("click", () => {
     try {
       if (state.room) await api(`${roomPath()}/membership`, "DELETE");
       dropRoom();
-      state = {};
+      state = { demoPlayer: { enabled: true } };
       save();
       $("demo-player-link").hidden = true;
       $("display-name").value = "Alex";
@@ -377,7 +509,7 @@ async function restore() {
   const invitation = new URLSearchParams(location.hash.slice(1));
   if (invitation.has("demo")) {
     // New windows may inherit sessionStorage from their opener. Never reuse it.
-    state = {};
+    state = { demoPlayer: { enabled: true } };
     save();
     history.replaceState(null, "", location.pathname + location.search);
     $("display-name").value = "Sam";

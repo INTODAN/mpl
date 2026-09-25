@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Game lobby</title>
   <link rel="stylesheet" href="./style.css">
+  <script src="./vendor/centrifuge.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -23,7 +24,7 @@
     <div id="notice" class="notice" role="alert" hidden></div>
 
     <section class="card demo-setup" aria-label="Quick demo setup">
-      <div><strong>Try a two-player demo</strong><p>Alex on Blue, Sam on Red. Both ready in separate tabs.</p></div>
+      <div><strong>Watch two example players</strong><p>Alex on Blue, Sam on Red. Each sends one soldier per generation.</p></div>
       <button id="demo-button" class="primary" type="button">New demo lobby</button>
       <a id="demo-player-link" target="_blank" rel="noopener" hidden>Open second player tab</a>
     </section>
@@ -83,6 +84,10 @@
       <footer class="room-footer"><span id="playing-as"></span><button id="leave-button" class="text-button" type="button">Leave lobby</button></footer>
     </section>
     <section id="result-panel" class="card game-result" aria-label="Game result" hidden>
+      <div id="example-controls" class="example-controls" hidden>
+        <div><span class="eyebrow">Example strategy · One soldier</span><strong id="example-status">Starting example player…</strong><p id="example-detail">Send one soldier to the first enemy castle, then finish the turn.</p></div>
+        <button id="example-toggle" class="secondary" type="button">Pause this player</button>
+      </div>
       <p id="result-status" role="status">Preparing the game…</p>
       <button id="retry-game" class="secondary" type="button" hidden>Retry starting game</button>
       <iframe id="game-result" title="Game replay" sandbox="allow-scripts" hidden></iframe>

@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:embed index.html app.js style.css
+//go:embed index.html app.js style.css vendor
 var assets embed.FS
 
 // Handler serves only the embedded UI assets. Mount it on the same origin as

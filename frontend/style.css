@@ -68,6 +68,11 @@ h3 { font-size: 1rem; margin: 0; }
 .page-footer { color: #8b94a4; text-align: center; font-size: .75rem; padding-top: 35px; }
 .game-result { margin-top: 20px; padding: 8px; }
 .game-result > p, .game-result > button { margin: 16px; }
+.example-controls { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border-bottom: 1px solid #edf0f5; }
+.example-controls .eyebrow, .example-controls strong { display: block; }
+.example-controls .eyebrow { margin-bottom: 8px; }
+.example-controls p { margin: 6px 0 0; font-size: .82rem; }
+.example-controls button { white-space: nowrap; }
 #game-result { display: block; width: 100%; height: 630px; border: 0; }
 @media (max-width: 650px) {
   main { padding: 24px 18px; }
@@ -79,4 +84,5 @@ h3 { font-size: 1rem; margin: 0; }
   .controls label { flex-basis: 100%; }
   .controls button { flex: 1; }
   .room-heading { align-items: start; }
+  .example-controls { flex-direction: column; align-items: stretch; }
 }
