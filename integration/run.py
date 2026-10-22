@@ -48,7 +48,11 @@ def main() -> int:
     parser.add_argument("--server-package", required=True, help="Go package for the host executable")
     parser.add_argument("--env-prefix", default="", help="Host configuration environment-variable prefix")
     parser.add_argument("--extra-tests", type=Path, action="append", default=[], help="Additional host-owned pytest suites")
+    parser.add_argument("--skip-lobby-suite", action="store_true", help="Run only --extra-tests against the started stack")
+    parser.add_argument("--pytest-timeout", type=int, default=180, help="Seconds allowed for the whole pytest run")
     args = parser.parse_args()
+    if args.skip_lobby_suite and not args.extra_tests:
+        parser.error("--skip-lobby-suite requires --extra-tests")
     server_root = args.server_root.resolve()
     runtime = os.environ.get("LOBBY_CONTAINER_RUNTIME") or shutil.which("docker") or shutil.which("podman")
     if not runtime:
@@ -134,13 +138,17 @@ def main() -> int:
         environment.update({
             "LOBBY_TEST_API_URL": f"http://127.0.0.1:{http_port}",
             "LOBBY_TEST_WEBSOCKET_URL": f"ws://127.0.0.1:{socket_port}/connection/websocket",
+            "LOBBY_TEST_CENTRIFUGO_API_URL": f"http://127.0.0.1:{socket_port}/api",
+            "LOBBY_TEST_CENTRIFUGO_API_KEY": api_key,
             "LOBBY_TEST_CONTAINER_RUNTIME": runtime,
             "LOBBY_TEST_CENTRIFUGO_CONTAINER": centrifugo_name,
             "LOBBY_TEST_POSTGRES_CONTAINER": database_name,
             "LOBBY_TEST_RUNNER_PID": str(os.getpid()),
             "LOBBY_TEST_BACKEND_CONTROL": str(control_status),
         })
-        result = subprocess.run([sys.executable, "-m", "pytest", str(ROOT / "integration"), *(str(path.resolve()) for path in args.extra_tests), "-q", "--tb=short", "--disable-warnings"], cwd=ROOT, env=environment, timeout=180)
+        suites = [] if args.skip_lobby_suite else [str(ROOT / "integration")]
+        suites += [str(path.resolve()) for path in args.extra_tests]
+        result = subprocess.run([sys.executable, "-m", "pytest", *suites, "-q", "--tb=short", "--disable-warnings"], cwd=ROOT, env=environment, timeout=args.pytest_timeout)
         success = result.returncode == 0
         return result.returncode
     finally:
