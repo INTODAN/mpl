@@ -32,7 +32,7 @@ func Migrations() MigrationSet {
 	if err != nil {
 		panic(err) // The directory name is a valid constant.
 	}
-	return MigrationSet{HistoryTable: "lobby_schema_migrations", Files: files, AdoptTable: "lobby_rooms"}
+	return MigrationSet{HistoryTable: "lobby_schema_migrations", Files: files, Adopt: true}
 }
 
 // Migrate brings the generic lobby schema to the latest version and may safely

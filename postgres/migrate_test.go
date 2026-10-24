@@ -1,9 +1,11 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -69,6 +71,91 @@ func TestMigrateAdoptsSchemaCreatedBeforeVersioning(t *testing.T) {
 	assertSameSchema(t, schemaSnapshot(t, legacy), schemaSnapshot(t, fresh))
 }
 
+func TestMigrateAdoptsThenAppliesLaterMigrations(t *testing.T) {
+	legacy := testutil.NewEmptyPostgres(t)
+	executeFile(t, legacy, "testdata/legacy_schema.sql")
+
+	// A later migration that drops a table migration 1 created must not stop
+	// an old database from being adopted first.
+	set := lobbypostgres.Migrations()
+	next := fmt.Sprintf("%04d_drop_outbox.sql", len(migrationNames(t, set.Files))+1)
+	set.Files = withFile(t, set.Files, next, `DROP TABLE lobby_outbox;`)
+	if err := set.Apply(context.Background(), legacy); err != nil {
+		t.Fatalf("adopt and upgrade legacy schema: %v", err)
+	}
+	history := migrationHistory(t, legacy)
+	if !history[0].Adopted || history[len(history)-1].Name != next || history[len(history)-1].Adopted {
+		t.Fatalf("history = %+v, want version 1 adopted and %s run", history, next)
+	}
+	if legacy.Migrator().HasTable("lobby_outbox") {
+		t.Fatal("lobby_outbox survived the later migration")
+	}
+	if err := set.Apply(context.Background(), legacy); err != nil {
+		t.Fatalf("repeat after adoption: %v", err)
+	}
+}
+
+func TestMigrateRefusesToAdoptPartialSchema(t *testing.T) {
+	legacy := testutil.NewEmptyPostgres(t)
+	executeFile(t, legacy, "testdata/legacy_schema.sql")
+	if err := legacy.Exec(`DROP TABLE lobby_outbox, lobby_create_requests`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err := lobbypostgres.Migrate(context.Background(), legacy)
+	if err == nil || !strings.HasPrefix(err.Error(), historyTable+": ") ||
+		!strings.Contains(err.Error(), "lacks lobby_create_requests, lobby_outbox") {
+		t.Fatalf("migrate partial schema error = %v, want the missing tables named", err)
+	}
+	assertNothingRecorded(t, legacy)
+	if legacy.Migrator().HasTable("lobby_outbox") {
+		t.Fatal("a refused adoption created lobby_outbox")
+	}
+}
+
+func TestMigrateRefusesToAdoptOutdatedSchema(t *testing.T) {
+	legacy := testutil.NewEmptyPostgres(t)
+	executeFile(t, legacy, "testdata/legacy_schema.sql")
+	if err := legacy.Exec(`ALTER TABLE lobby_memberships DROP COLUMN disconnected_until`).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Columns that migration 1 doesn't create are allowed.
+	if err := legacy.Exec(`ALTER TABLE lobby_rooms ADD COLUMN retired text`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err := lobbypostgres.Migrate(context.Background(), legacy)
+	if err == nil || !strings.Contains(err.Error(), "lacks lobby_memberships.disconnected_until,") {
+		t.Fatalf("migrate outdated schema error = %v, want the missing column named", err)
+	}
+	if strings.Contains(err.Error(), "retired") {
+		t.Fatalf("migrate outdated schema error = %v, want extra columns ignored", err)
+	}
+	assertNothingRecorded(t, legacy)
+}
+
+func TestMigrateWarnsAboutNewerVersions(t *testing.T) {
+	db := testutil.NewPostgresFixture(t)
+	set := lobbypostgres.Migrations()
+	newer := set
+	next := fmt.Sprintf("%04d_from_a_newer_build.sql", len(migrationNames(t, set.Files))+1)
+	newer.Files = withFile(t, set.Files, next, `SELECT 1;`)
+	if err := newer.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	if err := set.Apply(context.Background(), db); err != nil {
+		t.Fatalf("older build on a newer schema: %v", err)
+	}
+	if output := logs.String(); !strings.Contains(output, "level=WARN") || !strings.Contains(output, next) {
+		t.Fatalf("log = %q, want a warning naming %s", output, next)
+	}
+}
+
 func TestMigrateAppliesNewMigrationToExistingDatabase(t *testing.T) {
 	db := testutil.NewPostgresFixture(t)
 	player := seedPlayer(t, db)
@@ -102,7 +189,31 @@ ALTER TABLE lobby_rooms ADD CONSTRAINT ck_lobby_rooms_capacity CHECK (capacity B
 }
 
 func TestConcurrentMigrationsOfEmptyDatabaseAllSucceed(t *testing.T) {
-	db := testutil.NewEmptyPostgres(t)
+	t.Run("server default isolation", func(t *testing.T) {
+		assertConcurrentMigrationsSucceed(t, testutil.NewEmptyPostgres(t))
+	})
+	t.Run("server default repeatable read", func(t *testing.T) {
+		// A run that waited on the lock must still see the history the first
+		// run committed.
+		db := testutil.NewEmptyPostgres(t)
+		if err := db.Exec(`DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET default_transaction_isolation = ''repeatable read''', current_database()); END $$`).Error; err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB.SetMaxIdleConns(0) // New connections pick up the default.
+		var isolation string
+		if err := db.Raw(`SHOW default_transaction_isolation`).Scan(&isolation).Error; err != nil || isolation != "repeatable read" {
+			t.Fatalf("default isolation = %q, %v", isolation, err)
+		}
+		assertConcurrentMigrationsSucceed(t, db)
+	})
+}
+
+func assertConcurrentMigrationsSucceed(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	const runs = 4
 	start := make(chan struct{})
 	errs := make(chan error, runs)
@@ -181,6 +292,14 @@ func migrationHistory(t *testing.T, db *gorm.DB) []historyRow {
 		t.Fatal(err)
 	}
 	return rows
+}
+
+// assertNothingRecorded checks that a failed run left no history behind.
+func assertNothingRecorded(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if db.Migrator().HasTable(historyTable) {
+		t.Fatalf("a failed migration left %s behind", historyTable)
+	}
 }
 
 func migrationNames(t *testing.T, files fs.FS) []string {
