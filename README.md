@@ -46,7 +46,7 @@ A host can version its own tables with `postgres.MigrationSet`, which takes its 
 
 ## Temporary browser frontend
 
-The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose Island Battles, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed.
+The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The host application lists its games when it mounts the frontend, so the frontend names none of its own. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose a game, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed.
 
 ## Domain and application services
 

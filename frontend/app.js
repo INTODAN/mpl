@@ -2,9 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const storageKey = "lobby-playground";
-const games = {
-  "island-battles": { name: "Island Battles", resultURL: (lobbyID) => `/game/from-lobby/${encodeURIComponent(lobbyID)}/replay`, playerModule: "/game/demo/example-player.mjs" },
-};
+// The host's game catalog by key, loaded from games.json at startup.
+let games = new Map();
 let saved;
 try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch { /* Start a fresh tab. */ }
 let state = saved && typeof saved === "object" ? saved : {};
@@ -126,7 +125,7 @@ function reportError(error) {
 }
 
 async function action(task) {
-  if (busy) return;
+  if (busy || !games.size) return;
   busy = true;
   notice();
   render();
@@ -264,12 +263,17 @@ function element(tag, className, text) {
   return node;
 }
 
-function displayGeneration() {
+function selectedGame() {
+  return games.get($("game").value);
+}
+
+// Forward the example player's latest state to the game's own result document.
+function displayGameState() {
   if (latestGameState && resultRoom === state.room?.lobby_id) {
-    $("game-result").contentWindow?.postMessage({ type: "island-battles.generation", state: latestGameState }, "*");
+    $("game-result").contentWindow?.postMessage({ type: "lobby.game-state", game_key: state.room.game_key, state: latestGameState }, "*");
   }
 }
-$("game-result").addEventListener("load", displayGeneration);
+$("game-result").addEventListener("load", displayGameState);
 window.addEventListener("message", (event) => {
   const frame = $("game-result");
   // The sandboxed game has an opaque origin; bind sizing to this exact frame.
@@ -280,12 +284,12 @@ window.addEventListener("message", (event) => {
 });
 
 async function ensureGamePlayer() {
-  const moduleURL = games[snapshot?.lobby.game_key]?.playerModule;
-  if (!moduleURL || gamePlayer || playerLoading) return;
+  const example = games.get(snapshot?.lobby.game_key)?.example_player;
+  if (!example || gamePlayer || playerLoading) return;
   playerLoading = true;
   const epoch = roomEpoch;
   try {
-    const { ExamplePlayer } = await import(moduleURL);
+    const { ExamplePlayer } = await import(example.module);
     const client = await ensureRealtime();
     if (epoch !== roomEpoch) return;
     if (!client) return;
@@ -296,10 +300,10 @@ async function ensureGamePlayer() {
       savePending: (pending) => {
         if (epoch === roomEpoch && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
       },
-      onState: (generation) => {
+      onState: (gameState) => {
         if (epoch !== roomEpoch) return;
-        latestGameState = generation;
-        displayGeneration();
+        latestGameState = gameState;
+        displayGameState();
       },
       onStatus: (title, detail) => {
         if (epoch !== roomEpoch) return;
@@ -328,13 +332,13 @@ $("example-toggle").addEventListener("click", () => {
 // The game owns the result document. The lobby only loads and displays it.
 async function loadResult() {
   const room = snapshot.lobby;
-  const resultURL = games[room.game_key]?.resultURL;
+  const resultURL = games.get(room.game_key)?.result_url;
   if (!resultURL || resultRequest || resultRoom === room.id) return;
   const controller = new AbortController();
   resultRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(resultURL(room.id), {
+    const response = await fetch(resultURL.replaceAll("{lobby_id}", encodeURIComponent(room.id)), {
       headers: { Authorization: `Bearer ${state.session.access_token}`, Accept: "text/html" }, signal: controller.signal,
     });
     if (!response.ok) throw new Error(response.status === 404 ? "The game is being prepared. If it doesn’t appear, the host can retry starting it." : "Could not load the game. Retrying…");
@@ -358,14 +362,17 @@ async function loadResult() {
 }
 
 function render() {
+  const demoExample = selectedGame()?.example_player;
+  $("demo-setup").hidden = !demoExample;
+  $("demo-summary").textContent = demoExample?.summary || "";
   $("entry-panel").hidden = Boolean(snapshot);
   $("room-panel").hidden = !snapshot;
-  $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games[snapshot.lobby.game_key]?.resultURL;
+  $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games.has(snapshot.lobby.game_key);
   $("example-controls").hidden = !state.demoPlayer || snapshot?.lobby.phase !== "started";
   $("display-name").readOnly = Boolean(state.session);
   $("change-player").hidden = !state.session;
-  for (const id of ["create-button", "join-button", "change-player", "leave-button", "demo-button"]) $(id).disabled = busy;
-  $("game").disabled = busy;
+  // Nothing can be created or joined until the host's games are known.
+  for (const id of ["create-button", "join-button", "change-player", "leave-button", "demo-button", "game"]) $(id).disabled = busy || !games.size;
   if (!snapshot) return;
 
   const { lobby, teams, members } = snapshot;
@@ -376,7 +383,9 @@ function render() {
   const self = members.find((member) => member.player_id === state.session.player_id);
   const waiting = lobby.phase === "waiting";
   const host = lobby.host_player_id === state.session.player_id;
-  $("room-game").textContent = games[lobby.game_key]?.name || lobby.game_key;
+  const game = games.get(lobby.game_key);
+  $("room-game").textContent = game?.name || lobby.game_key;
+  $("example-strategy").textContent = game?.example_player?.strategy || "";
   $("room-name").textContent = lobby.name;
   $("room-code").value = lobby.join_code;
   $("player-count").textContent = `${members.length} / ${lobby.capacity}`;
@@ -410,7 +419,10 @@ function render() {
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
   $("start-button").disabled = busy || members.length < 2 || !members.every((member) => member.ready && member.team_id && !member.disconnected_until);
-  $("room-hint").textContent = !waiting ? state.demoPlayer ? "Each tab plays one soldier per generation. Keep both tabs open; pause either player to hold the next turn." : "Island Battles waits for player commands through the Python client. The board follows recorded generations live." : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
+  const startedHint = state.demoPlayer && game?.example_player
+    ? `${game.example_player.summary} Keep both tabs open; pause either player to hold the next turn.`
+    : game?.started_hint || "The game has started.";
+  $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
   if (!waiting) { loadResult(); ensureGamePlayer(); }
 }
@@ -435,7 +447,7 @@ async function readyOnTeam(index) {
 }
 
 $("demo-button").addEventListener("click", () => {
-  if (busy) return;
+  if (busy || !selectedGame()?.example_player) return;
   // Open during the click so popup blockers allow it, before any HTTP requests.
   const secondPlayer = window.open("about:blank", "_blank");
   if (secondPlayer) {
@@ -513,6 +525,7 @@ $("copy-code").addEventListener("click", async () => {
   } catch { $("room-code").select(); }
 });
 $("room-code").addEventListener("click", () => $("room-code").select());
+$("game").addEventListener("change", render);
 
 async function restore() {
   const invitation = new URLSearchParams(location.hash.slice(1));
@@ -526,7 +539,7 @@ async function restore() {
     const joinCode = invitation.get("demo");
     $("join-code").value = joinCode;
     await action(async () => {
-      if (!games[game] || !/^[A-Z0-9]{8}$/.test(joinCode)) throw new Error("This demo invitation is invalid.");
+      if (!games.get(game)?.example_player || !/^[A-Z0-9]{8}$/.test(joinCode)) throw new Error("This demo invitation is invalid.");
       $("game").value = game;
       await ensureSession();
       acceptSnapshot(await api("/memberships", "POST", { game_key: game, join_code: joinCode, client_instance_id: state.clientInstanceID }));
@@ -548,4 +561,23 @@ async function restore() {
     scheduleSync(0);
   });
 }
-restore();
+// The host supplies its games; this page names none of its own.
+async function loadGames() {
+  for (;;) {
+    try {
+      const response = await fetch("./games.json", { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const catalog = await response.json();
+      $("game").replaceChildren(...catalog.map((game) => new Option(game.name, game.key)));
+      games = new Map(catalog.map((game) => [game.key, game]));
+      notice();
+      return;
+    } catch {
+      notice("Cannot load the list of games. Retrying…");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+render();
+loadGames().then(restore);

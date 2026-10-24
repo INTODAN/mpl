@@ -1,23 +1,66 @@
 # Temporary lobby frontend
 
-Run `./scripts/dev.sh` from the repository root, then open **http://localhost:8888/lobby/ui/** (or your configured backend address). The script supports Docker Compose or native Podman on Linux; see the [backend setup](../../backend/README.md#run-locally).
+A plain HTML/CSS/JavaScript playground for two players on the generic lobby API. It names no game of its own: the host application lists its games when it mounts the frontend, and the page builds its create form from that list. No frontend build step or CDN access is needed. Assets are embedded in Go; restart/rebuild the host after changing them.
 
-For the quickest test, click **New demo lobby**. It creates Alex on Blue in the current tab, opens Sam on Red in a second tab, marks both ready, and starts automatically. Both tabs run the [example player](../../backend/demo/example-player.mjs): send one soldier from the first available owned castle to the first enemy castle, then finish the turn. Players submit immediately when a generation arrives, without an artificial client delay. Replay playback has its own viewing pace. Failed requests still use retry backoff. If the browser blocks the second tab, use **Open second player tab**. Each demo creates fresh player sessions; using it from an existing lobby leaves that lobby first.
+In this repository, `./scripts/dev.sh` runs the game backend, which serves the frontend at **http://localhost:8888/lobby/ui/** (or your configured backend address). The script supports Docker Compose or native Podman on Linux; see the [backend setup](../../backend/README.md#run-locally) and its [browser demo](../../backend/README.md#browser-demo).
 
-The board follows new generations live. **Pause this player** stops that tab from submitting its next turn; the other player then waits at the turn barrier. **Resume this player** continues. The timeline lets you review previous generations; **Follow live** returns to the newest state. Keep both tabs open. A matching, fully typed Python implementation is in [`examples/player.py`](../../clients/island-battles-python/examples/player.py).
+## Mount it with a game catalog
+
+Mount `frontend.Handler(games)` with its prefix stripped, on the same origin as the `/lobby/v1` API, so guest credentials never need cross-origin configuration. Register the same game keys in the host's lobby policy.
+
+```go
+lobbyFrontend, err := frontend.Handler([]frontend.Game{{
+	Key:       "quiz-demo",
+	Name:      "Quiz",
+	ResultURL: "/quiz/{lobby_id}/result",
+}})
+if err != nil {
+	return err
+}
+router.Handle("/lobby/ui/*", http.StripPrefix("/lobby/ui/", lobbyFrontend))
+```
+
+The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at startup. Each `frontend.Game` has these fields:
+
+| Field | Meaning |
+|---|---|
+| `Key` | The lobby game key. |
+| `Name` | Shown in the create form and above the room. |
+| `ResultURL` | Same-origin path of the game's result document once the lobby starts. `{lobby_id}` is replaced with the lobby ID. |
+| `StartedHint` | Optional. Tells the players of a started lobby how they take part, for example which client submits their turns. |
+| `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
+
+`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and URLs that leave the frontend's origin. A second game needs only another entry; nothing in `lobby/` changes.
+
+## Play
 
 To set up players manually:
 
-1. Enter your name, select **Island Battles**, and create a lobby.
+1. Enter your name, choose a game, and create a lobby.
 2. Open the same page in another tab, browser, or device. Enter another name and join using the eight-character code.
 3. Each player chooses a different team and marks ready. The host can then start the lobby.
 
-New lobbies have two seats. Starting freezes the roster and the host backend launches the selected game. Manually created/joined lobbies wait for commands through the [Island Battles Python client](../../clients/island-battles-python/README.md); only demo invitations enable the browser example player. Disconnected players remain part of the turn barrier. Playback controls change the view, while the example player's pause/resume controls submission. On another device, use the host's reachable address instead of `localhost`.
+New lobbies have two seats, on the teams Blue and Red. Starting freezes the roster and the host backend launches the selected game. On another device, use the host's reachable address instead of `localhost`.
+
+**New demo lobby** appears when the selected game has an example player. It creates Alex on Blue in the current tab, opens Sam on Red in a second tab, marks both ready, and starts automatically. Both tabs run the game's example player. If the browser blocks the second tab, use **Open second player tab**. Each demo creates fresh player sessions; using it from an existing lobby leaves that lobby first. **Pause this player** stops that tab from submitting its next turn, and **Resume this player** continues. Only demo invitations let the example player submit turns; in other lobbies it only follows the game's state.
 
 Guest credentials and the current room are saved in `sessionStorage`, so independently opened tabs can act as separate players and a reload restores the current player. A browser's **Duplicate tab** action may copy that identity; open a fresh tab using the URL to test a second player. **Leave lobby** removes the player immediately. Closing a tab relies on the server's lease expiry and grace period.
 
-The frontend uses the locally vendored official Centrifugo JavaScript SDK. It subscribes to lobby invalidations and the player's generation channel. It fetches a snapshot after subscription/reconnect, and fetches lobby state when its version changes. New generation events carry the full game state directly. There are no recurring snapshot GETs. The only periodic HTTP request is the membership lease heartbeat every fifteen seconds; command and connection failures can retry. No frontend build step or CDN access is needed. Assets are embedded in Go; restart/rebuild the host after changing them. Allow the frontend's origin in Centrifugo (`localhost:8888` is included in `.env.example`).
+## What a game provides
 
-For another host, mount `frontend.Handler()` at `/lobby/ui/` with that prefix stripped, alongside the same-origin `/lobby/v1` API. Game choices live in `index.html`, with display names, result URLs, and optional player modules in `app.js`. Island Battles serves its example module under `/game/demo/`. The host must register game keys in its lobby policy. A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in a sandboxed iframe. Generation updates reach the frame through parent messages; simulation and rendering remain owned by the game backend. The game can report its intrinsic content height with `{type: "game.result-size", height}` to fit summaries and responsive layouts without an inner scrollbar. The lobby accepts sizing messages only from its own result iframe.
+A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in a sandboxed iframe. Simulation and rendering remain owned by the game backend. The page and the frame exchange two messages:
 
-Run the browser player's strategy, deduplication, retry and no-polling checks from the repository root with `node backend/demo/example-player.test.mjs`.
+- The page forwards every state its example player reports to the frame as `{type: "lobby.game-state", game_key, state}`. The frame should accept it only from `window.parent` and only for its own `game_key`.
+- The game can report its intrinsic content height with `{type: "game.result-size", height}` to fit summaries and responsive layouts without an inner scrollbar. The lobby accepts sizing messages only from its own result iframe.
+
+An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, playerID, credential, subscription, enabled, pending, savePending, onState, onStatus}`:
+
+- `credential` is the guest bearer credential, and `subscription` is an unsubscribed Centrifugo subscription to the player's `player:<player_id>` channel.
+- `enabled` says whether the player may submit turns. The page reads `player.enabled` and calls `player.setEnabled(enabled)` for **Pause this player**.
+- `pending` and `savePending(pending)` keep an unfinished request in `sessionStorage` across reloads.
+- `onState(state)` passes game state on to the result frame, and `onStatus(title, detail)` updates the example player panel.
+- The page calls `start()` once the lobby starts and `stop()` when the player leaves the room.
+
+## Realtime
+
+The frontend uses the locally vendored official Centrifugo JavaScript SDK. It subscribes to lobby invalidations, fetches a snapshot after subscription/reconnect, and fetches lobby state when its version changes. There are no recurring snapshot GETs. The only periodic HTTP request is the membership lease heartbeat every fifteen seconds; command and connection failures can retry. Allow the frontend's origin in Centrifugo (`localhost:8888` is included in `.env.example`).

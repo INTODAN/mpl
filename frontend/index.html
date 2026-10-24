@@ -23,8 +23,8 @@
 
     <div id="notice" class="notice" role="alert" hidden></div>
 
-    <section class="card demo-setup" aria-label="Quick demo setup">
-      <div><strong>Watch two example players</strong><p>Alex on Blue, Sam on Red. Each sends one soldier per generation.</p></div>
+    <section id="demo-setup" class="card demo-setup" aria-label="Quick demo setup" hidden>
+      <div><strong>Watch two example players</strong><p>Alex on Blue, Sam on Red. <span id="demo-summary"></span></p></div>
       <button id="demo-button" class="primary" type="button">New demo lobby</button>
       <a id="demo-player-link" target="_blank" rel="noopener" hidden>Open second player tab</a>
     </section>
@@ -35,7 +35,7 @@
           <input id="display-name" maxlength="40" autocomplete="nickname" placeholder="e.g. Alex" required>
         </label>
         <label>Choose a game
-          <select id="game"><option value="island-battles">Island Battles</option></select>
+          <select id="game"></select>
         </label>
         <button id="change-player" class="text-button" type="button" hidden>Change player</button>
       </div>
@@ -85,12 +85,12 @@
     </section>
     <section id="result-panel" class="card game-result" aria-label="Game result" hidden>
       <div id="example-controls" class="example-controls" hidden>
-        <div><span class="eyebrow">Example strategy · One soldier</span><strong id="example-status">Starting example player…</strong><p id="example-detail">Send one soldier to the first enemy castle, then finish the turn.</p></div>
+        <div><span class="eyebrow">Example strategy · <span id="example-strategy"></span></span><strong id="example-status">Starting example player…</strong><p id="example-detail"></p></div>
         <button id="example-toggle" class="secondary" type="button">Pause this player</button>
       </div>
       <p id="result-status" role="status">Preparing the game…</p>
       <button id="retry-game" class="secondary" type="button" hidden>Retry starting game</button>
-      <iframe id="game-result" title="Game replay" sandbox="allow-scripts" hidden></iframe>
+      <iframe id="game-result" title="Game result" sandbox="allow-scripts" hidden></iframe>
     </section>
     <footer class="page-footer">One lobby. Two players. Let’s get started.</footer>
   </main>
