@@ -73,7 +73,7 @@ h3 { font-size: 1rem; margin: 0; }
 .example-controls .eyebrow { margin-bottom: 8px; }
 .example-controls p { margin: 6px 0 0; font-size: .82rem; }
 .example-controls button { white-space: nowrap; }
-#game-result { display: block; width: 100%; height: 630px; border: 0; }
+#game-result { display: block; width: 100%; height: 646px; border: 0; }
 @media (max-width: 650px) {
   main { padding: 24px 18px; }
   .intro { margin-top: 38px; }
