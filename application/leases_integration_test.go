@@ -2,14 +2,11 @@ package application_test
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
 	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
 )
 
 func TestHeartbeatDuringGracePreservesMembership(t *testing.T) {
@@ -35,10 +32,10 @@ func TestHeartbeatDuringGracePreservesMembership(t *testing.T) {
 		t.Fatal("grace heartbeat changed membership or returned old version", result, after)
 	}
 	version := aggregate.Lobby.Version
-	jobs := fixture.jobs(t, "")
+	pushes := fixture.pushed(allPushes)
 	fixture.clock.Set(fixture.origin.Add(46 * time.Second))
 	result, err = fixture.service.Heartbeat(context.Background(), fixture.host, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: fixture.clientID, MembershipGeneration: 1})
-	if err != nil || result.Version != version || fixture.jobs(t, "") != jobs || !result.LeaseExpiresAt.Equal(fixture.origin.Add(91*time.Second)) {
+	if err != nil || result.Version != version || fixture.pushed(allPushes) != pushes || !result.LeaseExpiresAt.Equal(fixture.origin.Add(91*time.Second)) {
 		t.Fatal("lease-only heartbeat invalidated", err)
 	}
 }
@@ -48,7 +45,7 @@ func TestHeartbeatAtGraceBoundaryRequiresJoin(t *testing.T) {
 	_, err := fixture.service.Heartbeat(context.Background(), fixture.host, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: fixture.clientID, MembershipGeneration: 1})
 	requireDomainError(t, err, domain.ErrStaleMembership)
 	aggregate := fixture.read(t)
-	if aggregate.Members[0].Active || aggregate.Lobby.Phase != domain.PhaseClosed || aggregate.Lobby.Version != 2 || fixture.jobs(t, domain.JobRevocation) != 1 {
+	if aggregate.Members[0].Active || aggregate.Lobby.Phase != domain.PhaseClosed || aggregate.Lobby.Version != 2 || fixture.pushed(revocationPushes) != 1 {
 		t.Fatal("boundary heartbeat revived membership or lost cleanup")
 	}
 }
@@ -103,19 +100,11 @@ func TestReleaseAfterNaturalExpiryKeepsOriginalDeadlinePostgres(t *testing.T) {
 	if aggregate.Members[0].DisconnectedUntil == nil || !aggregate.Members[0].DisconnectedUntil.Equal(deadline) {
 		t.Fatal("release after expiry extended grace")
 	}
-	freshStore, err := postgres.NewStore(fixture.db, fixture.clock, domain.CryptoIdentifiers{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sweeper, err := application.NewSweeper(freshStore, fixture.clock, fixture.policy, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// A restarted backend has only the persisted deadlines. The next proxy call
+	// for the room applies them.
 	fixture.clock.Set(fixture.origin.Add(time.Hour))
-	if err := sweeper.RunOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if fixture.read(t).Members[0].Active {
+	requireDomainError(t, fixture.proxy(t, fixture.newStore(t))(fixture.host), domain.ErrPermissionDenied)
+	if fixture.read(t).Members[0].Active || fixture.pushed(revocationPushes) != 1 {
 		t.Fatal("restart granted fresh grace")
 	}
 }
@@ -163,6 +152,85 @@ func TestGraceRetainsLobbyAndTeamCapacity(t *testing.T) {
 		t.Fatal("expiry lost capacity/host transition")
 	}
 }
+
+// Without a sweeper, a connected peer's heartbeats apply and push the expiry of
+// a member who went quiet.
+func TestPeerHeartbeatsPushLeaseAndGraceExpiry(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	guest := fixture.player(t, "Guest")
+	_, guestClient := fixture.join(t, guest)
+	heartbeat := func(offset time.Duration) {
+		t.Helper()
+		fixture.clock.Set(fixture.origin.Add(offset))
+		if _, err := fixture.service.Heartbeat(context.Background(), guest, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: guestClient, MembershipGeneration: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	heartbeat(30 * time.Second)
+	if fixture.pushed(invalidationPushes) != 2 {
+		t.Fatal("lease renewal pushed an invalidation")
+	}
+	heartbeat(50 * time.Second)
+	host := memberFor(t, fixture.read(t), fixture.host.PlayerID)
+	if host.DisconnectedUntil == nil || !host.DisconnectedUntil.Equal(fixture.origin.Add(105*time.Second)) || fixture.pushed(invalidationPushes) != 3 {
+		t.Fatal("host lease expiry was not applied and pushed")
+	}
+	heartbeat(90 * time.Second)
+	if fixture.pushed(allPushes) != 3 {
+		t.Fatal("grace without change pushed")
+	}
+	heartbeat(105 * time.Second)
+	aggregate := fixture.read(t)
+	if memberFor(t, aggregate, fixture.host.PlayerID).Active || *aggregate.Lobby.HostPlayerID != guest.PlayerID || fixture.pushed(invalidationPushes) != 4 || fixture.pushed(revocationPushes) != 1 {
+		t.Fatal("host grace expiry was not applied and pushed")
+	}
+}
+
+// A join that finds its own expired membership commits the expiry and the new
+// membership together, so the player's subscription must not be revoked.
+func TestRejoinAfterGraceDoesNotRevokeTheNewMembership(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	guest := fixture.player(t, "Guest")
+	_, guestClient := fixture.join(t, guest)
+	for _, offset := range []time.Duration{30 * time.Second, 60 * time.Second, 90 * time.Second} {
+		fixture.clock.Set(fixture.origin.Add(offset))
+		if _, err := fixture.service.Heartbeat(context.Background(), guest, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: guestClient, MembershipGeneration: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixture.clock.Set(fixture.origin.Add(105 * time.Second))
+	fixture.join(t, fixture.host)
+	host := memberFor(t, fixture.read(t), fixture.host.PlayerID)
+	if !host.Active || host.Generation != 2 || fixture.pushed(revocationPushes) != 0 {
+		t.Fatal("rejoin revoked the new membership", host, fixture.pushed(revocationPushes))
+	}
+}
+
+// A push can wait between retries. If the expired player rejoins meanwhile,
+// the late unsubscribe must not drop their new subscription.
+func TestLateRevocationSkipsAPlayerWhoRejoined(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	guest := fixture.player(t, "Guest")
+	_, guestClient := fixture.join(t, guest)
+	heartbeat := func(offset time.Duration) {
+		t.Helper()
+		fixture.clock.Set(fixture.origin.Add(offset))
+		if _, err := fixture.service.Heartbeat(context.Background(), guest, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: guestClient, MembershipGeneration: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, offset := range []time.Duration{30 * time.Second, 60 * time.Second, 90 * time.Second} {
+		heartbeat(offset)
+	}
+	fixture.pushes.beforeRevoke = func() { fixture.join(t, fixture.host) }
+	// The guest's heartbeat expires the host, and its push is still pending
+	// when the host joins again.
+	heartbeat(105 * time.Second)
+	host := memberFor(t, fixture.read(t), fixture.host.PlayerID)
+	if !host.Active || host.Generation != 2 || fixture.pushed(revocationPushes) != 0 {
+		t.Fatal("late revocation dropped the rejoined player", host, fixture.pushed(revocationPushes))
+	}
+}
 func TestStartedExpiryPreservesRosterPostgres(t *testing.T) {
 	fixture := newServiceFixture(t, 3)
 	fixture.readyPair(t)
@@ -170,16 +238,12 @@ func TestStartedExpiryPreservesRosterPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A late heartbeat is rejected but still commits the expiry it finds.
 	fixture.clock.Set(fixture.origin.Add(time.Hour))
-	sweeper, err := application.NewSweeper(fixture.store, fixture.clock, fixture.policy, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sweeper.RunOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	_, err = fixture.service.Heartbeat(context.Background(), fixture.host, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: fixture.clientID, MembershipGeneration: 1})
+	requireDomainError(t, err, domain.ErrStaleMembership)
 	aggregate := fixture.read(t)
-	if aggregate.Lobby.Phase != domain.PhaseStarted || aggregate.Lobby.HostPlayerID != nil || activeCount(aggregate) != 0 || !reflect.DeepEqual(aggregate.StartRoster, started.StartRoster) || fixture.jobs(t, domain.JobRevocation) != 2 {
+	if aggregate.Lobby.Phase != domain.PhaseStarted || aggregate.Lobby.HostPlayerID != nil || activeCount(aggregate) != 0 || !reflect.DeepEqual(aggregate.StartRoster, started.StartRoster) || fixture.pushed(revocationPushes) != 2 {
 		t.Fatal("started expiry changed game roster")
 	}
 	returned, _ := fixture.join(t, fixture.host)
@@ -187,111 +251,52 @@ func TestStartedExpiryPreservesRosterPostgres(t *testing.T) {
 		t.Fatal("expired roster identity failed rejoin")
 	}
 }
-func TestConcurrentHeartbeatAndSweepSerialize(t *testing.T) {
+func TestConcurrentHeartbeatAndProxyCallSerialize(t *testing.T) {
 	for _, offset := range []time.Duration{105*time.Second - time.Microsecond, 105 * time.Second} {
 		t.Run(offset.String(), func(t *testing.T) {
 			fixture := newServiceFixture(t, 2)
 			fixture.clock.Set(fixture.origin.Add(offset))
-			sweeper, err := application.NewSweeper(fixture.store, fixture.clock, fixture.policy, 10)
-			if err != nil {
-				t.Fatal(err)
-			}
+			proxy := fixture.proxy(t, fixture.newStore(t))
 			barrier := make(chan struct{})
 			heartbeat := make(chan error, 1)
-			sweep := make(chan error, 1)
+			subscription := make(chan error, 1)
 			go func() {
 				<-barrier
 				_, err := fixture.service.Heartbeat(context.Background(), fixture.host, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: fixture.clientID, MembershipGeneration: 1})
 				heartbeat <- err
 			}()
-			go func() { <-barrier; sweep <- sweeper.RunOnce(context.Background()) }()
+			go func() { <-barrier; subscription <- proxy(fixture.host) }()
 			close(barrier)
-			heartbeatErr := <-heartbeat
-			if err := <-sweep; err != nil {
-				t.Fatal(err)
-			}
+			heartbeatErr, subscriptionErr := <-heartbeat, <-subscription
 			aggregate := fixture.read(t)
 			if offset < 105*time.Second {
-				if heartbeatErr != nil || !aggregate.Members[0].Active || aggregate.Members[0].DisconnectedUntil != nil || fixture.jobs(t, domain.JobRevocation) != 0 {
-					t.Fatal("pre-deadline renewal and expiry both committed", heartbeatErr)
+				if heartbeatErr != nil || subscriptionErr != nil || !aggregate.Members[0].Active || aggregate.Members[0].DisconnectedUntil != nil || fixture.pushed(revocationPushes) != 0 {
+					t.Fatal("pre-deadline renewal and expiry both committed", heartbeatErr, subscriptionErr)
 				}
 			} else {
 				requireDomainError(t, heartbeatErr, domain.ErrStaleMembership)
-				if aggregate.Members[0].Active || fixture.jobs(t, domain.JobRevocation) != 1 || fixture.jobs(t, domain.JobInvalidation) != 2 {
+				requireDomainError(t, subscriptionErr, domain.ErrPermissionDenied)
+				if aggregate.Members[0].Active || fixture.pushed(revocationPushes) != 1 || fixture.pushed(invalidationPushes) != 2 {
 					t.Fatal("deadline cleanup duplicated or membership revived")
 				}
 			}
 		})
 	}
 }
-func TestTwoSweepersDoNotDuplicateExpiry(t *testing.T) {
+func TestTwoInstancesProxyCallsDoNotDuplicateExpiry(t *testing.T) {
 	fixture := newServiceFixture(t, 2)
 	fixture.clock.Set(fixture.origin.Add(105 * time.Second))
-	other, err := postgres.NewStore(fixture.db, fixture.clock, domain.CryptoIdentifiers{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	barrier := make(chan struct{})
 	results := make(chan error, 2)
-	for _, store := range []domain.Store{fixture.store, other} {
-		sweeper, err := application.NewSweeper(store, fixture.clock, fixture.policy, 10)
-		if err != nil {
-			t.Fatal(err)
-		}
-		go func() { <-barrier; results <- sweeper.RunOnce(context.Background()) }()
+	for range 2 {
+		proxy := fixture.proxy(t, fixture.newStore(t))
+		go func() { <-barrier; results <- proxy(fixture.host) }()
 	}
 	close(barrier)
 	for range 2 {
-		if err := <-results; err != nil {
-			t.Fatal(err)
-		}
+		requireDomainError(t, <-results, domain.ErrPermissionDenied)
 	}
-	if fixture.read(t).Lobby.Version != 2 || fixture.jobs(t, domain.JobInvalidation) != 2 || fixture.jobs(t, domain.JobRevocation) != 1 {
-		t.Fatal("two sweepers duplicated expiry")
+	if fixture.read(t).Lobby.Version != 2 || fixture.pushed(invalidationPushes) != 2 || fixture.pushed(revocationPushes) != 1 {
+		t.Fatal("two instances duplicated expiry")
 	}
-}
-
-type failingScopeStore struct {
-	domain.Store
-	scope domain.Scope
-}
-
-func (store failingScopeStore) Transact(ctx context.Context, scope domain.Scope, mutation domain.Mutation) (domain.Aggregate, error) {
-	if scope == store.scope {
-		return domain.Aggregate{}, domain.ErrUnavailable
-	}
-	return store.Store.Transact(ctx, scope, mutation)
-}
-func TestSweepCancellationAndPerRoomFailure(t *testing.T) {
-	fixture := newServiceFixture(t, 2)
-	request := fixture.request
-	request.RequestID = integrationID(t)
-	second, err := fixture.service.Create(context.Background(), fixture.host, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture.clock.Set(fixture.origin.Add(time.Hour))
-	sweeper, err := application.NewSweeper(failingScopeStore{fixture.store, fixture.scope}, fixture.clock, fixture.policy, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	failures := 0
-	for range 2 {
-		err := sweeper.RunOnce(context.Background())
-		if errors.Is(err, domain.ErrUnavailable) {
-			failures++
-		} else if err != nil {
-			t.Fatal(err)
-		}
-	}
-	unaffected, err := fixture.store.Read(context.Background(), second.Lobby.Scope())
-	if err != nil || failures != 1 || unaffected.Lobby.Phase != domain.PhaseClosed || !fixture.read(t).Members[0].Active {
-		t.Fatal("failed scope starved independent room", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := sweeper.RunOnce(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatal("cancellation not propagated", err)
-	}
-	sweeper.Run(ctx, func(error) { t.Fatal("canceled run scheduled work") })
 }

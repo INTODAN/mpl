@@ -2,7 +2,6 @@ package postgres_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"sync/atomic"
@@ -43,7 +42,7 @@ func newStoreFixture(t *testing.T) *storeFixture {
 	t.Helper()
 	db := testutil.NewPostgresFixture(t)
 	clock := storeClock{now: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)}
-	store, err := postgres.NewStore(db, clock, domain.CryptoIdentifiers{})
+	store, err := postgres.NewStore(db, clock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,24 +186,19 @@ func TestStoreInvokesCallbackOnce(t *testing.T) {
 	}
 }
 
-type failingStoreIDs struct{ domain.CryptoIdentifiers }
-
-func (failingStoreIDs) UUID() (string, error) { return "", errors.New("injected event ID failure") }
-func TestStoreRollsBackAggregateAndOutbox(t *testing.T) {
+func TestStoreRollsBackAggregateWithInvalidRevocation(t *testing.T) {
 	fixture := newStoreFixture(t)
-	store, err := postgres.NewStore(fixture.db, fixture.clock, failingStoreIDs{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	before := readStore(t, fixture)
-	_, err = store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
+	otherRoom := fixture.aggregate.Lobby.Scope()
+	otherRoom.LobbyID = storeUUID(t)
+	_, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
 		aggregate.Lobby.Name = "discarded"
 		aggregate.Members[0].Ready = true
 		aggregate.Leases[0].ExpiresAt = fixture.clock.now.Add(time.Hour)
-		return domain.Change{PublicChanged: true}, nil
+		return domain.Change{PublicChanged: true, Revocations: []domain.RevocationIntent{{PlayerID: fixture.principal.PlayerID, Scope: otherRoom, Generation: 1}}}, nil
 	})
-	if !errors.Is(err, domain.ErrUnavailable) || !reflect.DeepEqual(before, readStore(t, fixture)) || storeCount(t, fixture.db, &postgres.OutboxRecord{}) != 1 {
-		t.Fatal("failed event did not roll back", err)
+	if !errors.Is(err, domain.ErrInvalidInput) || !reflect.DeepEqual(before, readStore(t, fixture)) {
+		t.Fatal("invalid revocation did not roll back", err)
 	}
 }
 func TestStorePersistsFalseZeroNull(t *testing.T) {
@@ -240,36 +234,19 @@ func TestStoreLeaseOnlyMutationDoesNotInvalidate(t *testing.T) {
 		aggregate.Leases[0].ExpiresAt = deadline
 		return domain.Change{PrivateChanged: true}, nil
 	})
-	if err != nil || current.Lobby.Version != 1 || !readStore(t, fixture).Leases[0].ExpiresAt.Equal(deadline) || storeCount(t, fixture.db, &postgres.OutboxRecord{}) != 1 {
+	if err != nil || current.Lobby.Version != 1 || !readStore(t, fixture).Leases[0].ExpiresAt.Equal(deadline) {
 		t.Fatal("private mutation invalidated", err)
 	}
 }
-func TestStorePublicMutationWritesOneInvalidation(t *testing.T) {
+func TestStorePublicMutationIncrementsVersionOnce(t *testing.T) {
 	fixture := newStoreFixture(t)
 	current, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
 		aggregate.Lobby.Name = "Changed"
 		aggregate.Members[0].Ready = true
 		return domain.Change{PublicChanged: true, PrivateChanged: true}, nil
 	})
-	if err != nil || current.Lobby.Version != 2 || storeCount(t, fixture.db, &postgres.OutboxRecord{}) != 2 {
-		t.Fatal("wrong version/events", err)
-	}
-	jobs, err := fixture.store.Claim(context.Background(), domain.ClaimRequest{Now: fixture.clock.now, Limit: 10, ClaimDuration: time.Minute})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, job := range jobs {
-		payload, err := json.Marshal(job.Invalidation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var fields map[string]any
-		if err := json.Unmarshal(payload, &fields); err != nil {
-			t.Fatal(err)
-		}
-		if len(fields) != 6 || fields["type"] != "lobby.changed" || fields["schema_version"] != float64(1) {
-			t.Fatal("invalid event schema", string(payload))
-		}
+	if err != nil || current.Lobby.Version != 2 || readStore(t, fixture).Lobby.Version != 2 {
+		t.Fatal("wrong version", err)
 	}
 }
 func TestStoreMultipleRevocationsAreAtomic(t *testing.T) {
@@ -299,13 +276,6 @@ func TestStoreMultipleRevocationsAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var records []postgres.OutboxRecord
-	if err := fixture.db.Where(&postgres.OutboxRecord{Kind: string(domain.JobRevocation)}).Find(&records).Error; err != nil {
-		t.Fatal(err)
-	}
-	if len(records) != 2 || storeCount(t, fixture.db, &postgres.OutboxRecord{}) != 5 {
-		t.Fatal("missing atomic revocations")
-	}
 	for _, member := range readStore(t, fixture).Members {
 		if member.Active {
 			t.Fatal("member not deactivated")
@@ -334,7 +304,7 @@ func TestCreateRequestConcurrentReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !reflect.DeepEqual(first, second) || storeCount(t, fixture.db, &postgres.RoomRecord{}) != 2 || storeCount(t, fixture.db, &postgres.OutboxRecord{}) != 2 {
+	if !reflect.DeepEqual(first, second) || storeCount(t, fixture.db, &postgres.RoomRecord{}) != 2 {
 		t.Fatal("replay duplicated creation or response differs", first, second)
 	}
 }
@@ -382,55 +352,5 @@ func TestCreateCodeCollisionRollsBack(t *testing.T) {
 	aggregate.Lobby.JoinCode = "23456789"
 	if _, err := fixture.store.Create(context.Background(), fixture.principal, request, aggregate); err != nil {
 		t.Fatal("fresh attempt failed", err)
-	}
-}
-func TestDueScopesUsesCurrentGenerationEffectiveExpiry(t *testing.T) {
-	fixture := newStoreFixture(t)
-	now := fixture.clock.now
-	_, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
-		aggregate.Members[0].Generation = 2
-		aggregate.Leases[0].ExpiresAt = now.Add(time.Hour)
-		aggregate.Leases = append(aggregate.Leases, domain.Lease{LobbyID: aggregate.Lobby.ID, PlayerID: fixture.principal.PlayerID, Generation: 2, ClientInstanceID: storeUUID(t), ExpiresAt: now.Add(-time.Minute), ReleasedAt: storePointer(now.Add(time.Hour))})
-		return domain.Change{PublicChanged: true}, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scopes, err := fixture.store.DueScopes(context.Background(), now, 1)
-	if err != nil || len(scopes) != 1 || scopes[0] != fixture.aggregate.Lobby.Scope() {
-		t.Fatal("old generation or late release concealed due room", scopes, err)
-	}
-	_, err = fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
-		aggregate.Members[0].DisconnectedUntil = storePointer(now.Add(time.Minute))
-		return domain.Change{PublicChanged: true}, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scopes, err = fixture.store.DueScopes(context.Background(), now, 1)
-	if err != nil || len(scopes) != 0 {
-		t.Fatal("grace room returned before deadline", scopes, err)
-	}
-	scopes, err = fixture.store.DueScopes(context.Background(), now.Add(time.Minute), 1)
-	if err != nil || len(scopes) != 1 {
-		t.Fatal("exact grace deadline missing", scopes, err)
-	}
-}
-func TestDueScopesRotatesFailedCandidates(t *testing.T) {
-	fixture := newStoreFixture(t)
-	request, aggregate := storeCandidate(t, fixture)
-	if _, err := fixture.store.Create(context.Background(), fixture.principal, request, aggregate); err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]bool{}
-	for range 2 {
-		scopes, err := fixture.store.DueScopes(context.Background(), fixture.clock.now.Add(time.Hour), 1)
-		if err != nil || len(scopes) != 1 {
-			t.Fatal(scopes, err)
-		}
-		seen[scopes[0].LobbyID] = true
-	}
-	if len(seen) != 2 {
-		t.Fatal("failed first scope starved second")
 	}
 }

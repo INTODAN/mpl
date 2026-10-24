@@ -74,9 +74,6 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 		if err := persistChildren(tx, aggregate, true); err != nil {
 			return err
 		}
-		if err := store.insertJobs(tx, aggregate.Lobby, domain.Change{PublicChanged: true}); err != nil {
-			return err
-		}
 		stored, err := loadAggregate(tx, aggregate.Lobby.Scope(), false)
 		if err != nil {
 			return err

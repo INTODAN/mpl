@@ -100,14 +100,9 @@ type Invalidation struct {
 	Type          string `json:"type"`
 }
 
-// RevocationIntent has no random identifier: the store assigns EventID atomically.
+// RevocationIntent unsubscribes a player from the room channel once the change
+// that deactivated this membership generation has committed.
 type RevocationIntent struct {
-	PlayerID   string `json:"player_id"`
-	Scope      Scope  `json:"scope"`
-	Generation int64  `json:"generation"`
-}
-type Revocation struct {
-	EventID    string `json:"event_id"`
 	PlayerID   string `json:"player_id"`
 	Scope      Scope  `json:"scope"`
 	Generation int64  `json:"generation"`
@@ -158,41 +153,3 @@ type ConnectionToken struct {
 	WebsocketURL string    `json:"websocket_url"`
 }
 type SubscriptionAuthorization struct{ AllowedUntil time.Time }
-type JobKind string
-
-const (
-	JobInvalidation JobKind = "invalidation"
-	JobRevocation   JobKind = "revocation"
-)
-
-// DeliveryJob is a discriminated union: exactly the payload matching Kind is set.
-// ID and payload EventID are stable across attempts. Claim tokens are not event IDs.
-type DeliveryJob struct {
-	ID            string
-	Kind          JobKind
-	Invalidation  *Invalidation
-	Revocation    *Revocation
-	ClaimToken    string
-	ClaimDeadline time.Time
-	Attempts      int
-	NextAttemptAt time.Time
-	LastError     string
-	CreatedAt     time.Time
-}
-type ClaimRequest struct {
-	Now           time.Time
-	Limit         int
-	ClaimDuration time.Duration
-}
-type RetryRequest struct {
-	JobID         string
-	ClaimToken    string
-	Now           time.Time
-	NextAttemptAt time.Time
-	// ErrorSummary must be sanitized; never persist credentials or raw SQL errors.
-	ErrorSummary string
-}
-type MembershipState struct {
-	Generation int64
-	Active     bool
-}

@@ -18,7 +18,6 @@ var SchemaTables = []string{
 	"lobby_leases",
 	"lobby_start_roster",
 	"lobby_create_requests",
-	"lobby_outbox",
 }
 
 //go:embed migrations/*.sql

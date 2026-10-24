@@ -64,7 +64,7 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 		if err := persistChildren(tx, aggregate, false); err != nil {
 			return err
 		}
-		if err := store.insertJobs(tx, aggregate.Lobby, domain.MergeChanges(change)); err != nil {
+		if err := validateRevocations(aggregate.Lobby.Scope(), change); err != nil {
 			return err
 		}
 		// Reload the committed representation's ordering and PostgreSQL timestamp
@@ -109,29 +109,13 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool) error
 	}
 	return nil
 }
-func (store *Store) insertJobs(tx *gorm.DB, room domain.Lobby, change domain.Change) error {
-	now := store.clock.Now().UTC()
-	if change.PublicChanged {
-		id, err := store.identifiers.UUID()
-		if err != nil {
-			return err
-		}
-		record := OutboxRecord{ID: id, Kind: string(domain.JobInvalidation), EventID: id, GameKey: room.GameKey, LobbyID: &room.ID, Version: &room.Version, NextAttemptAt: now, CreatedAt: now}
-		if err := tx.Create(&record).Error; err != nil {
-			return err
-		}
-	}
+
+// validateRevocations rejects a revocation for another room or an invalid
+// membership before commit, because it is pushed only after commit.
+func validateRevocations(scope domain.Scope, change domain.Change) error {
 	for _, intent := range change.Revocations {
-		if intent.Scope != room.Scope() || intent.Generation < 1 || domain.ValidateUUID(intent.PlayerID) != nil {
+		if intent.Scope != scope || intent.Generation < 1 || domain.ValidateUUID(intent.PlayerID) != nil {
 			return domain.NewError(domain.CodeInvalidInput, "invalid revocation intent")
-		}
-		id, err := store.identifiers.UUID()
-		if err != nil {
-			return err
-		}
-		record := OutboxRecord{ID: id, Kind: string(domain.JobRevocation), EventID: id, GameKey: room.GameKey, LobbyID: &room.ID, PlayerID: &intent.PlayerID, Generation: &intent.Generation, NextAttemptAt: now, CreatedAt: now}
-		if err := tx.Create(&record).Error; err != nil {
-			return err
 		}
 	}
 	return nil

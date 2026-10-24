@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"islandBattles/lobby/domain"
 
@@ -86,45 +85,4 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		aggregate.StartRoster = append(aggregate.StartRoster, domain.StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder})
 	}
 	return aggregate, nil
-}
-
-// DueScopes uses stored current-generation effective expiries, not sweep time,
-// and rotates a bounded cursor so a failing room cannot starve later candidates.
-func (store *Store) DueScopes(ctx context.Context, now time.Time, limit int) ([]domain.Scope, error) {
-	if limit < 1 || limit > 1000 {
-		return nil, domain.NewError(domain.CodeInvalidInput, "due scope limit must be between 1 and 1000")
-	}
-	store.dueMutex.Lock()
-	defer store.dueMutex.Unlock()
-	query := store.db.WithContext(ctx).Model(&RoomRecord{}).Where(clause.Neq{Column: "phase", Value: string(domain.PhaseClosed)}).Where(clause.Expr{SQL: `EXISTS (
- SELECT 1 FROM lobby_memberships AS membership
- WHERE membership.lobby_id = lobby_rooms.id AND membership.active = TRUE
- AND (membership.disconnected_until IS NULL OR membership.disconnected_until <= ?)
- AND NOT EXISTS (SELECT 1 FROM lobby_leases AS lease
- WHERE lease.lobby_id = membership.lobby_id AND lease.player_id = membership.player_id
- AND lease.generation = membership.generation
- AND LEAST(lease.expires_at, COALESCE(lease.released_at, lease.expires_at)) > ?))`, Vars: []any{now.UTC(), now.UTC()}})
-	var rooms []RoomRecord
-	first := query.Session(&gorm.Session{})
-	if store.dueCursor != "" {
-		first = first.Where(clause.Gt{Column: "id", Value: store.dueCursor})
-	}
-	if err := first.Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}}).Limit(limit).Find(&rooms).Error; err != nil {
-		return nil, storageError(err)
-	}
-	if len(rooms) < limit && store.dueCursor != "" {
-		var wrapped []RoomRecord
-		if err := query.Session(&gorm.Session{}).Where(clause.Lte{Column: "id", Value: store.dueCursor}).Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}}).Limit(limit - len(rooms)).Find(&wrapped).Error; err != nil {
-			return nil, storageError(err)
-		}
-		rooms = append(rooms, wrapped...)
-	}
-	scopes := make([]domain.Scope, 0, len(rooms))
-	for _, room := range rooms {
-		scopes = append(scopes, domain.Scope{GameKey: room.GameKey, LobbyID: room.ID})
-	}
-	if len(rooms) > 0 {
-		store.dueCursor = rooms[len(rooms)-1].ID
-	}
-	return scopes, nil
 }

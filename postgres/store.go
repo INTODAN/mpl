@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"errors"
-	"sync"
 
 	"islandBattles/lobby/domain"
 
@@ -10,24 +9,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// Store implements aggregate transactions and durable delivery claims. All
-// network delivery occurs outside this adapter after Claim has committed.
+// Store implements aggregate transactions. It holds only state: pushing a
+// committed change to Centrifugo happens outside this adapter.
 type Store struct {
-	db          *gorm.DB
-	clock       domain.Clock
-	identifiers domain.IdentifierSource
-	dueMutex    sync.Mutex
-	dueCursor   string
+	db    *gorm.DB
+	clock domain.Clock
 }
 
 var _ domain.Store = (*Store)(nil)
-var _ domain.DeliveryStore = (*Store)(nil)
 
-func NewStore(db *gorm.DB, clock domain.Clock, identifiers domain.IdentifierSource) (*Store, error) {
-	if db == nil || clock == nil || identifiers == nil {
+func NewStore(db *gorm.DB, clock domain.Clock) (*Store, error) {
+	if db == nil || clock == nil {
 		return nil, domain.NewError(domain.CodeInvalidInput, "store dependencies are required")
 	}
-	return &Store{db: db, clock: clock, identifiers: identifiers}, nil
+	return &Store{db: db, clock: clock}, nil
 }
 func storageError(err error) error {
 	if err == nil {

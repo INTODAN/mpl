@@ -6,13 +6,12 @@ This directory is a self-contained component of the Island Battles monorepo. It 
 lobby/
   go.mod, go.sum       Independent Go module
   domain/             Types, ports, errors, policies, and pure state rules
-  application/        Membership commands, teams, leases, binding, and sweeping
+  application/        Membership commands, teams, leases, binding, and publishing
   auth/               Guest credentials and connection tokens
   postgres/           Persistence and versioned schema migrations
   httpapi/            HTTP routes and DTOs
   frontend/           Temporary browser playground and embedded asset handler
-  realtime/           Centrifugo authorization and transport
-  delivery/           Durable event delivery
+  realtime/           Centrifugo authorization and the push publisher
   internal/           Shared implementation helpers and test fixtures
   api/                OpenAPI and event schema artifacts
   cmd/                Offline OpenAPI exporter
@@ -50,9 +49,9 @@ The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for
 
 ## Domain and application services
 
-`domain/` owns records, request types, errors, policies, state helpers, and repository ports. `application/` owns commands and coordinates those contracts: `membership.go` groups create/join/snapshot, while teams, lifecycle, leases, binding, and sweeping have focused files. Tests live beside the package they exercise.
+`domain/` owns records, request types, errors, policies, state helpers, and repository ports. `application/` owns commands and coordinates those contracts: `membership.go` groups create/join/snapshot, while teams, lifecycle, leases, binding, and publishing have focused files. Tests live beside the package they exercise.
 
-Application services depend on domain contracts. Auth, PostgreSQL, HTTP, realtime, and delivery adapters depend inward on the domain and, where needed, application services. Neither inner package imports an adapter, Huma/GORM/gocent, or the game backend. Shared nullable-field helpers stay private under `internal/optional`. Importing a package performs no I/O.
+Application services depend on domain contracts. Auth, PostgreSQL, HTTP, and realtime adapters depend inward on the domain and, where needed, application services. Neither inner package imports an adapter, Huma/GORM/gocent, or the game backend. Shared nullable-field helpers stay private under `internal/optional`. Importing a package performs no I/O.
 
 Service construction and transaction helpers live in `application`:
 
@@ -71,7 +70,7 @@ func NormalizeExpired(aggregate *Aggregate, now time.Time, policy Policy) (Chang
 
 `TransactNormalized` performs one `Store.Transact`. Inside its callback it captures one UTC clock value, normalizes the original aggregate, then runs the command against `aggregate.DeepCopy()`. A successful command replaces the aggregate and returns `MergeChanges(cleanup, commandChange)`. A rejected command discards its copy, returns cleanup with a nil callback error so cleanup commits, then returns the captured command error after commit. A store failure wins over that captured error. A normalization error rolls back. Callbacks must contain no network calls or external side effects. `runMutation` and exported `TransactNormalized` share a private `transactNormalizedTimed` helper. Service callbacks receive the same captured UTC time used for normalization, so no clock boundary can change halfway through a command; realtime authorization uses the exported helper.
 
-For example, at an expired host's grace deadline, normalization deactivates that host, queues a generation-specific revocation and transfers host. Its attempted start is rejected after cleanup; the store nevertheless commits expiry and one new version/invalidation. No phase/start-roster edits from the rejected command survive. On successful start, any cleanup and the start share one version increment. Build every response from the post-commit returned aggregate.
+For example, at an expired host's grace deadline, normalization deactivates that host, records a generation-specific revocation and transfers host. Its attempted start is rejected after cleanup; the store nevertheless commits expiry and one new version/invalidation. No phase/start-roster edits from the rejected command survive. On successful start, any cleanup and the start share one version increment. Build every response from the post-commit returned aggregate.
 
 Frozen pure helpers:
 
@@ -104,19 +103,27 @@ BuildSnapshot(Aggregate, string) (Snapshot, error)
 
 The exact lease error ordering is membership-history existence (outsider: `ErrNotFound`), generation equality (otherwise `ErrStaleMembership`), then tuple policy. Unknown current-generation heartbeat and inactive/released-tuple heartbeat return `ErrStaleMembership`. Unknown current-generation release and repeated released-tuple release succeed without changes, including an inactive historical membership. Heartbeats never create or reopen tuples. Explicit join with a new client UUID establishes a lease. Persist `Lobby.NextJoinSequence=2` after the creator receives sequence 1; increment under the room lock for every new/reactivated membership, never derive it from active members.
 
-Policy defaults are explicit: `DefaultPolicy("island-battles", "quiz-demo")` supplies 15s heartbeat, 45s lease, 60s grace, 5s sweep, 24h session, 5m connection JWT and 60s subscription authorization. `Policy{}` is invalid. Policies must have positive durations, heartbeat shorter than lease, sweep no longer than lease or grace, token/subscription lifetimes no longer than session, and a nonempty unique list of canonical game keys. Constructors validate then retain a detached registered-key slice.
+Policy defaults are explicit: `DefaultPolicy("island-battles", "quiz-demo")` supplies 15s heartbeat, 45s lease, 60s grace, 24h session, 5m connection JWT and 60s subscription authorization. `Policy{}` is invalid. Policies must have positive durations, heartbeat shorter than lease, token/subscription lifetimes no longer than session, and a nonempty unique list of canonical game keys. Constructors validate then retain a detached registered-key slice.
 
-`Store.Create` atomically saves its original authorized `BuildSnapshot` response alongside the validated create fingerprint and request key; code uniqueness collisions return the internal `ErrJoinCodeCollision` sentinel, which services bound to five attempts. `Change.PrivateChanged` preserves lease/counter writes without implying an event. `Change.PublicChanged` implies persistence and one invalidation/version increment. Revocation intents contain scope/player/generation; the store allocates the durable event UUID. `MergeChanges` preserves first-seen order and deduplicates exact intents.
+`Store.Create` atomically saves its original authorized `BuildSnapshot` response alongside the validated create fingerprint and request key; code uniqueness collisions return the internal `ErrJoinCodeCollision` sentinel, which services bound to five attempts. `Change.PrivateChanged` preserves lease/counter writes without implying an event. `Change.PublicChanged` implies persistence and one invalidation/version increment. Revocation intents contain scope/player/generation. The store validates them before commit and never calls the network. `MergeChanges` preserves first-seen order and deduplicates exact intents.
 
 `IdentityStore.CreateGuest` inserts a `Player` and its one `Session` atomically. `LookupByBearerHash` and `LookupByPlayer` return stored `SessionVerification{Principal, ExpiresAt}`, nil on absence and errors on infrastructure failure. `CredentialHash` is a SHA-256 `[32]byte`. The verifier, not the lookup, rejects expired sessions. `Authenticator.Authenticate` takes the complete Authorization header; `IssueConnectionToken` takes its verified result. Neither input grants caller-chosen identity.
 
-`SubscriptionAuthorizer.AuthorizeSubscription(ctx, authenticatedPlayerID, canonicalChannel)` returns `SubscriptionAuthorization.AllowedUntil`; use typed `ErrPermissionDenied`/`ErrUnauthenticated` for denials and `ErrUnavailable` for outages. Parsing enforces syntax; policy validates game registration separately. `RealtimeTransport.Unsubscribe` takes player ID then exact channel.
-
-`DeliveryStore.Claim` accepts current time, bounded limit and positive claim duration; it increments attempts, assigns a fresh token/deadline and commits before returning. Every `DeliveryJob` has a stable ID, discriminator and exactly one typed payload with a stable EventID. `Ack(ctx, jobID, token, now)` and `Retry(ctx, RetryRequest)` condition on token and an unexpired claim; false indicates lost ownership. Retry sets sanitized failure/next-attempt without resetting attempts. `CurrentMembership(ctx, scope, playerID)` returns optional current generation/active state; an error never implies an absent or obsolete membership. Network adapters never receive a raw database handle.
+`SubscriptionAuthorizer.AuthorizeSubscription(ctx, authenticatedPlayerID, canonicalChannel)` returns `SubscriptionAuthorization.AllowedUntil`; use typed `ErrPermissionDenied`/`ErrUnauthenticated` for denials and `ErrUnavailable` for outages. Parsing enforces syntax; policy validates game registration separately. `ChangePublisher.PublishChange(ctx, lobby, change, stillDue)` pushes a committed change: one `lobby.changed` invalidation carrying the room's version when `PublicChanged`, and an unsubscribe from the room channel for each revocation, which covers every device of that player. Before every attempt it asks the `RevocationCheck` whether each revocation still applies.
 
 `BuildSnapshot` filters inactive history, orders active members and teams, copies nullable fields and the frozen roster, emits non-null arrays and excludes leases/session information. Its caller must normalize under lock before building the response. The HTTP adapter separately enforces presence for required nullable `team_id` and required boolean `ready` before creating domain requests.
 
 Production dependencies are `SystemClock{}` (UTC wall clock) and `CryptoIdentifiers{}` (cryptographic UUIDv4, unbiased join-code sampling, random byte slices). Their methods perform clock/random reads only when called; pure validation/copy helpers do not use them. `Bytes` rejects negative lengths without panicking.
+
+## Pushing changes to clients
+
+Postgres holds only state. No table holds messages waiting to be sent, and nothing runs between requests:
+
+- `application.NewPublishingStore(store, publisher)` wraps a `domain.Store`. After `Create` or `Transact` commits, it pushes the change before returning, so the request that made a change also delivers it. Before each unsubscribe attempt it re-reads the room and skips a player who holds a newer active membership, so a push that waits between retries never drops the subscription of a player who rejoined meanwhile.
+- `realtime.NewPublisher(client, logger, realtime.DefaultPushRetry())` is the shared helper that pushes to Centrifugo's HTTP API. It sends all of one call's messages in a single request, makes up to three attempts within about a second, and retries only the messages that failed, with stable idempotency keys. What still fails is logged as an error and returned. The commit stands, and clients recover by re-reading over HTTP. `PublishChange` serves the lobby, and `Publish(ctx, ...Publication)` serves a game's own events, such as Island Battles' generation events on `PlayerChannel`.
+- Expiry is applied lazily. Every command, the heartbeat included, and every Centrifugo subscribe or sub-refresh proxy call normalizes due lease and grace deadlines in its transaction and pushes the result. A lobby with a connected member is therefore normalized within one heartbeat or refresh, and a lobby nobody is connected to is normalized on its next access.
+
+Centrifugo keeps history for both the `lobby` and `player` namespaces, so a reconnecting client recovers recent messages before it reconciles over HTTP.
 
 ## Binding a game to a started lobby
 

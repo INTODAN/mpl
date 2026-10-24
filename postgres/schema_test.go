@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// No table holds messages waiting to be sent: changes are pushed after commit.
 func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	db := testutil.NewPostgresFixture(t)
 	tables, err := db.Migrator().GetTables()
@@ -22,7 +23,7 @@ func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	expected := []string{
 		"lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
 		"lobby_memberships", "lobby_leases", "lobby_start_roster",
-		"lobby_create_requests", "lobby_outbox", "lobby_schema_migrations",
+		"lobby_create_requests", "lobby_schema_migrations",
 	}
 	slices.Sort(tables)
 	slices.Sort(expected)
@@ -215,25 +216,6 @@ func TestSchemaScopesTeamUniqueness(t *testing.T) {
 	reused := team
 	reused.ID, reused.LobbyID = uuid.NewString(), roomB.ID
 	mustCreate(t, db, &reused)
-}
-
-func TestSchemaSeparatesInvalidationAndRevocationUniqueness(t *testing.T) {
-	db := testutil.NewPostgresFixture(t)
-	playerA, playerB := seedPlayer(t, db), seedPlayer(t, db)
-	room := seedRoom(t, db, playerA.ID, "island-battles", "OUTBOX01")
-	version := int64(1)
-	invalid := lobbypostgres.OutboxRecord{ID: uuid.NewString(), Kind: "invalidation", EventID: uuid.NewString(), GameKey: room.GameKey, LobbyID: &room.ID, Version: &version, NextAttemptAt: time.Now().UTC(), LastError: "", CreatedAt: time.Now().UTC()}
-	mustCreate(t, db, &invalid)
-	duplicate := invalid
-	duplicate.ID, duplicate.EventID = uuid.NewString(), uuid.NewString()
-	if err := db.Create(&duplicate).Error; err == nil {
-		t.Fatal("duplicate invalidation version succeeded")
-	}
-	for _, playerID := range []string{playerA.ID, playerB.ID} {
-		generation := int64(1)
-		revocation := lobbypostgres.OutboxRecord{ID: uuid.NewString(), Kind: "revocation", EventID: uuid.NewString(), GameKey: room.GameKey, LobbyID: &room.ID, PlayerID: &playerID, Generation: &generation, Version: &version, NextAttemptAt: time.Now().UTC(), LastError: "", CreatedAt: time.Now().UTC()}
-		mustCreate(t, db, &revocation)
-	}
 }
 
 func TestSchemaPreservesNullAndFalse(t *testing.T) {

@@ -2,16 +2,13 @@ package realtime_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/centrifugal/gocent/v3"
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/realtime"
 )
@@ -151,61 +148,3 @@ func TestRoomAndPrivateAuthorizationIsolation(t *testing.T) {
 }
 
 func ptr(value string) *string { return &value }
-
-func TestTransportPayloadAndUnsubscribeScope(t *testing.T) {
-	var command map[string]json.RawMessage
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if err := json.NewDecoder(request.Body).Decode(&command); err != nil {
-			t.Error(err)
-		}
-		_, _ = io.WriteString(response, `{"result":{}}`)
-	}))
-	defer server.Close()
-	transport, _ := realtime.NewTransport(gocent.New(gocent.Config{Addr: server.URL, Key: "server-only"}))
-	event := domain.Invalidation{SchemaVersion: 1, EventID: other, GameKey: "island-battles", LobbyID: room, Version: 42, Type: "lobby.changed"}
-	if err := transport.PublishInvalidation(context.Background(), channel, event); err != nil {
-		t.Fatal(err)
-	}
-	var parameters struct {
-		Channel string         `json:"channel"`
-		Data    map[string]any `json:"data"`
-	}
-	if err := json.Unmarshal(command["params"], &parameters); err != nil {
-		t.Fatal(err)
-	}
-	if parameters.Channel != channel || len(parameters.Data) != 6 || parameters.Data["version"] != float64(42) {
-		t.Fatalf("wrong publication: %+v", parameters)
-	}
-	if err := transport.Unsubscribe(context.Background(), actor, channel); err != nil {
-		t.Fatal(err)
-	}
-	var revoke map[string]any
-	if err := json.Unmarshal(command["params"], &revoke); err != nil {
-		t.Fatal(err)
-	}
-	if string(command["method"]) != `"unsubscribe"` || revoke["user"] != actor || revoke["channel"] != channel {
-		t.Fatalf("incorrect revoke: %s", command)
-	}
-	if _, present := revoke["client"]; present {
-		t.Fatal("socket-specific revocation")
-	}
-	if err := transport.PublishInvalidation(context.Background(), "player:"+actor, event); !errors.Is(err, domain.ErrInvalidInput) {
-		t.Fatal("wrong publication scope accepted")
-	}
-}
-
-func TestTransportProtocolErrorsAndCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		_, _ = io.WriteString(response, `{"error":{"code":100,"message":"temporary"}}`)
-	}))
-	defer server.Close()
-	transport, _ := realtime.NewTransport(gocent.New(gocent.Config{Addr: server.URL}))
-	if err := transport.Unsubscribe(context.Background(), actor, channel); err == nil {
-		t.Fatal("HTTP200 protocol error swallowed")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := transport.Unsubscribe(ctx, actor, channel); err == nil {
-		t.Fatal("cancellation swallowed")
-	}
-}

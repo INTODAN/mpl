@@ -106,25 +106,3 @@ type CreateRequestRecord struct {
 }
 
 func (CreateRequestRecord) TableName() string { return "lobby_create_requests" }
-
-// OutboxRecord stores both invalidation and revocation delivery work. Kind is
-// constrained by the schema; payload fields are selected by that discriminator.
-type OutboxRecord struct {
-	ID             string     `gorm:"column:id;type:uuid;primaryKey"`
-	Kind           string     `gorm:"column:kind;not null"`
-	EventID        string     `gorm:"column:event_id;type:uuid;not null"`
-	GameKey        string     `gorm:"column:game_key;not null"`
-	LobbyID        *string    `gorm:"column:lobby_id;type:uuid"`
-	PlayerID       *string    `gorm:"column:player_id;type:uuid"`
-	Generation     *int64     `gorm:"column:generation"`
-	Version        *int64     `gorm:"column:version"`
-	Attempts       int        `gorm:"column:attempts;not null"`
-	NextAttemptAt  time.Time  `gorm:"column:next_attempt_at;not null"`
-	ClaimToken     *string    `gorm:"column:claim_token;type:uuid"`
-	ClaimDeadline  *time.Time `gorm:"column:claim_deadline"`
-	AcknowledgedAt *time.Time `gorm:"column:acknowledged_at"`
-	LastError      string     `gorm:"column:last_error;not null"`
-	CreatedAt      time.Time  `gorm:"column:created_at;not null"`
-}
-
-func (OutboxRecord) TableName() string { return "lobby_outbox" }

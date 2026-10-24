@@ -1,6 +1,6 @@
 # Live lobby acceptance
 
-This suite belongs to the generic lobby component. It checks the public lobby API, PostgreSQL lobby schema, outbox delivery, reconnect/history recovery, leases, restart recovery, protocol authorization, and the Python SDK and CLI. It never queries game tables or calls game binding endpoints.
+This suite belongs to the generic lobby component. It checks the public lobby API, PostgreSQL lobby schema, pushes after commit and their failure while Centrifugo is down, reconnect/history recovery, leases, restart recovery, protocol authorization, and the Python SDK and CLI. It never queries game tables or calls game binding endpoints.
 
 From the component root, supply a Go host application:
 
@@ -20,7 +20,7 @@ CONNECTION_TOKEN_HMAC_SECRET
 LOBBY_PROXY_SECRET
 ```
 
-`--env-prefix` prepends a host-specific configuration namespace to these names. The host must expose `/healthz`, the lobby HTTP API and trusted Centrifugo proxy routes; initialize the lobby schema; run the expiry sweeper and outbox worker; and register `island-battles` and `quiz-demo` as example game keys. `LOBBY_TEST_GAME_KEY` can override the first game key. These keys carry no game-specific behavior in this suite.
+`--env-prefix` prepends a host-specific configuration namespace to these names. The host must expose `/healthz`, the lobby HTTP API and trusted Centrifugo proxy routes; initialize the lobby schema; push each committed change through the lobby's `realtime.Publisher`, whose failures it logs to standard output; and register `island-battles` and `quiz-demo` as example game keys. Tests read that log through `LOBBY_TEST_BACKEND_LOG`. `LOBBY_TEST_GAME_KEY` can override the first game key. These keys carry no game-specific behavior in this suite.
 
 `--extra-tests /path/to/tests` adds host-owned pytest suites. They can reuse the fixtures and helpers in `integration.test_live`. In the Island Battles monorepo, the root `scripts/test-lobby-acceptance.sh` supplies the backend package, its environment prefix, and `integration/island_battles/` tests.
 

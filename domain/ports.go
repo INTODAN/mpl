@@ -25,8 +25,9 @@ type IdentifierSource interface {
 type Mutation func(*Aggregate) (Change, error)
 
 // Store returns detached copies. Transact locks the room before loading children,
-// invokes Mutation exactly once, and atomically persists changes and delivery jobs.
-// Callback errors roll back. PublicChanged increments version exactly once.
+// invokes Mutation exactly once, and atomically persists its changes. Callback
+// errors roll back. PublicChanged increments version exactly once. A store never
+// calls the network; ChangePublisher pushes committed changes.
 // Create returns the saved original snapshot on an identical idempotent replay.
 // A join-code unique collision returns ErrJoinCodeCollision for bounded retry.
 type Store interface {
@@ -34,8 +35,6 @@ type Store interface {
 	ResolveCode(context.Context, string, string) (Scope, error)
 	Read(context.Context, Scope) (Aggregate, error)
 	Transact(context.Context, Scope, Mutation) (Aggregate, error)
-	// DueScopes is bounded and must fairly rotate failed scopes across calls.
-	DueScopes(context.Context, time.Time, int) ([]Scope, error)
 }
 
 // IdentityStore creates player and unique player session atomically. Optional
@@ -59,20 +58,20 @@ type SubscriptionAuthorizer interface {
 	AuthorizeSubscription(context.Context, string, string) (SubscriptionAuthorization, error)
 }
 
-// DeliveryStore commits claims before returning. Claim increments Attempts and
-// allocates a fresh cryptographic token for each job, including reclaimed jobs.
-// Ack/Retry return false when ownership is lost, expired, or already completed.
-// They condition on token AND ClaimDeadline > now. Retry retains Attempts.
-type DeliveryStore interface {
-	Claim(context.Context, ClaimRequest) ([]DeliveryJob, error)
-	Ack(context.Context, string, string, time.Time) (bool, error)
-	Retry(context.Context, RetryRequest) (bool, error)
-	CurrentMembership(context.Context, Scope, string) (*MembershipState, error)
+// ChangePublisher pushes a committed change to subscribers right after its
+// transaction: one Invalidation carrying the room's version when PublicChanged,
+// and an unsubscribe from the room channel for each revocation that stillDue
+// confirms right before each attempt. It retries briefly and logs what still
+// fails. The commit stands either way, and clients recover by re-reading the
+// lobby over HTTP.
+type ChangePublisher interface {
+	PublishChange(ctx context.Context, room Lobby, change Change, stillDue RevocationCheck) error
 }
-type RealtimeTransport interface {
-	PublishInvalidation(context.Context, string, Invalidation) error
-	Unsubscribe(context.Context, string, string) error // player UUID, exact channel
-}
+
+// RevocationCheck reports whether a committed revocation still applies. It is
+// false once the player holds a newer active membership, so a late unsubscribe
+// never drops the subscription of a player who rejoined meanwhile.
+type RevocationCheck func(context.Context, RevocationIntent) (bool, error)
 
 // SnapshotReader authorizes current membership and returns a detached snapshot.
 // Application implements this boundary, including expiry normalization.

@@ -109,20 +109,29 @@ async def test_generic_second_game_starts(guests):
     assert started.lobby.phase == "started"
 
 
-async def test_socket_reconnect_history_loss_and_publish_retry(guests):
+def failed_push_logged(lobby_id):
+    log = Path(os.environ["LOBBY_TEST_BACKEND_LOG"]).read_text(errors="replace")
+    return any("Centrifugo push failed" in line and lobby_id in line for line in log.splitlines())
+
+
+async def test_socket_reconnect_history_loss_and_failed_push(guests):
     alice, bob = await guests("Reconnect Alice"), await guests("Reconnect Bob")
     room = await create(alice)
     scope = Scope.from_snapshot(room)
     await bob.join_lobby(game_key=scope.game_key, join_code=room.lobby.join_code)
     selected = await alice.select_team(scope, room.teams[0].id)
     before = next(member for member in selected.members if member.player_id == selected.lobby.host_player_id)
+    assert not failed_push_logged(scope.lobby_id)
     await container("stop", "--time", "1", EVENTS)
     try:
+        started = asyncio.get_running_loop().time()
         changed = await ready_http(alice, scope, True)
+        # The push is retried briefly, then logged; the commit stands.
+        assert asyncio.get_running_loop().time() - started < 5
+        assert failed_push_logged(scope.lobby_id)
         # HTTP remains authoritative while publication and both sockets are down.
         observed = await latest(bob, scope, changed.lobby.version, timeout=22)
         assert observed.lobby.version >= changed.lobby.version
-        assert await sql(f"SELECT count(*) FROM lobby_outbox WHERE lobby_id='{scope.lobby_id}' AND version={changed.lobby.version} AND acknowledged_at IS NULL AND attempts>0") == "1"
     finally:
         await container("start", EVENTS)
     await asyncio.sleep(3)
@@ -131,9 +140,6 @@ async def test_socket_reconnect_history_loss_and_publish_retry(guests):
     after = next(member for member in observed.members if member.player_id == before.player_id)
     assert (after.id, after.generation, after.team_id) == (before.id, before.generation, before.team_id)
     assert observed.lobby.host_player_id == before.player_id
-    async with asyncio.timeout(25):
-        while await sql(f"SELECT count(*) FROM lobby_outbox WHERE lobby_id='{scope.lobby_id}' AND version={changed.lobby.version} AND acknowledged_at IS NOT NULL") != "1":
-            await asyncio.sleep(0.2)
 
 
 async def test_multiclient_release_and_explicit_leave(guests):
@@ -200,7 +206,7 @@ async def test_subscribe_snapshot_race(guests):
                 body=SelectTeamBody(team_id=earlier.teams[0].id),
             )
         assert response.status_code == 200
-        # Give the real outbox/socket time to deliver while the HTTP read is held.
+        # Give the pushed invalidation time to arrive while the HTTP read is held.
         await asyncio.sleep(2)
         release.set()
         synchronized = await asyncio.wait_for(creating, 10)
@@ -232,7 +238,7 @@ async def test_persisted_lease_expiry_after_backend_restart(guests):
     await control_backend(signal.SIGUSR2)
     try:
         # Advance only the test identity's persisted lease, with the backend
-        # stopped so no sweeper or HTTP request can pre-apply cleanup.
+        # stopped so no HTTP request or proxy call can pre-apply cleanup.
         await sql(f"UPDATE lobby_leases SET expires_at=now()-interval '120 seconds', released_at=now()-interval '120 seconds' WHERE lobby_id='{scope.lobby_id}' AND player_id='{former_host}'")
         await sql(f"UPDATE lobby_memberships SET disconnected_until=NULL WHERE lobby_id='{scope.lobby_id}' AND player_id='{former_host}'")
     finally:
@@ -255,7 +261,7 @@ async def test_schema_initialization_is_repeatable(guests):
     assert lobby_tables == {
         "lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
         "lobby_memberships", "lobby_leases", "lobby_start_roster",
-        "lobby_create_requests", "lobby_outbox", "lobby_schema_migrations",
+        "lobby_create_requests", "lobby_schema_migrations",
     }
     await control_backend(signal.SIGUSR1)
     assert await sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename") == tables

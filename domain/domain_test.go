@@ -69,13 +69,13 @@ func TestPolicyValidation(t *testing.T) {
 	if err := valid.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if valid.HeartbeatInterval != 15*time.Second || valid.LeaseDuration != 45*time.Second || valid.GraceDuration != 60*time.Second || valid.SweepInterval != 5*time.Second || valid.SessionDuration != 24*time.Hour || valid.ConnectionTokenDuration != 5*time.Minute {
+	if valid.HeartbeatInterval != 15*time.Second || valid.LeaseDuration != 45*time.Second || valid.GraceDuration != 60*time.Second || valid.SessionDuration != 24*time.Hour || valid.ConnectionTokenDuration != 5*time.Minute {
 		t.Fatal("incorrect defaults")
 	}
 	if err := (domain.Policy{}).Validate(); err == nil {
 		t.Fatal("zero policy accepted")
 	}
-	for _, mutate := range []func(*domain.Policy){func(p *domain.Policy) { p.RegisteredGameKeys = nil }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"quiz", "quiz"} }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"Quiz"} }, func(p *domain.Policy) { p.HeartbeatInterval = 0 }, func(p *domain.Policy) { p.LeaseDuration = p.HeartbeatInterval }, func(p *domain.Policy) { p.GraceDuration = -time.Second }, func(p *domain.Policy) { p.SweepInterval = p.GraceDuration + time.Second }, func(p *domain.Policy) { p.SweepInterval = 0 }, func(p *domain.Policy) { p.SessionDuration = 0 }, func(p *domain.Policy) { p.ConnectionTokenDuration = p.SessionDuration + time.Second }, func(p *domain.Policy) { p.SubscriptionDuration = 0 }} {
+	for _, mutate := range []func(*domain.Policy){func(p *domain.Policy) { p.RegisteredGameKeys = nil }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"quiz", "quiz"} }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"Quiz"} }, func(p *domain.Policy) { p.HeartbeatInterval = 0 }, func(p *domain.Policy) { p.LeaseDuration = p.HeartbeatInterval }, func(p *domain.Policy) { p.GraceDuration = -time.Second }, func(p *domain.Policy) { p.SessionDuration = 0 }, func(p *domain.Policy) { p.ConnectionTokenDuration = p.SessionDuration + time.Second }, func(p *domain.Policy) { p.SubscriptionDuration = 0 }} {
 		invalid := valid
 		mutate(&invalid)
 		if err := invalid.Validate(); err == nil {

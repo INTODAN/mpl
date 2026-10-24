@@ -75,22 +75,20 @@ func TestMigrateAdoptsThenAppliesLaterMigrations(t *testing.T) {
 	legacy := testutil.NewEmptyPostgres(t)
 	executeFile(t, legacy, "testdata/legacy_schema.sql")
 
-	// A later migration that drops a table migration 1 created must not stop
-	// an old database from being adopted first.
-	set := lobbypostgres.Migrations()
-	next := fmt.Sprintf("%04d_drop_outbox.sql", len(migrationNames(t, set.Files))+1)
-	set.Files = withFile(t, set.Files, next, `DROP TABLE lobby_outbox;`)
-	if err := set.Apply(context.Background(), legacy); err != nil {
+	// Migration 2 drops lobby_outbox, which migration 1 created. That must not
+	// stop an old database from being adopted first.
+	if err := lobbypostgres.Migrate(context.Background(), legacy); err != nil {
 		t.Fatalf("adopt and upgrade legacy schema: %v", err)
 	}
+	names := migrationNames(t, lobbypostgres.Migrations().Files)
 	history := migrationHistory(t, legacy)
-	if !history[0].Adopted || history[len(history)-1].Name != next || history[len(history)-1].Adopted {
-		t.Fatalf("history = %+v, want version 1 adopted and %s run", history, next)
+	if len(history) != len(names) || !history[0].Adopted || history[1].Name != "0002_drop_lobby_outbox.sql" || history[1].Adopted {
+		t.Fatalf("history = %+v, want version 1 adopted and 0002_drop_lobby_outbox.sql run", history)
 	}
 	if legacy.Migrator().HasTable("lobby_outbox") {
 		t.Fatal("lobby_outbox survived the later migration")
 	}
-	if err := set.Apply(context.Background(), legacy); err != nil {
+	if err := lobbypostgres.Migrate(context.Background(), legacy); err != nil {
 		t.Fatalf("repeat after adoption: %v", err)
 	}
 }
@@ -256,7 +254,7 @@ func TestRecordsMatchMigratedColumns(t *testing.T) {
 	records := []any{
 		&lobbypostgres.PlayerRecord{}, &lobbypostgres.SessionRecord{}, &lobbypostgres.RoomRecord{},
 		&lobbypostgres.TeamRecord{}, &lobbypostgres.MembershipRecord{}, &lobbypostgres.LeaseRecord{},
-		&lobbypostgres.StartRosterRecord{}, &lobbypostgres.CreateRequestRecord{}, &lobbypostgres.OutboxRecord{},
+		&lobbypostgres.StartRosterRecord{}, &lobbypostgres.CreateRequestRecord{},
 	}
 	for _, record := range records {
 		statement := &gorm.Statement{DB: db}

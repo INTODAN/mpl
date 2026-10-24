@@ -79,14 +79,14 @@ func TestTeamChangeClearsReadyAndNoOpsPreserveVersion(t *testing.T) {
 	fixture := newServiceFixture(t, 3)
 	fixture.assign(t, fixture.host, 0, true)
 	before := fixture.read(t)
-	jobs := fixture.jobs(t, "")
+	pushes := fixture.pushed(allPushes)
 	if _, err := fixture.service.SelectTeam(context.Background(), fixture.host, fixture.scope, domain.SelectTeamRequest{TeamID: &fixture.initial.Teams[0].ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: true}); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(before, fixture.read(t)) || fixture.jobs(t, "") != jobs {
+	if !reflect.DeepEqual(before, fixture.read(t)) || fixture.pushed(allPushes) != pushes {
 		t.Fatal("same desired state emitted event")
 	}
 	if _, err := fixture.service.SelectTeam(context.Background(), fixture.host, fixture.scope, domain.SelectTeamRequest{TeamID: &fixture.initial.Teams[1].ID}); err != nil {
@@ -119,7 +119,7 @@ func TestReadyValidation(t *testing.T) {
 	_, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: true})
 	requireDomainError(t, err, domain.ErrNotReady)
 	snapshot, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: false})
-	if err != nil || snapshot.Lobby.Version != 1 || fixture.jobs(t, "") != 1 {
+	if err != nil || snapshot.Lobby.Version != 1 || fixture.pushed(allPushes) != 1 {
 		t.Fatal("false without assignment rejected or invalidated", err)
 	}
 }
@@ -161,9 +161,9 @@ func TestStartRequiresHostAndLiveReadyRoster(t *testing.T) {
 		}
 	}
 	before := fixture.read(t)
-	jobs := fixture.jobs(t, "")
+	pushes := fixture.pushed(allPushes)
 	repeat, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
-	if err != nil || repeat.Lobby.Version != before.Lobby.Version || fixture.jobs(t, "") != jobs || !reflect.DeepEqual(before.StartRoster, repeat.StartRoster) {
+	if err != nil || repeat.Lobby.Version != before.Lobby.Version || fixture.pushed(allPushes) != pushes || !reflect.DeepEqual(before.StartRoster, repeat.StartRoster) {
 		t.Fatal("repeat start mutated roster/event", err)
 	}
 	_, err = fixture.service.SelectTeam(context.Background(), guest, fixture.scope, domain.SelectTeamRequest{})
@@ -216,11 +216,11 @@ func TestHostLeaveTransfersDeterministically(t *testing.T) {
 		t.Fatal("wrong successor")
 	}
 	before := aggregate
-	events := fixture.jobs(t, "")
+	events := fixture.pushed(allPushes)
 	if err := fixture.service.Leave(context.Background(), fixture.host, fixture.scope); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.jobs(t, domain.JobRevocation) != 1 || fixture.jobs(t, "") != events || !reflect.DeepEqual(before, fixture.read(t)) {
+	if fixture.pushed(revocationPushes) != 1 || fixture.pushed(allPushes) != events || !reflect.DeepEqual(before, fixture.read(t)) {
 		t.Fatal("repeated leave changed state/events")
 	}
 	outsider := fixture.player(t, "Outsider")

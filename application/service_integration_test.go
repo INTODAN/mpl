@@ -12,6 +12,7 @@ import (
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/internal/testutil"
 	"islandBattles/lobby/postgres"
+	"islandBattles/lobby/realtime"
 
 	"gorm.io/gorm"
 )
@@ -32,9 +33,62 @@ func (clock *integrationClock) Set(now time.Time) {
 	clock.now = now
 }
 
+// recordedPushes counts what the publishing store pushed after each commit,
+// counting an unsubscribe only when the store's check confirms it.
+type recordedPushes struct {
+	mutex         sync.Mutex
+	invalidations map[string]int
+	lastVersion   map[string]int64
+	revocations   map[string]int
+	// beforeRevoke runs once, before the next push with revocations checks
+	// them, like a request that lands while a push waits to retry.
+	beforeRevoke func()
+}
+
+func (pushes *recordedPushes) PublishChange(ctx context.Context, room domain.Lobby, change domain.Change, stillDue domain.RevocationCheck) error {
+	pushes.mutex.Lock()
+	if change.PublicChanged {
+		pushes.invalidations[room.ID]++
+		pushes.lastVersion[room.ID] = room.Version
+	}
+	hook := pushes.beforeRevoke
+	if len(change.Revocations) > 0 {
+		pushes.beforeRevoke = nil
+	}
+	pushes.mutex.Unlock()
+	if len(change.Revocations) == 0 {
+		return nil
+	}
+	if hook != nil {
+		hook()
+	}
+	for _, revocation := range change.Revocations {
+		due, err := stillDue(ctx, revocation)
+		if err != nil {
+			return err
+		}
+		if due {
+			pushes.mutex.Lock()
+			pushes.revocations[room.ID]++
+			pushes.mutex.Unlock()
+		}
+	}
+	return nil
+}
+
+type pushKind int
+
+const (
+	allPushes pushKind = iota
+	invalidationPushes
+	revocationPushes
+)
+
 type serviceFixture struct {
-	db       *gorm.DB
-	store    *postgres.Store
+	db *gorm.DB
+	// store pushes each commit to pushes, as the backend's store pushes to Centrifugo.
+	store    domain.Store
+	pushes   *recordedPushes
 	service  *application.Service
 	clock    *integrationClock
 	policy   domain.Policy
@@ -58,11 +112,9 @@ func newServiceFixture(t *testing.T, capacity int) *serviceFixture {
 	t.Helper()
 	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy("island-battles", "quiz-demo")}
 	fixture.clock = &integrationClock{now: fixture.origin}
+	fixture.pushes = &recordedPushes{invalidations: map[string]int{}, lastVersion: map[string]int64{}, revocations: map[string]int{}}
+	fixture.store = fixture.newStore(t)
 	var err error
-	fixture.store, err = postgres.NewStore(fixture.db, fixture.clock, domain.CryptoIdentifiers{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	fixture.service, err = application.NewService(fixture.store, fixture.clock, domain.CryptoIdentifiers{}, fixture.policy)
 	if err != nil {
 		t.Fatal(err)
@@ -77,13 +129,57 @@ func newServiceFixture(t *testing.T, capacity int) *serviceFixture {
 	fixture.scope = fixture.initial.Lobby.Scope()
 	return fixture
 }
+
+// newStore is a separate PostgreSQL store, as another backend instance or a
+// restarted one would have, that pushes to the fixture's recorder.
+func (fixture *serviceFixture) newStore(t *testing.T) domain.Store {
+	t.Helper()
+	database, err := postgres.NewStore(fixture.db, fixture.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := application.NewPublishingStore(database, fixture.pushes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
 func (fixture *serviceFixture) player(t *testing.T, name string) domain.Principal {
 	t.Helper()
 	principal := domain.Principal{PlayerID: integrationID(t), SessionID: integrationID(t), DisplayName: name}
 	if err := fixture.db.Create(&postgres.PlayerRecord{ID: principal.PlayerID, DisplayName: name, CreatedAt: fixture.clock.Now()}).Error; err != nil {
 		t.Fatal(err)
 	}
+	bearerHash, err := (domain.CryptoIdentifiers{}).Bytes(32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Create(&postgres.SessionRecord{ID: principal.SessionID, PlayerID: principal.PlayerID, BearerHash: bearerHash, CreatedAt: fixture.clock.Now(), ExpiresAt: fixture.clock.Now().Add(fixture.policy.SessionDuration)}).Error; err != nil {
+		t.Fatal(err)
+	}
 	return principal
+}
+
+// proxy returns Centrifugo's subscribe and sub-refresh proxy call for the room
+// channel, which applies due expiry like any lobby request.
+func (fixture *serviceFixture) proxy(t *testing.T, store domain.Store) func(domain.Principal) error {
+	t.Helper()
+	identities, err := postgres.NewIdentityStore(fixture.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := realtime.NewAuthorizer(identities, store, fixture.clock, fixture.policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := domain.RoomChannel(fixture.scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(principal domain.Principal) error {
+		_, err := authorizer.AuthorizeSubscription(context.Background(), principal.PlayerID, channel)
+		return err
+	}
 }
 func (fixture *serviceFixture) join(t *testing.T, principal domain.Principal) (domain.Snapshot, string) {
 	t.Helper()
@@ -102,17 +198,21 @@ func (fixture *serviceFixture) read(t *testing.T) domain.Aggregate {
 	}
 	return aggregate
 }
-func (fixture *serviceFixture) jobs(t *testing.T, kind domain.JobKind) int64 {
-	t.Helper()
-	var count int64
-	query := fixture.db.Model(&postgres.OutboxRecord{}).Where(&postgres.OutboxRecord{LobbyID: &fixture.scope.LobbyID})
-	if kind != "" {
-		query = query.Where(&postgres.OutboxRecord{Kind: string(kind)})
+
+// pushed counts this room's pushes so far. Pushes happen before each command
+// returns, so a count read right after a call includes that call's push.
+func (fixture *serviceFixture) pushed(kind pushKind) int {
+	fixture.pushes.mutex.Lock()
+	defer fixture.pushes.mutex.Unlock()
+	invalidations, revocations := fixture.pushes.invalidations[fixture.scope.LobbyID], fixture.pushes.revocations[fixture.scope.LobbyID]
+	switch kind {
+	case invalidationPushes:
+		return invalidations
+	case revocationPushes:
+		return revocations
+	default:
+		return invalidations + revocations
 	}
-	if err := query.Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	return count
 }
 func (fixture *serviceFixture) assign(t *testing.T, principal domain.Principal, teamIndex int, ready bool) {
 	t.Helper()
@@ -259,7 +359,7 @@ func TestJoinLastSeatConcurrent(t *testing.T) {
 		}
 	}
 	aggregate := fixture.read(t)
-	if success != 1 || full != 1 || activeCount(aggregate) != 2 || aggregate.Lobby.Version != 2 || fixture.jobs(t, domain.JobInvalidation) != 2 {
+	if success != 1 || full != 1 || activeCount(aggregate) != 2 || aggregate.Lobby.Version != 2 || fixture.pushed(invalidationPushes) != 2 {
 		t.Fatal("last seat race violated capacity", aggregate)
 	}
 }
@@ -345,7 +445,7 @@ func TestRejectedCommandStillCommitsDueExpiry(t *testing.T) {
 	_, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
 	requireDomainError(t, err, domain.ErrNotFound)
 	after := fixture.read(t)
-	if memberFor(t, after, fixture.host.PlayerID).Active || after.Lobby.HostPlayerID == nil || *after.Lobby.HostPlayerID != guest.PlayerID || after.Lobby.Version != before.Lobby.Version+1 || after.Lobby.Phase != domain.PhaseWaiting || len(after.StartRoster) != 0 || fixture.jobs(t, domain.JobRevocation) != 1 {
+	if memberFor(t, after, fixture.host.PlayerID).Active || after.Lobby.HostPlayerID == nil || *after.Lobby.HostPlayerID != guest.PlayerID || after.Lobby.Version != before.Lobby.Version+1 || after.Lobby.Phase != domain.PhaseWaiting || len(after.StartRoster) != 0 || fixture.pushed(revocationPushes) != 1 {
 		t.Fatal("denied start rolled back cleanup", after)
 	}
 }
@@ -370,7 +470,7 @@ func TestRunMutationStorageFailureWins(t *testing.T) {
 		return domain.Change{PublicChanged: true}, domain.ErrNotHost
 	})
 	requireDomainError(t, err, domain.ErrUnavailable)
-	if !reflect.DeepEqual(before, fixture.read(t)) || fixture.jobs(t, "") != 1 {
+	if !reflect.DeepEqual(before, fixture.read(t)) || fixture.pushed(allPushes) != 1 {
 		t.Fatal("failed commit leaked cleanup")
 	}
 }
@@ -386,5 +486,8 @@ func TestDeniedMutationDiscardsPartialCommand(t *testing.T) {
 	aggregate := fixture.read(t)
 	if aggregate.Lobby.Name != "Room" || aggregate.Members[0].Ready || aggregate.Members[0].DisconnectedUntil == nil || aggregate.Lobby.Version != 2 {
 		t.Fatal("partial command leaked or cleanup lost", aggregate)
+	}
+	if fixture.pushed(invalidationPushes) != 2 || fixture.pushes.lastVersion[fixture.scope.LobbyID] != 2 {
+		t.Fatal("committed cleanup was not pushed with its version")
 	}
 }

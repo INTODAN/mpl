@@ -1,7 +1,7 @@
 # Multiplayer architecture decision
 
 Date: 2026-09-20  
-Status: Keep Centrifugo and the existing Go/Huma/PostgreSQL architecture. The generic lobby and Huma-generated Python client are implemented; Lambda routing, round timers and C#/TypeScript clients remain planned. See the [implementation evidence](tasks/generic-lobby/implementation-status.md) for verification status.
+Status: Keep Centrifugo and the existing Go/Huma/PostgreSQL architecture. The generic lobby and Huma-generated Python client are implemented; Lambda routing, round deadlines and C#/TypeScript clients remain planned. See the [implementation evidence](tasks/generic-lobby/implementation-status.md) for verification status.
 
 Implementation planning: [generic lobby task pack](tasks/generic-lobby/README.md) defines the package/API contracts, schema policy, parallel work order, and required tests. The task pack is not an implementation completion report.
 
@@ -29,7 +29,7 @@ Use the existing standalone Centrifugo server. Embedding the related [Centrifuge
 | Area | Current implementation | Intended direction |
 | --- | --- | --- |
 | Backend | [Go/Huma/Chi HTTP server](../../backend/main.go), GORM/PostgreSQL, game logic under `backend/` | Keep the stack; add shared lobby behavior and game-action routing |
-| Messaging | [Centrifugo configuration](../centrifugo/centrifugo-config.toml), authorized subscribe/refresh proxies and durable outbox publication | Keep Centrifugo transport recovery with HTTP snapshot reconciliation |
+| Messaging | [Centrifugo configuration](../centrifugo/centrifugo-config.toml), authorized subscribe/refresh proxies, a push to Centrifugo's HTTP API after each commit, and history on the `lobby` and `player` namespaces | Keep Centrifugo transport recovery with HTTP snapshot reconciliation |
 | Connections | [Generic lobby](../README.md): guest credentials, explicit create/join, teams and durable per-client leases | Account identity and additional games can reuse the boundary |
 | Clients | [Go example](../clients/main.go) and [generated Python client](../clients/lobby-python/README.md) | Add and validate C#/TypeScript player flows |
 | Deployment | [Compose infrastructure](../../docker-compose.yml) includes PostgreSQL and Centrifugo | Initially share one host; add Lambda integration separately |
@@ -74,7 +74,7 @@ Scope room records and channels by game and room identifiers, and enforce member
 4. Lambda returns the command result and the events appropriate for each audience.
 5. The Go service publishes the events through Centrifugo; subscribed clients update their views.
 
-This example is the normal flow, not an atomic transaction across Lambda, the database, and Centrifugo. A database commit can succeed before publication fails. Implementation must provide retryable publication and state reconciliation; an outbox is one option when reliable eventual publication is required. See [AWS Lambda idempotency guidance](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html).
+This example is the normal flow, not an atomic transaction across Lambda, the database, and Centrifugo. A database commit can succeed before publication fails. The service pushes in the same request, right after the commit, retries briefly within about a second, and logs an error if Centrifugo stays unreachable. No table holds messages waiting to be sent, and no background work retries them. A client that misses an event recovers it from Centrifugo's channel history on reconnect, or reconciles by re-reading versioned state over HTTP, so a failed push costs latency, not correctness. See [AWS Lambda idempotency guidance](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html).
 
 ### Membership, recovery, and deadlines
 
@@ -82,7 +82,7 @@ Persistent lobby membership is separate from presence. A player may temporarily 
 
 On reconnect, recover retained events where available; otherwise fetch a versioned state snapshot. The initial subscription/snapshot flow must also avoid losing changes between reading state and subscribing. Creating a network connection must not create a new game on every reconnect.
 
-Store round deadlines durably. A timer in the shared service can invoke the relevant Lambda when due and recover overdue work after restart. Do not keep a Lambda invocation sleeping through a round.
+Store round deadlines durably and apply them lazily, as the lobby applies lease and grace expiry: every request and Centrifugo subscription refresh that touches the room first applies whatever is due. Nothing runs between requests, so add no timer or scheduled job, and do not keep a Lambda invocation sleeping through a round.
 
 For drawing games, relay authorized, bounded stroke batches through the persistent service and persist checkpoints as needed. Avoid one Lambda invocation and database write per mouse movement. Guesses, scoring, and round transitions are suitable Lambda actions.
 

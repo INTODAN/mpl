@@ -12,7 +12,6 @@ type Policy struct {
 	HeartbeatInterval       time.Duration
 	LeaseDuration           time.Duration
 	GraceDuration           time.Duration
-	SweepInterval           time.Duration
 	SessionDuration         time.Duration
 	ConnectionTokenDuration time.Duration
 	SubscriptionDuration    time.Duration
@@ -22,14 +21,13 @@ type Policy struct {
 // DefaultPolicy is explicit: the zero Policy is invalid, never silently defaulted.
 func DefaultPolicy(gameKeys ...string) Policy {
 	return Policy{HeartbeatInterval: 15 * time.Second, LeaseDuration: 45 * time.Second,
-		GraceDuration: 60 * time.Second, SweepInterval: 5 * time.Second,
+		GraceDuration:   60 * time.Second,
 		SessionDuration: 24 * time.Hour, ConnectionTokenDuration: 5 * time.Minute,
 		SubscriptionDuration: 60 * time.Second, RegisteredGameKeys: append([]string{}, gameKeys...)}
 }
 func (policy Policy) Validate() error {
 	if policy.HeartbeatInterval <= 0 || policy.LeaseDuration <= policy.HeartbeatInterval ||
-		policy.GraceDuration <= 0 || policy.SweepInterval <= 0 || policy.SweepInterval > policy.GraceDuration ||
-		policy.SweepInterval > policy.LeaseDuration || policy.SessionDuration <= 0 ||
+		policy.GraceDuration <= 0 || policy.SessionDuration <= 0 ||
 		policy.ConnectionTokenDuration <= 0 || policy.ConnectionTokenDuration > policy.SessionDuration ||
 		policy.SubscriptionDuration <= 0 || policy.SubscriptionDuration > policy.SessionDuration {
 		return NewError(CodeInvalidInput, "invalid lobby policy durations")

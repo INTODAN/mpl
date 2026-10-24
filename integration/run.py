@@ -145,6 +145,7 @@ def main() -> int:
             "LOBBY_TEST_POSTGRES_CONTAINER": database_name,
             "LOBBY_TEST_RUNNER_PID": str(os.getpid()),
             "LOBBY_TEST_BACKEND_CONTROL": str(control_status),
+            "LOBBY_TEST_BACKEND_LOG": str(temporary / "backend.log"),
         })
         suites = [] if args.skip_lobby_suite else [str(ROOT / "integration")]
         suites += [str(path.resolve()) for path in args.extra_tests]

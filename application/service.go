@@ -1,5 +1,8 @@
-// Package application coordinates lobby commands, game binding, and expiry sweeping.
-// It depends on domain contracts; persistence and transports are supplied by callers.
+// Package application coordinates lobby commands, game binding, and pushing
+// committed changes. Every command applies due lease and grace expiry first, so
+// requests (heartbeats included) and subscription proxy calls drive expiry; no
+// background work runs. It depends on domain contracts; persistence and
+// transports are supplied by callers.
 package application
 
 import (
