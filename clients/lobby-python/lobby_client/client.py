@@ -10,6 +10,7 @@ import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
+from typing import Any
 from uuid import UUID, uuid4
 
 import centrifuge
@@ -22,10 +23,11 @@ from lobby_api_client.api.lobby import (
     select_lobby_team, set_lobby_ready, start_lobby,
 )
 from lobby_api_client.models import (
-    ConnectionTokenInputBody, CreateLobbyBody, CreateSessionBody, GuestSession,
-    HeartbeatBody, JoinLobbyBody, ReadyBody, SelectTeamBody, Snapshot,
-    StartInputBody, TeamDefinition,
+    ConnectionTokenInputBody, CreateLobbyBody, CreateLobbyBodyGameSettings,
+    CreateSessionBody, GuestSession, HeartbeatBody, JoinLobbyBody, ReadyBody,
+    SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
 )
+from lobby_api_client.types import UNSET
 
 from .errors import (
     AuthenticationError, ClientClosedError, CompatibilityError, LobbyError,
@@ -221,12 +223,20 @@ class LobbyClient:
             await self._sdk.connect()
 
     async def create_lobby(self, *, game_key: str, name: str, capacity: int,
-                           teams: list[TeamDefinition], request_id: UUID | str) -> Snapshot:
+                           teams: list[TeamDefinition], request_id: UUID | str,
+                           game_settings: dict[str, Any] | None = None) -> Snapshot:
+        """game_settings is the game's own JSON object, fixed for the lobby's lifetime."""
         self._require_auth()
         request_id = UUID(str(request_id))
+        settings = UNSET if game_settings is None else CreateLobbyBodyGameSettings.from_dict(game_settings)
         body = CreateLobbyBody(game_key=game_key, name=name, capacity=capacity, teams=teams,
-                               request_id=request_id, client_instance_id=self.client_instance_id)
-        payload = json.dumps(body.to_dict(), sort_keys=True, separators=(",", ":"))
+                               request_id=request_id, client_instance_id=self.client_instance_id,
+                               game_settings=settings)
+        fingerprint = body.to_dict()
+        if not fingerprint.get("game_settings"):
+            # The server treats omitted and empty settings as the same request.
+            fingerprint.pop("game_settings", None)
+        payload = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
         if request_id in self._create_payloads and self._create_payloads[request_id] != payload:
             raise LobbyError("idempotency_conflict", 409)
         self._create_payloads[request_id] = payload

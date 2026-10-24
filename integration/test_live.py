@@ -53,12 +53,12 @@ async def guests():
     await asyncio.gather(*(client.close() for client in clients), return_exceptions=True)
 
 
-async def create(client, game_key=None):
+async def create(client, game_key=None, game_settings=None):
     game_key = game_key or os.environ.get("LOBBY_TEST_GAME_KEY", "island-battles")
     return await client.create_lobby(
         game_key=game_key, name="Acceptance", capacity=4,
         teams=[TeamDefinition(name="Red", capacity=4), TeamDefinition(name="Blue", capacity=4)],
-        request_id=uuid4(),
+        request_id=uuid4(), game_settings=game_settings,
     )
 
 

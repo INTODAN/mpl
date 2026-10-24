@@ -94,6 +94,7 @@ async def test_create_and_join_payloads() -> None:
                         "capacity": 2,
                         "created_at": "2030-01-01T00:00:00Z",
                         "game_key": "island-battles",
+                        "game_settings": {},
                         "host_player_id": None,
                         "id": "room",
                         "join_code": "ABCDEFGH",
@@ -272,6 +273,7 @@ def test_snapshot_and_invalidation_models() -> None:
                 "capacity": 2,
                 "created_at": "2030-01-01T00:00:00Z",
                 "game_key": "island-battles",
+                "game_settings": {"map": {"name": "Archipelago"}, "rounds": 3},
                 "host_player_id": None,
                 "id": "room",
                 "join_code": "ABCDEFGH",
@@ -287,6 +289,7 @@ def test_snapshot_and_invalidation_models() -> None:
     )
     assert snapshot.teams == []
     assert snapshot.lobby.version == 9007199254740993
+    assert snapshot.lobby.game_settings.to_dict() == {"map": {"name": "Archipelago"}, "rounds": 3}
     event = LobbyInvalidation.from_dict(
         {
             "schema_version": 1,

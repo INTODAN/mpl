@@ -28,6 +28,8 @@ type SessionRecord struct {
 
 func (SessionRecord) TableName() string { return "lobby_sessions" }
 
+// RoomRecord.GameSettings is written once at creation into the json column
+// that migration 0003 adds; rooms created before it hold an empty object.
 type RoomRecord struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
 	GameKey          string    `gorm:"column:game_key;not null"`
@@ -39,6 +41,7 @@ type RoomRecord struct {
 	HostPlayerID     *string   `gorm:"column:host_player_id;type:uuid"`
 	CreatedAt        time.Time `gorm:"column:created_at;not null"`
 	NextJoinSequence int64     `gorm:"column:next_join_sequence;not null"`
+	GameSettings     []byte    `gorm:"column:game_settings;type:json"`
 }
 
 func (RoomRecord) TableName() string { return "lobby_rooms" }

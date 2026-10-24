@@ -9,6 +9,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.create_lobby_body_game_settings import CreateLobbyBodyGameSettings
     from ..models.team_definition import TeamDefinition
 
 
@@ -26,6 +27,9 @@ class CreateLobbyBody:
         request_id (UUID):
         teams (list[TeamDefinition] | None):
         schema (str | Unset): A URL to the JSON Schema for this object.
+        game_settings (CreateLobbyBodyGameSettings | Unset): Settings for the game, as a JSON object that only the game
+            reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them
+            compacted with sorted keys, and omitted settings as an empty object.
     """
 
     capacity: int
@@ -35,6 +39,7 @@ class CreateLobbyBody:
     request_id: UUID
     teams: list[TeamDefinition] | None
     schema: str | Unset = UNSET
+    game_settings: CreateLobbyBodyGameSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         capacity = self.capacity
@@ -59,6 +64,10 @@ class CreateLobbyBody:
 
         schema = self.schema
 
+        game_settings: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.game_settings, Unset):
+            game_settings = self.game_settings.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -73,11 +82,14 @@ class CreateLobbyBody:
         )
         if schema is not UNSET:
             field_dict["$schema"] = schema
+        if game_settings is not UNSET:
+            field_dict["game_settings"] = game_settings
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.create_lobby_body_game_settings import CreateLobbyBodyGameSettings
         from ..models.team_definition import TeamDefinition
 
         d = dict(src_dict)
@@ -113,6 +125,13 @@ class CreateLobbyBody:
 
         schema = d.pop("$schema", UNSET)
 
+        _game_settings = d.pop("game_settings", UNSET)
+        game_settings: CreateLobbyBodyGameSettings | Unset
+        if isinstance(_game_settings, Unset):
+            game_settings = UNSET
+        else:
+            game_settings = CreateLobbyBodyGameSettings.from_dict(_game_settings)
+
         create_lobby_body = cls(
             capacity=capacity,
             client_instance_id=client_instance_id,
@@ -121,6 +140,7 @@ class CreateLobbyBody:
             request_id=request_id,
             teams=teams,
             schema=schema,
+            game_settings=game_settings,
         )
 
         return create_lobby_body

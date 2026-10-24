@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"islandBattles/lobby/domain"
 )
 
@@ -35,7 +36,7 @@ func (handler handlers) create(ctx context.Context, input *CreateLobbyInput) (*C
 	for i, team := range body.Teams {
 		teams[i] = domain.TeamDefinition{Name: team.Name, Capacity: team.Capacity}
 	}
-	result, err := handler.app.Create(ctx, principalFromContext(ctx), domain.CreateRequest{RequestID: body.RequestID, GameKey: body.GameKey, Name: body.Name, Capacity: body.Capacity, Teams: teams, ClientInstanceID: body.ClientInstanceID})
+	result, err := handler.app.Create(ctx, principalFromContext(ctx), domain.CreateRequest{RequestID: body.RequestID, GameKey: body.GameKey, Name: body.Name, Capacity: body.Capacity, Teams: teams, ClientInstanceID: body.ClientInstanceID, GameSettings: json.RawMessage(body.GameSettings)})
 	if err != nil {
 		return nil, problemFor(err)
 	}

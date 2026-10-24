@@ -1,9 +1,115 @@
 package domain
 
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"strings"
+)
+
 // GameRegistration declares one game that may use the lobby. Every field is a
 // declaration the lobby applies without knowing the game, and a zero field
 // keeps the lobby's default behavior, so new options are added as new fields.
 type GameRegistration struct {
 	// Key is the canonical game key used in requests, URLs and channels.
 	Key string
+	// ValidateSettings checks the game settings of a create request. Nil means
+	// the game takes no settings and accepts only an empty object.
+	ValidateSettings GameSettingsValidator
+}
+
+// GameSettingsValidator receives the settings of a create request as a
+// canonical JSON object, `{}` when the request had none. To reject them, return
+// an error whose message is safe to show the client. To report that the check
+// itself failed, return the context's error or an error wrapping ErrUnavailable.
+type GameSettingsValidator func(context.Context, json.RawMessage) error
+
+// EmptyGameSettings is stored for a lobby created without game settings.
+const EmptyGameSettings = "{}"
+
+// MaxGameSettingsBytes bounds the canonical settings stored with each lobby.
+const MaxGameSettingsBytes = 16 * 1024
+
+// NormalizeGameSettings returns settings as one compact JSON object with
+// sorted keys, so requests that differ only in formatting or key order match.
+// Omitted settings become an empty object. The lobby never reads the values.
+func NormalizeGameSettings(settings json.RawMessage) (json.RawMessage, error) {
+	if len(settings) == 0 {
+		return json.RawMessage(EmptyGameSettings), nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(settings))
+	decoder.UseNumber()
+	var object map[string]any
+	if err := decoder.Decode(&object); err != nil || object == nil {
+		return nil, NewError(CodeInvalidGameSettings, "game settings must be a JSON object")
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, NewError(CodeInvalidGameSettings, "game settings must be a single JSON object")
+	}
+	if containsNUL(object) {
+		// PostgreSQL text and jsonb can't hold NUL, and snapshots are stored as jsonb.
+		return nil, NewError(CodeInvalidGameSettings, "game settings must not contain NUL characters")
+	}
+	var canonical bytes.Buffer
+	encoder := json.NewEncoder(&canonical)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(object); err != nil {
+		return nil, NewError(CodeInvalidGameSettings, "game settings must be a JSON object")
+	}
+	result := bytes.TrimSuffix(canonical.Bytes(), []byte("\n"))
+	if len(result) > MaxGameSettingsBytes {
+		return nil, NewError(CodeInvalidGameSettings, "game settings are too large")
+	}
+	return result, nil
+}
+
+// containsNUL reports whether any key or string in a decoded value holds NUL.
+func containsNUL(value any) bool {
+	switch typed := value.(type) {
+	case string:
+		return strings.ContainsRune(typed, 0)
+	case map[string]any:
+		for key, item := range typed {
+			if strings.ContainsRune(key, 0) || containsNUL(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if containsNUL(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ValidateGameSettings normalizes settings and checks them with the game's
+// validator. It returns the canonical settings to store with the lobby.
+func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, settings json.RawMessage) (json.RawMessage, error) {
+	game, err := policy.Game(gameKey)
+	if err != nil {
+		return nil, err
+	}
+	canonical, err := NormalizeGameSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	if game.ValidateSettings == nil {
+		if string(canonical) != EmptyGameSettings {
+			return nil, NewError(CodeInvalidGameSettings, "this game takes no settings")
+		}
+		return canonical, nil
+	}
+	err = game.ValidateSettings(ctx, bytes.Clone(canonical))
+	switch {
+	case err == nil:
+		return canonical, nil
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrUnavailable):
+		return nil, err
+	default:
+		return nil, &Error{Code: CodeInvalidGameSettings, Message: err.Error(), Cause: err}
+	}
 }

@@ -168,6 +168,26 @@ async def test_explicit_retry_policy(h):
     assert creates[0].content == creates[1].content
 
 
+async def test_create_sends_game_settings_in_the_fingerprint(h):
+    seen = []
+    async def created(request):
+        if request.url.path.endswith("/lobbies"):
+            seen.append(json.loads(request.content))
+    h.hook = created
+    kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=uuid4())
+    await h.client.create_lobby(**kwargs, game_settings={"rounds": 3})
+    assert seen[0]["game_settings"] == {"rounds": 3}
+    with pytest.raises(LobbyError, match="idempotency_conflict"):
+        await h.client.create_lobby(**kwargs, game_settings={"rounds": 4})
+    await h.client.create_lobby(**(kwargs | {"request_id": uuid4()}))
+    assert "game_settings" not in seen[1]
+    assert len(seen) == 2
+    empty = dict(kwargs, request_id=uuid4())
+    await h.client.create_lobby(**empty)
+    await h.client.create_lobby(**empty, game_settings={})
+    assert len(seen) == 4
+
+
 async def test_explicit_identity(h):
     h.client.credential = None
     assert h.calls == []

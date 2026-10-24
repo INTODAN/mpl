@@ -15,6 +15,7 @@ const (
 	CodeStaleMembership     ErrorCode = "stale_membership"
 	CodeIdempotencyConflict ErrorCode = "idempotency_conflict"
 	CodeInvalidInput        ErrorCode = "invalid_input"
+	CodeInvalidGameSettings ErrorCode = "invalid_game_settings"
 	CodeUnavailable         ErrorCode = "unavailable"
 	// PermissionDenied is private proxy authorization only, not a player API code.
 	CodePermissionDenied ErrorCode = "permission_denied"

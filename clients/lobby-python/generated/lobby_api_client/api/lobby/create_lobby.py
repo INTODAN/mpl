@@ -93,7 +93,10 @@ def sync_detailed(
 ) -> Response[Problem | Snapshot]:
     """Create a lobby
 
-     Creates a lobby. Repeating the same request_id and payload returns the committed snapshot.
+     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
+    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
+    every snapshot, including the started one. They can't change after creation. Repeating the same
+    request_id and payload returns the committed snapshot.
 
     Args:
         body (CreateLobbyBody):
@@ -124,7 +127,10 @@ def sync(
 ) -> Problem | Snapshot | None:
     """Create a lobby
 
-     Creates a lobby. Repeating the same request_id and payload returns the committed snapshot.
+     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
+    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
+    every snapshot, including the started one. They can't change after creation. Repeating the same
+    request_id and payload returns the committed snapshot.
 
     Args:
         body (CreateLobbyBody):
@@ -150,7 +156,10 @@ async def asyncio_detailed(
 ) -> Response[Problem | Snapshot]:
     """Create a lobby
 
-     Creates a lobby. Repeating the same request_id and payload returns the committed snapshot.
+     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
+    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
+    every snapshot, including the started one. They can't change after creation. Repeating the same
+    request_id and payload returns the committed snapshot.
 
     Args:
         body (CreateLobbyBody):
@@ -179,7 +188,10 @@ async def asyncio(
 ) -> Problem | Snapshot | None:
     """Create a lobby
 
-     Creates a lobby. Repeating the same request_id and payload returns the committed snapshot.
+     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
+    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
+    every snapshot, including the started one. They can't change after creation. Repeating the same
+    request_id and payload returns the committed snapshot.
 
     Args:
         body (CreateLobbyBody):

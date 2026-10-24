@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"reflect"
@@ -33,8 +34,8 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 			committed = original
 			return nil
 		}
-		if aggregate.Lobby.ID != original.Lobby.ID || aggregate.Lobby.GameKey != original.Lobby.GameKey || !reflect.DeepEqual(aggregate.Teams, original.Teams) {
-			return domain.NewError(domain.CodeInvalidInput, "immutable lobby identity or teams changed")
+		if aggregate.Lobby.ID != original.Lobby.ID || aggregate.Lobby.GameKey != original.Lobby.GameKey || !bytes.Equal(aggregate.Lobby.GameSettings, original.Lobby.GameSettings) || !reflect.DeepEqual(aggregate.Teams, original.Teams) {
+			return domain.NewError(domain.CodeInvalidInput, "immutable lobby identity, game settings or teams changed")
 		}
 		if len(original.StartRoster) > 0 && !reflect.DeepEqual(aggregate.StartRoster, original.StartRoster) {
 			return domain.NewError(domain.CodeInvalidInput, "start roster is immutable")

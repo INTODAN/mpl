@@ -51,7 +51,27 @@ type CreateLobbyBody struct {
 	Capacity         int              `json:"capacity" minimum:"2" maximum:"64"`
 	Teams            []TeamDefinition `json:"teams" minItems:"2" maxItems:"16"`
 	ClientInstanceID string           `json:"client_instance_id" format:"uuid"`
+	GameSettings     GameSettings     `json:"game_settings,omitempty"`
 }
+
+// GameSettings is a game's own JSON object. It keeps the raw bytes, so numbers
+// and nested values reach the domain without a lossy decode.
+type GameSettings json.RawMessage
+
+func (settings GameSettings) MarshalJSON() ([]byte, error) {
+	if len(settings) == 0 {
+		return []byte(domain.EmptyGameSettings), nil
+	}
+	return settings, nil
+}
+func (settings *GameSettings) UnmarshalJSON(data []byte) error {
+	*settings = bytes.Clone(data)
+	return nil
+}
+func (GameSettings) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Description: "Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them compacted with sorted keys, and omitted settings as an empty object."}
+}
+
 type JoinLobbyInput struct {
 	Body JoinLobbyBody `json:"-"`
 }
@@ -158,6 +178,7 @@ type Lobby struct {
 	Version      int64        `json:"version"`
 	HostPlayerID *string      `json:"host_player_id"`
 	CreatedAt    time.Time    `json:"created_at"`
+	GameSettings GameSettings `json:"game_settings"`
 }
 type Team struct {
 	ID       string `json:"id"`
@@ -206,5 +227,5 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		roster[index] = StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder}
 	}
 	room := source.Lobby
-	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel}
+	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel}
 }

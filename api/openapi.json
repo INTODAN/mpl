@@ -73,6 +73,11 @@
             "pattern": "^[a-z][a-z0-9-]{0,31}$",
             "type": "string"
           },
+          "game_settings": {
+            "additionalProperties": true,
+            "description": "Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them compacted with sorted keys, and omitted settings as an empty object.",
+            "type": "object"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
@@ -354,6 +359,11 @@
           "game_key": {
             "type": "string"
           },
+          "game_settings": {
+            "additionalProperties": true,
+            "description": "Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them compacted with sorted keys, and omitted settings as an empty object.",
+            "type": "object"
+          },
           "host_player_id": {
             "type": [
               "string",
@@ -386,7 +396,8 @@
           "phase",
           "version",
           "host_player_id",
-          "created_at"
+          "created_at",
+          "game_settings"
         ],
         "type": "object"
       },
@@ -504,6 +515,7 @@
               "stale_membership",
               "idempotency_conflict",
               "invalid_input",
+              "invalid_game_settings",
               "unavailable",
               "internal_error"
             ],
@@ -1710,7 +1722,7 @@
     },
     "/lobby/v1/lobbies": {
       "post": {
-        "description": "Creates a lobby. Repeating the same request_id and payload returns the committed snapshot.",
+        "description": "Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail with invalid_game_settings. The lobby stores the settings without reading them and returns them in every snapshot, including the started one. They can't change after creation. Repeating the same request_id and payload returns the committed snapshot.",
         "operationId": "createLobby",
         "requestBody": {
           "content": {

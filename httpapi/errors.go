@@ -9,7 +9,7 @@ type Problem struct {
 	Title  string           `json:"title"`
 	Status int              `json:"status"`
 	Detail string           `json:"detail"`
-	Code   domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,stale_membership,idempotency_conflict,invalid_input,unavailable,internal_error"`
+	Code   domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,stale_membership,idempotency_conflict,invalid_input,invalid_game_settings,unavailable,internal_error"`
 }
 
 func (problem *Problem) Error() string             { return problem.Detail }
@@ -31,6 +31,9 @@ func problemFor(errorValue error) error {
 		status, detail = http.StatusConflict, errorValue.Error()
 	case domain.CodeInvalidInput:
 		status, detail = http.StatusUnprocessableEntity, "invalid input"
+	case domain.CodeInvalidGameSettings:
+		// Validators write their messages for the client.
+		status, detail = http.StatusUnprocessableEntity, errorValue.Error()
 	case domain.CodeUnavailable:
 		status, detail = http.StatusServiceUnavailable, "service temporarily unavailable"
 	default:

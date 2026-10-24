@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type TeamDefinition struct {
 	Name     string `json:"name"`
@@ -13,6 +16,10 @@ type CreateRequest struct {
 	Capacity         int              `json:"capacity"`
 	Teams            []TeamDefinition `json:"teams"`
 	ClientInstanceID string           `json:"client_instance_id"`
+	// GameSettings is an optional JSON object that only the game reads.
+	// omitempty keeps the create fingerprint of a request without settings the
+	// same as before settings existed.
+	GameSettings json.RawMessage `json:"game_settings,omitempty"`
 }
 type JoinRequest struct {
 	GameKey          string `json:"game_key"`

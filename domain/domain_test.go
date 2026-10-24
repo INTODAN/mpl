@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -87,6 +88,64 @@ func TestPolicyValidation(t *testing.T) {
 	}
 	if game, err := valid.Game("quiz-demo"); err != nil || game.Key != "quiz-demo" {
 		t.Fatalf("game lookup = %#v %v", game, err)
+	}
+}
+func TestNormalizeGameSettings(t *testing.T) {
+	for input, want := range map[string]string{
+		"":      "{}",
+		"{}":    "{}",
+		" { } ": "{}",
+		`{"b": 1, "a": {"z": [1, 2.50], "y": null}}`: `{"a":{"y":null,"z":[1,2.50]},"b":1}`,
+		`{"big": 12345678901234567890123}`:           `{"big":12345678901234567890123}`,
+		`{"html": "<b>&</b>"}`:                       `{"html":"<b>&</b>"}`,
+	} {
+		normalized, err := domain.NormalizeGameSettings(json.RawMessage(input))
+		if err != nil || string(normalized) != want {
+			t.Errorf("NormalizeGameSettings(%q) = %q, %v; want %q", input, normalized, err, want)
+		}
+	}
+	tooLarge := `{"value":"` + strings.Repeat("a", domain.MaxGameSettingsBytes) + `"}`
+	for _, input := range []string{"null", "[]", `"text"`, "1", "{", `{"a":1} {}`, `{"a":1}x`, tooLarge, `{"note":"a\u0000b"}`, `{"a\u0000":1}`, `{"list":[{"deep":"\u0000"}]}`} {
+		if _, err := domain.NormalizeGameSettings(json.RawMessage(input)); !errors.Is(err, domain.NewError(domain.CodeInvalidGameSettings, "")) {
+			t.Errorf("NormalizeGameSettings(%.20q) error = %v", input, err)
+		}
+	}
+}
+func TestValidateGameSettingsUsesTheGameValidator(t *testing.T) {
+	var received string
+	policy := domain.DefaultPolicy(
+		domain.GameRegistration{Key: "no-settings"},
+		domain.GameRegistration{Key: "strict", ValidateSettings: func(_ context.Context, settings json.RawMessage) error {
+			received = string(settings)
+			if !strings.Contains(received, `"rounds"`) {
+				return errors.New("rounds is required")
+			}
+			return nil
+		}},
+		domain.GameRegistration{Key: "offline", ValidateSettings: func(context.Context, json.RawMessage) error {
+			return &domain.Error{Code: domain.CodeUnavailable, Message: "map store offline", Cause: errors.New("connection refused")}
+		}},
+	)
+	ctx := context.Background()
+	if settings, err := policy.ValidateGameSettings(ctx, "no-settings", nil); err != nil || string(settings) != "{}" {
+		t.Fatalf("empty settings = %q, %v", settings, err)
+	}
+	if _, err := policy.ValidateGameSettings(ctx, "no-settings", json.RawMessage(`{"rounds":3}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings {
+		t.Fatalf("a game without a validator accepted settings: %v", err)
+	}
+	settings, err := policy.ValidateGameSettings(ctx, "strict", json.RawMessage(`{ "rounds": 3, "mode": "fast" }`))
+	if err != nil || string(settings) != `{"mode":"fast","rounds":3}` || received != string(settings) {
+		t.Fatalf("validated settings = %q, %v; validator saw %q", settings, err, received)
+	}
+	_, err = policy.ValidateGameSettings(ctx, "strict", nil)
+	if domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings || err.Error() != "rounds is required" {
+		t.Fatalf("rejection = %v", err)
+	}
+	if _, err := policy.ValidateGameSettings(ctx, "offline", nil); !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("validator outage = %v", err)
+	}
+	if _, err := policy.ValidateGameSettings(ctx, "unregistered", nil); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("unregistered game = %v", err)
 	}
 }
 func TestTeamDefinitionValidation(t *testing.T) {
@@ -195,7 +254,7 @@ func TestMergeChanges(t *testing.T) {
 	}
 }
 func TestBuildSnapshotFiltersOrdersAndCopies(t *testing.T) {
-	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: roomID, GameKey: "quiz", HostPlayerID: pointer(playerID)}, Teams: []domain.Team{{ID: "b", Order: 2}, {ID: "a", Order: 1}}, Members: []domain.Member{{ID: "b", PlayerID: playerID, Active: true, Generation: 2, JoinSequence: 2}, {ID: "old", PlayerID: "gone", Active: false}, {ID: "a", PlayerID: "other", Active: true, JoinSequence: 1}}}
+	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: roomID, GameKey: "quiz", HostPlayerID: pointer(playerID), GameSettings: json.RawMessage(`{"rounds":3}`)}, Teams: []domain.Team{{ID: "b", Order: 2}, {ID: "a", Order: 1}}, Members: []domain.Member{{ID: "b", PlayerID: playerID, Active: true, Generation: 2, JoinSequence: 2}, {ID: "old", PlayerID: "gone", Active: false}, {ID: "a", PlayerID: "other", Active: true, JoinSequence: 1}}}
 	snapshot, err := domain.BuildSnapshot(aggregate, playerID)
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +263,8 @@ func TestBuildSnapshotFiltersOrdersAndCopies(t *testing.T) {
 		t.Fatalf("snapshot %#v", snapshot)
 	}
 	*snapshot.Lobby.HostPlayerID = "changed"
-	if *aggregate.Lobby.HostPlayerID != playerID {
+	snapshot.Lobby.GameSettings[2] = 'R'
+	if *aggregate.Lobby.HostPlayerID != playerID || string(aggregate.Lobby.GameSettings) != `{"rounds":3}` {
 		t.Fatal("aliased snapshot")
 	}
 	if _, err := domain.BuildSnapshot(aggregate, "gone"); !errors.Is(err, domain.ErrNotFound) {

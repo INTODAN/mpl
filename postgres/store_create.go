@@ -23,6 +23,12 @@ func canonicalCreate(request domain.CreateRequest) (domain.CreateRequest, error)
 		return request, err
 	}
 	request.Teams, err = domain.ValidateTeamDefinitions(request.Teams, request.Capacity)
+	if err != nil {
+		return request, err
+	}
+	// The fingerprint covers the canonical settings, so a retry that only
+	// reorders keys or changes whitespace still matches.
+	request.GameSettings, err = domain.NormalizeGameSettings(request.GameSettings)
 	return request, err
 }
 func (store *Store) Create(ctx context.Context, principal domain.Principal, request domain.CreateRequest, aggregate domain.Aggregate) (domain.Snapshot, error) {
@@ -33,7 +39,12 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 	if domain.ValidateUUID(principal.PlayerID) != nil {
 		return domain.Snapshot{}, domain.ErrUnauthenticated
 	}
-	payload, err := json.Marshal(canonical)
+	fingerprinted := canonical
+	if string(fingerprinted.GameSettings) == domain.EmptyGameSettings {
+		// Create requests stored before game settings existed still replay.
+		fingerprinted.GameSettings = nil
+	}
+	payload, err := json.Marshal(fingerprinted)
 	if err != nil {
 		return domain.Snapshot{}, storageError(err)
 	}
@@ -58,10 +69,16 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 			if !bytes.Equal(records[0].PayloadHash, fingerprint[:]) {
 				return domain.ErrIdempotencyConflict
 			}
-			return json.Unmarshal(records[0].ResponseJSON, &response)
+			if err := json.Unmarshal(records[0].ResponseJSON, &response); err != nil {
+				return err
+			}
+			// jsonb reformats the stored settings. The matching fingerprint
+			// means they equal this request's canonical settings.
+			response.Lobby.GameSettings = canonical.GameSettings
+			return nil
 		}
 		aggregate = aggregate.DeepCopy()
-		if aggregate.Lobby.Version != 1 || aggregate.Lobby.GameKey != canonical.GameKey {
+		if aggregate.Lobby.Version != 1 || aggregate.Lobby.GameKey != canonical.GameKey || !bytes.Equal(aggregate.Lobby.GameSettings, canonical.GameSettings) {
 			return domain.ErrInvalidInput
 		}
 		room := roomRecord(aggregate.Lobby)

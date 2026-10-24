@@ -4,6 +4,7 @@ from enum import Enum
 class ProblemCode(str, Enum):
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     INTERNAL_ERROR = "internal_error"
+    INVALID_GAME_SETTINGS = "invalid_game_settings"
     INVALID_INPUT = "invalid_input"
     LOBBY_FULL = "lobby_full"
     NOT_FOUND = "not_found"

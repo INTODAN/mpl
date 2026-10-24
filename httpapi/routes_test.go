@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -115,6 +116,48 @@ func TestClaimedPlayerCannotOverrideBearer(t *testing.T) {
 	}
 }
 
+func TestCreatePassesGameSettingsThroughUnread(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	body := func(settings string) io.Reader {
+		return strings.NewReader(`{"request_id":"` + testUUID + `","game_key":"quiz-demo","name":"Lobby","capacity":2,` +
+			`"teams":[{"name":"One","capacity":1},{"name":"Two","capacity":1}],"client_instance_id":"` + testUUID + `"` + settings + `}`)
+	}
+	const settings = `{"rounds": 3, "seed": 12345678901234567890123}`
+	response := api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(`,"game_settings":`+settings))
+	if response.Code != http.StatusCreated || string(application.createRequest.GameSettings) != settings {
+		t.Fatalf("create = %d %s; application received %s", response.Code, response.Body.String(), application.createRequest.GameSettings)
+	}
+	if !strings.Contains(response.Body.String(), `"game_settings":{"rounds":3,"seed":12345678901234567890123}`) {
+		t.Fatalf("snapshot settings: %s", response.Body.String())
+	}
+	response = api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(""))
+	if response.Code != http.StatusCreated || application.createRequest.GameSettings != nil || !strings.Contains(response.Body.String(), `"game_settings":{}`) {
+		t.Fatalf("omitted settings = %d %s; application received %q", response.Code, response.Body.String(), application.createRequest.GameSettings)
+	}
+	for _, invalid := range []string{`"text"`, `[1]`} {
+		application.createRequest = domain.CreateRequest{}
+		response = api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(`,"game_settings":`+invalid))
+		if response.Code != http.StatusUnprocessableEntity || application.createRequest.RequestID != "" {
+			t.Fatalf("settings %s = %d %s", invalid, response.Code, response.Body.String())
+		}
+	}
+	// The schema lets an explicit null through, so it must reach the domain,
+	// which rejects it, rather than read as omitted settings.
+	application.createRequest = domain.CreateRequest{}
+	api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(`,"game_settings":null`))
+	if string(application.createRequest.GameSettings) != "null" {
+		t.Fatalf("null settings reached the application as %q", application.createRequest.GameSettings)
+	}
+	application.createError = domain.NewError(domain.CodeInvalidGameSettings, "rounds must be between 1 and 10")
+	response = api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(`,"game_settings":{"rounds":0}`))
+	var problem Problem
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != http.StatusUnprocessableEntity || problem.Code != domain.CodeInvalidGameSettings || problem.Detail != "rounds must be between 1 and 10" {
+		t.Fatalf("rejected settings = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestProblemStatusAndCodeMapping(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
@@ -122,7 +165,7 @@ func TestProblemStatusAndCodeMapping(t *testing.T) {
 		status     int
 		code       string
 	}{
-		{domain.ErrNotFound, http.StatusNotFound, "not_found"}, {domain.ErrNotHost, http.StatusForbidden, "not_host"}, {domain.ErrLobbyFull, http.StatusConflict, "lobby_full"}, {domain.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid_input"}, {domain.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"}, {errors.New("SQL password=secret"), http.StatusInternalServerError, "internal_error"},
+		{domain.NewError(domain.CodeInvalidGameSettings, "rounds must be positive"), http.StatusUnprocessableEntity, "invalid_game_settings"}, {domain.ErrNotFound, http.StatusNotFound, "not_found"}, {domain.ErrNotHost, http.StatusForbidden, "not_host"}, {domain.ErrLobbyFull, http.StatusConflict, "lobby_full"}, {domain.ErrInvalidInput, http.StatusUnprocessableEntity, "invalid_input"}, {domain.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"}, {errors.New("SQL password=secret"), http.StatusInternalServerError, "internal_error"},
 	} {
 		problem := problemFor(testCase.errorValue).(*Problem)
 		if problem.Status != testCase.status || string(problem.Code) != testCase.code {
@@ -142,7 +185,7 @@ func TestSnapshotDoesNotExposeInternalFieldsAndDeleteResponsesAreEmpty(t *testin
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"join_code":"SECRETCODE"`) || strings.Contains(response.Body.String(), "next_join_sequence") {
 		t.Fatalf("snapshot leaked internals: %s", response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"teams":[]`) || !strings.Contains(response.Body.String(), `"version":9007199254740993`) {
+	if !strings.Contains(response.Body.String(), `"teams":[]`) || !strings.Contains(response.Body.String(), `"version":9007199254740993`) || !strings.Contains(response.Body.String(), `"game_settings":{}`) {
 		t.Fatalf("snapshot does not preserve arrays/int64: %s", response.Body.String())
 	}
 	for _, path := range []string{"/lobby/v1/games/island-battles/lobbies/" + testUUID + "/membership", "/lobby/v1/games/island-battles/lobbies/" + testUUID + "/leases/" + testUUID + "?generation=1"} {
@@ -210,14 +253,22 @@ type fakeApplication struct {
 	teamRequest     domain.SelectTeamRequest
 	readyRequest    domain.ReadyRequest
 	createPrincipal domain.Principal
+	createRequest   domain.CreateRequest
+	createError     error
 }
 
 func fakeSnapshot() domain.Snapshot {
 	return domain.Snapshot{Lobby: domain.Lobby{ID: testUUID, GameKey: "island-battles", Name: "Lobby", JoinCode: "SECRETCODE", Capacity: 2, Phase: domain.PhaseWaiting, Version: 9007199254740993, CreatedAt: time.Unix(0, 0).UTC()}, Teams: []domain.Team{}, Members: []domain.Member{}, StartRoster: domain.StartRoster{}, MembershipGeneration: 1, Channel: "lobby:island-battles:" + testUUID}
 }
-func (application *fakeApplication) Create(_ context.Context, principal domain.Principal, _ domain.CreateRequest) (domain.Snapshot, error) {
+func (application *fakeApplication) Create(_ context.Context, principal domain.Principal, request domain.CreateRequest) (domain.Snapshot, error) {
 	application.createPrincipal = principal
-	return fakeSnapshot(), nil
+	application.createRequest = request
+	if application.createError != nil {
+		return domain.Snapshot{}, application.createError
+	}
+	snapshot := fakeSnapshot()
+	snapshot.Lobby.GameSettings = request.GameSettings
+	return snapshot, nil
 }
 func (*fakeApplication) Join(context.Context, domain.Principal, domain.JoinRequest) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil

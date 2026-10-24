@@ -2,7 +2,10 @@
 // Adapters depend on this package; this package never imports an adapter or backend.
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Phase string
 
@@ -31,6 +34,9 @@ type Lobby struct {
 	Version      int64     `json:"version"`
 	HostPlayerID *string   `json:"host_player_id"`
 	CreatedAt    time.Time `json:"created_at"`
+	// GameSettings is the canonical JSON object chosen at creation. It never
+	// changes, and the lobby stores it without reading it.
+	GameSettings json.RawMessage `json:"game_settings"`
 	// NextJoinSequence is persisted, including when older memberships deactivate.
 	NextJoinSequence int64 `json:"-"`
 }

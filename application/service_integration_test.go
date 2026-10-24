@@ -1,7 +1,9 @@
 package application_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync"
@@ -108,9 +110,29 @@ func integrationID(t *testing.T) string {
 	}
 	return id
 }
-func newServiceFixture(t *testing.T, capacity int) *serviceFixture {
+
+// quizSettings stands in for a game's settings validator. It accepts an
+// optional rounds count from 1 to 10 and nothing else.
+func quizSettings(_ context.Context, settings json.RawMessage) error {
+	var decoded struct {
+		Rounds *int `json:"rounds"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(settings))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	if decoded.Rounds != nil && (*decoded.Rounds < 1 || *decoded.Rounds > 10) {
+		return errors.New("rounds must be between 1 and 10")
+	}
+	return nil
+}
+
+// newServiceFixture creates an island-battles lobby; configure can change the
+// create request, for example to another game or with game settings.
+func newServiceFixture(t *testing.T, capacity int, configure ...func(*domain.CreateRequest)) *serviceFixture {
 	t.Helper()
-	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo"})}
+	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings})}
 	fixture.clock = &integrationClock{now: fixture.origin}
 	fixture.pushes = &recordedPushes{invalidations: map[string]int{}, lastVersion: map[string]int64{}, revocations: map[string]int{}}
 	fixture.store = fixture.newStore(t)
@@ -122,6 +144,9 @@ func newServiceFixture(t *testing.T, capacity int) *serviceFixture {
 	fixture.host = fixture.player(t, "Host")
 	fixture.clientID = integrationID(t)
 	fixture.request = domain.CreateRequest{RequestID: integrationID(t), GameKey: "island-battles", Name: "Room", Capacity: capacity, Teams: []domain.TeamDefinition{{Name: "Red", Capacity: 1}, {Name: "Blue", Capacity: capacity}}, ClientInstanceID: fixture.clientID}
+	for _, change := range configure {
+		change(&fixture.request)
+	}
 	fixture.initial, err = fixture.service.Create(context.Background(), fixture.host, fixture.request)
 	if err != nil {
 		t.Fatal(err)
@@ -291,6 +316,84 @@ func TestCreateRetryReturnsOriginalResponse(t *testing.T) {
 	var rooms int64
 	if err := fixture.db.Model(&postgres.RoomRecord{}).Count(&rooms).Error; err != nil || rooms != 1 {
 		t.Fatal("replay created room", err)
+	}
+}
+
+func quizLobbyWith(settings string) func(*domain.CreateRequest) {
+	return func(request *domain.CreateRequest) {
+		request.GameKey = "quiz-demo"
+		request.GameSettings = json.RawMessage(settings)
+	}
+}
+func TestGameSettingsReachTheStartedSnapshot(t *testing.T) {
+	fixture := newServiceFixture(t, 3, quizLobbyWith(`{ "rounds" : 3 }`))
+	const canonical = `{"rounds":3}`
+	if string(fixture.initial.Lobby.GameSettings) != canonical {
+		t.Fatalf("created settings = %s", fixture.initial.Lobby.GameSettings)
+	}
+	guest := fixture.player(t, "Guest")
+	joined, _ := fixture.join(t, guest)
+	if string(joined.Lobby.GameSettings) != canonical {
+		t.Fatalf("joined settings = %s", joined.Lobby.GameSettings)
+	}
+	fixture.assign(t, fixture.host, 0, true)
+	fixture.assign(t, guest, 1, true)
+	started, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	if err != nil || started.Lobby.Phase != domain.PhaseStarted || string(started.Lobby.GameSettings) != canonical {
+		t.Fatalf("started snapshot = %#v, %v", started.Lobby, err)
+	}
+	binding, err := application.NewGameBinding("quiz-demo", fixture.service, func(_ context.Context, snapshot domain.Snapshot) (string, error) {
+		return string(snapshot.Lobby.GameSettings), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	received, err := binding.Bind(context.Background(), fixture.host, fixture.scope)
+	if err != nil || received != canonical {
+		t.Fatalf("game received settings %q, %v", received, err)
+	}
+}
+func TestCreateRejectsInvalidGameSettings(t *testing.T) {
+	fixture := newServiceFixture(t, 4)
+	for _, testCase := range []struct {
+		gameKey, settings, message string
+	}{
+		{"island-battles", `{"rounds":3}`, "this game takes no settings"},
+		{"quiz-demo", `{"rounds":0}`, "rounds must be between 1 and 10"},
+		{"quiz-demo", `{"theme":"space"}`, `json: unknown field "theme"`},
+		{"quiz-demo", `[1]`, "game settings must be a JSON object"},
+		{"quiz-demo", `{"note":"a\u0000b"}`, "game settings must not contain NUL characters"},
+	} {
+		request := fixture.request
+		request.RequestID = integrationID(t)
+		request.GameKey = testCase.gameKey
+		request.GameSettings = json.RawMessage(testCase.settings)
+		_, err := fixture.service.Create(context.Background(), fixture.host, request)
+		if domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings || err.Error() != testCase.message {
+			t.Errorf("%s %s: error = %v", testCase.gameKey, testCase.settings, err)
+		}
+	}
+	var rooms, requests int64
+	if err := fixture.db.Model(&postgres.RoomRecord{}).Count(&rooms).Error; err != nil || rooms != 1 {
+		t.Fatal("rejected settings created a room", rooms, err)
+	}
+	if err := fixture.db.Model(&postgres.CreateRequestRecord{}).Count(&requests).Error; err != nil || requests != 1 {
+		t.Fatal("rejected settings kept a create request", requests, err)
+	}
+}
+func TestCreateRetryComparesCanonicalGameSettings(t *testing.T) {
+	fixture := newServiceFixture(t, 4, quizLobbyWith(`{"rounds":3}`))
+	retry := fixture.request
+	retry.GameSettings = json.RawMessage(` {"rounds": 3} `)
+	replay, err := fixture.service.Create(context.Background(), fixture.host, retry)
+	if err != nil || !reflect.DeepEqual(replay, fixture.initial) {
+		t.Fatal("reformatted settings did not replay the original response", err, replay)
+	}
+	for _, settings := range []string{`{"rounds":4}`, ``} {
+		changed := fixture.request
+		changed.GameSettings = json.RawMessage(settings)
+		_, err = fixture.service.Create(context.Background(), fixture.host, changed)
+		requireDomainError(t, err, domain.ErrIdempotencyConflict)
 	}
 }
 

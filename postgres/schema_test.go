@@ -246,7 +246,11 @@ func seedPlayer(t *testing.T, db *gorm.DB) lobbypostgres.PlayerRecord {
 func seedRoom(t *testing.T, db *gorm.DB, playerID, gameKey, joinCode string) lobbypostgres.RoomRecord {
 	t.Helper()
 	room := roomFor(playerID, gameKey, joinCode)
-	mustCreate(t, db, &room)
+	// Omitting game_settings lets the helper seed schemas from before
+	// migration 0003 added it.
+	if err := db.Omit("GameSettings").Create(&room).Error; err != nil {
+		t.Fatal(err)
+	}
 	return room
 }
 
@@ -255,7 +259,7 @@ func roomFor(playerID, gameKey, joinCode string) lobbypostgres.RoomRecord {
 	if playerID != "" {
 		host = &playerID
 	}
-	return lobbypostgres.RoomRecord{ID: uuid.NewString(), GameKey: gameKey, Name: "Room", JoinCode: joinCode, Capacity: 4, Phase: "waiting", Version: 1, HostPlayerID: host, CreatedAt: time.Now().UTC(), NextJoinSequence: 2}
+	return lobbypostgres.RoomRecord{ID: uuid.NewString(), GameKey: gameKey, Name: "Room", JoinCode: joinCode, Capacity: 4, Phase: "waiting", Version: 1, HostPlayerID: host, CreatedAt: time.Now().UTC(), NextJoinSequence: 2, GameSettings: []byte(`{}`)}
 }
 
 func memberFor(lobbyID, playerID string) lobbypostgres.MembershipRecord {

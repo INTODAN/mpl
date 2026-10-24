@@ -13,6 +13,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"islandBattles/lobby/domain"
 	"islandBattles/lobby/internal/testutil"
 	lobbypostgres "islandBattles/lobby/postgres"
 
@@ -183,6 +184,45 @@ ALTER TABLE lobby_rooms ADD CONSTRAINT ck_lobby_rooms_capacity CHECK (capacity B
 	}
 	if err := set.Apply(context.Background(), db); err != nil {
 		t.Fatalf("repeat upgraded migration: %v", err)
+	}
+}
+
+func TestMigrateAddsGameSettingsToExistingRooms(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	initial := lobbypostgres.Migrations()
+	first := migrationNames(t, initial.Files)[0]
+	data, err := fs.ReadFile(initial.Files, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial.Files = fstest.MapFS{first: &fstest.MapFile{Data: data}}
+	if err := initial.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	room := seedRoom(t, db, player.ID, "island-battles", "LEGACY01")
+
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate rooms without game settings: %v", err)
+	}
+	columns, err := db.Migrator().ColumnTypes(&lobbypostgres.RoomRecord{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := slices.IndexFunc(columns, func(column gorm.ColumnType) bool { return column.Name() == "game_settings" })
+	if index < 0 {
+		t.Fatal("migration did not add game_settings")
+	}
+	if nullable, _ := columns[index].Nullable(); columns[index].DatabaseTypeName() != "json" || nullable {
+		t.Fatalf("game_settings column = %s, nullable %v", columns[index].DatabaseTypeName(), nullable)
+	}
+	store, err := lobbypostgres.NewStore(db, domain.SystemClock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregate, err := store.Read(context.Background(), domain.Scope{GameKey: room.GameKey, LobbyID: room.ID})
+	if err != nil || aggregate.Lobby.JoinCode != room.JoinCode || string(aggregate.Lobby.GameSettings) != domain.EmptyGameSettings {
+		t.Fatalf("existing room = %#v, %v", aggregate.Lobby, err)
 	}
 }
 

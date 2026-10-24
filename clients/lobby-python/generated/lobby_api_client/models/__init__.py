@@ -3,6 +3,7 @@
 from .connection_token import ConnectionToken
 from .connection_token_input_body import ConnectionTokenInputBody
 from .create_lobby_body import CreateLobbyBody
+from .create_lobby_body_game_settings import CreateLobbyBodyGameSettings
 from .create_session_body import CreateSessionBody
 from .error_detail import ErrorDetail
 from .error_model import ErrorModel
@@ -11,6 +12,7 @@ from .heartbeat_body import HeartbeatBody
 from .heartbeat_result import HeartbeatResult
 from .join_lobby_body import JoinLobbyBody
 from .lobby import Lobby
+from .lobby_game_settings import LobbyGameSettings
 from .lobby_invalidation import LobbyInvalidation
 from .lobby_invalidation_schema_version import LobbyInvalidationSchemaVersion
 from .lobby_invalidation_type import LobbyInvalidationType
@@ -29,6 +31,7 @@ __all__ = (
     "ConnectionToken",
     "ConnectionTokenInputBody",
     "CreateLobbyBody",
+    "CreateLobbyBodyGameSettings",
     "CreateSessionBody",
     "ErrorDetail",
     "ErrorModel",
@@ -37,6 +40,7 @@ __all__ = (
     "HeartbeatResult",
     "JoinLobbyBody",
     "Lobby",
+    "LobbyGameSettings",
     "LobbyInvalidation",
     "LobbyInvalidationSchemaVersion",
     "LobbyInvalidationType",

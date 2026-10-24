@@ -83,6 +83,11 @@ async with LobbyClient(base_url, credential=access_token) as client:
         print(update.lobby.version)
 ```
 
+`create_lobby` takes an optional `game_settings` dict, the game's own JSON object.
+The game checks it when the lobby is created; rejected settings raise
+`LobbyError` with code `invalid_game_settings`. Every snapshot returns the
+settings as `snapshot.lobby.game_settings`, and they can't change afterwards.
+
 To rejoin after `quit`, reuse the same session file without `--new-session`:
 
 ```sh

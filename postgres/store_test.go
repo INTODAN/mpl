@@ -2,6 +2,8 @@ package postgres_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync/atomic"
@@ -66,7 +68,7 @@ func storeCandidate(t *testing.T, fixture *storeFixture) (domain.CreateRequest, 
 		t.Fatal(err)
 	}
 	request := domain.CreateRequest{RequestID: storeUUID(t), GameKey: "quiz-demo", Name: "A room", Capacity: 4, Teams: []domain.TeamDefinition{{Name: "Red", Capacity: 2}, {Name: "Blue", Capacity: 2}}, ClientInstanceID: storeUUID(t)}
-	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: id, GameKey: request.GameKey, Name: request.Name, JoinCode: code, Capacity: request.Capacity, Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: storePointer(fixture.principal.PlayerID), CreatedAt: fixture.clock.now, NextJoinSequence: 2}, Teams: []domain.Team{{ID: storeUUID(t), LobbyID: id, Name: "Red", Capacity: 2, Order: 1}, {ID: storeUUID(t), LobbyID: id, Name: "Blue", Capacity: 2, Order: 2}}, Members: []domain.Member{{ID: storeUUID(t), PlayerID: fixture.principal.PlayerID, DisplayName: fixture.principal.DisplayName, Generation: 1, Active: true, JoinedAt: fixture.clock.now, JoinSequence: 1}}, Leases: []domain.Lease{{LobbyID: id, PlayerID: fixture.principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: fixture.clock.now.Add(45 * time.Second)}}, StartRoster: domain.StartRoster{}}
+	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: id, GameKey: request.GameKey, Name: request.Name, JoinCode: code, Capacity: request.Capacity, Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: storePointer(fixture.principal.PlayerID), CreatedAt: fixture.clock.now, GameSettings: json.RawMessage(domain.EmptyGameSettings), NextJoinSequence: 2}, Teams: []domain.Team{{ID: storeUUID(t), LobbyID: id, Name: "Red", Capacity: 2, Order: 1}, {ID: storeUUID(t), LobbyID: id, Name: "Blue", Capacity: 2, Order: 2}}, Members: []domain.Member{{ID: storeUUID(t), PlayerID: fixture.principal.PlayerID, DisplayName: fixture.principal.DisplayName, Generation: 1, Active: true, JoinedAt: fixture.clock.now, JoinSequence: 1}}, Leases: []domain.Lease{{LobbyID: id, PlayerID: fixture.principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: fixture.clock.now.Add(45 * time.Second)}}, StartRoster: domain.StartRoster{}}
 	return request, aggregate
 }
 func storeCount(t *testing.T, db *gorm.DB, model any) int64 {
@@ -313,7 +315,7 @@ func TestCreateRequestPayloadConflict(t *testing.T) {
 	for _, change := range []func(*domain.CreateRequest){func(request *domain.CreateRequest) { request.ClientInstanceID = storeUUID(t) }, func(request *domain.CreateRequest) {
 		request.Teams = append([]domain.TeamDefinition{}, request.Teams...)
 		request.Teams[0].Name = "Changed"
-	}} {
+	}, func(request *domain.CreateRequest) { request.GameSettings = json.RawMessage(`{"rounds":3}`) }} {
 		request := fixture.request
 		change(&request)
 		if _, err := fixture.store.Create(context.Background(), fixture.principal, request, fixture.aggregate); !errors.Is(err, domain.ErrIdempotencyConflict) {
@@ -337,6 +339,56 @@ func TestCreateReplayUsesOriginalResponse(t *testing.T) {
 	replay, err := fixture.store.Create(context.Background(), fixture.principal, fixture.request, fixture.aggregate)
 	if err != nil || !reflect.DeepEqual(replay, fixture.snapshot) || replay.Lobby.Version != 1 {
 		t.Fatal("replay leaked current room", err, replay, fixture.snapshot)
+	}
+}
+func TestCreateReplaysRequestsStoredBeforeGameSettings(t *testing.T) {
+	fixture := newStoreFixture(t)
+	request := fixture.request
+	// Rows written before game settings existed hash the request without the
+	// field and hold a response without it.
+	legacy, err := json.Marshal(struct {
+		RequestID        string                  `json:"request_id"`
+		GameKey          string                  `json:"game_key"`
+		Name             string                  `json:"name"`
+		Capacity         int                     `json:"capacity"`
+		Teams            []domain.TeamDefinition `json:"teams"`
+		ClientInstanceID string                  `json:"client_instance_id"`
+	}{request.RequestID, request.GameKey, request.Name, request.Capacity, request.Teams, request.ClientInstanceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := sha256.Sum256(legacy)
+	if err := fixture.db.Exec("UPDATE lobby_create_requests SET payload_hash = ?, response_json = response_json #- '{lobby,game_settings}' WHERE request_id = ?", fingerprint[:], request.RequestID).Error; err != nil {
+		t.Fatal(err)
+	}
+	replay, err := fixture.store.Create(context.Background(), fixture.principal, request, fixture.aggregate)
+	if err != nil || string(replay.Lobby.GameSettings) != domain.EmptyGameSettings || replay.Lobby.ID != fixture.snapshot.Lobby.ID {
+		t.Fatalf("legacy replay = %#v, %v", replay.Lobby, err)
+	}
+}
+func TestCreateStoresCanonicalGameSettings(t *testing.T) {
+	fixture := newStoreFixture(t)
+	request, aggregate := storeCandidate(t, fixture)
+	request.GameSettings = json.RawMessage(`{"b": [1, 2.50], "a": "x"}`)
+	if _, err := fixture.store.Create(context.Background(), fixture.principal, request, aggregate); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatal("room settings that differ from the request were stored", err)
+	}
+	const canonical = `{"a":"x","b":[1,2.50]}`
+	aggregate.Lobby.GameSettings = json.RawMessage(canonical)
+	created, err := fixture.store.Create(context.Background(), fixture.principal, request, aggregate)
+	if err != nil || string(created.Lobby.GameSettings) != canonical {
+		t.Fatalf("created settings = %s, %v", created.Lobby.GameSettings, err)
+	}
+	stored, err := fixture.store.Read(context.Background(), aggregate.Lobby.Scope())
+	if err != nil || string(stored.Lobby.GameSettings) != canonical {
+		t.Fatalf("stored settings = %s, %v", stored.Lobby.GameSettings, err)
+	}
+	_, err = fixture.store.Transact(context.Background(), aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
+		aggregate.Lobby.GameSettings = json.RawMessage(`{"a":"y"}`)
+		return domain.Change{PublicChanged: true}, nil
+	})
+	if !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatal("game settings changed after creation", err)
 	}
 }
 func TestCreateCodeCollisionRollsBack(t *testing.T) {

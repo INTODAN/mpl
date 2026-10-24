@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"sort"
 
 	"islandBattles/lobby/internal/optional"
@@ -10,6 +11,7 @@ import (
 func (aggregate Aggregate) DeepCopy() Aggregate {
 	result := aggregate
 	result.Lobby.HostPlayerID = optional.Copy(aggregate.Lobby.HostPlayerID)
+	result.Lobby.GameSettings = bytes.Clone(aggregate.Lobby.GameSettings)
 	result.Teams = append([]Team{}, aggregate.Teams...)
 	result.Members = append([]Member{}, aggregate.Members...)
 	for index := range result.Members {
