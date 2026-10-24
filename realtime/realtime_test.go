@@ -121,7 +121,7 @@ func TestRoomAndPrivateAuthorizationIsolation(t *testing.T) {
 	clock := &fixedClock{now}
 	store := &aggregateStore{aggregate: domain.Aggregate{Lobby: domain.Lobby{ID: room, GameKey: "island-battles", Phase: domain.PhaseWaiting, HostPlayerID: ptr(actor), Version: 1}, Members: []domain.Member{{ID: actor, PlayerID: actor, Active: true, Generation: 1, JoinSequence: 1}}, Leases: []domain.Lease{{PlayerID: actor, Generation: 1, ExpiresAt: now.Add(time.Minute)}}}}
 	identity := &domain.SessionVerification{Principal: domain.Principal{PlayerID: actor}, ExpiresAt: now.Add(30 * time.Second)}
-	authorizer, _ := realtime.NewAuthorizer(identityStore{identity: identity}, store, clock, domain.DefaultPolicy("island-battles", "quiz-demo"))
+	authorizer, _ := realtime.NewAuthorizer(identityStore{identity: identity}, store, clock, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo"}))
 	for _, name := range []string{channel, "player:" + actor} {
 		allowed, err := authorizer.AuthorizeSubscription(context.Background(), actor, name)
 		if err != nil || !allowed.AllowedUntil.Equal(identity.ExpiresAt) {

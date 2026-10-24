@@ -20,7 +20,7 @@ func expiryFixture(now time.Time) domain.Aggregate {
 
 func TestExpiryGraceBoundaryAndRestart(t *testing.T) {
 	now := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
-	policy := domain.DefaultPolicy("island-battles")
+	policy := domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})
 	for _, test := range []struct {
 		name   string
 		offset time.Duration
@@ -64,7 +64,7 @@ func TestTwoClientsShareOneSeat(t *testing.T) {
 	now := time.Now().UTC()
 	aggregate := expiryFixture(now.Add(-time.Hour))
 	aggregate.Leases = append(aggregate.Leases, domain.Lease{PlayerID: "host", Generation: 1, ClientInstanceID: "second", ExpiresAt: now.Add(time.Minute)})
-	change, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy("island-battles"))
+	change, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}))
 	if err != nil || change.HasWrites() || !aggregate.Members[0].Active || len(aggregate.Members) != 1 {
 		t.Fatalf("other lease lost membership: %+v %v", change, err)
 	}
@@ -74,7 +74,7 @@ func TestReleaseAfterExpiryDoesNotExtendGrace(t *testing.T) {
 	now := time.Now().UTC()
 	aggregate := expiryFixture(now.Add(-time.Hour))
 	aggregate.Leases[0].ReleasedAt = &now
-	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy("island-battles")); err != nil {
+	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})); err != nil {
 		t.Fatal(err)
 	}
 	if aggregate.Members[0].Active {
@@ -86,7 +86,7 @@ func TestAllReleasedLeasesHaveDurableDeadline(t *testing.T) {
 	now := time.Now().UTC()
 	aggregate := expiryFixture(now.Add(time.Hour))
 	aggregate.Leases[0].ReleasedAt = &now
-	policy := domain.DefaultPolicy("island-battles")
+	policy := domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})
 	if _, err := domain.NormalizeExpired(&aggregate, now, policy); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestOldGenerationLeaseCannotRetainMembership(t *testing.T) {
 	aggregate.Members[0].Generation = 2
 	aggregate.Leases[0].Generation = 2
 	aggregate.Leases = append(aggregate.Leases, domain.Lease{PlayerID: "host", Generation: 1, ExpiresAt: now.Add(time.Hour)})
-	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy("island-battles")); err != nil {
+	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})); err != nil {
 		t.Fatal(err)
 	}
 	if aggregate.Members[0].Active {
@@ -121,7 +121,7 @@ func TestStartedExpiryPreservesRoster(t *testing.T) {
 	aggregate.Lobby.Phase = domain.PhaseStarted
 	aggregate.StartRoster = domain.StartRoster{{PlayerID: "host", TeamID: "team", MemberID: "member", TeamOrder: 1}}
 	original := append(domain.StartRoster{}, aggregate.StartRoster...)
-	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy("island-battles")); err != nil {
+	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})); err != nil {
 		t.Fatal(err)
 	}
 	if aggregate.Lobby.Phase != domain.PhaseStarted || !reflect.DeepEqual(original, aggregate.StartRoster) || aggregate.Lobby.HostPlayerID != nil {
@@ -136,7 +136,7 @@ func TestExpiryElectsHostDeterministically(t *testing.T) {
 		aggregate.Members = append(aggregate.Members, domain.Member{ID: player, PlayerID: player, Active: true, Generation: 1, JoinSequence: int64(3 - index)})
 		aggregate.Leases = append(aggregate.Leases, domain.Lease{PlayerID: player, Generation: 1, ExpiresAt: now.Add(time.Minute)})
 	}
-	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy("island-battles")); err != nil {
+	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})); err != nil {
 		t.Fatal(err)
 	}
 	if aggregate.Lobby.HostPlayerID == nil || *aggregate.Lobby.HostPlayerID != "earlier" {

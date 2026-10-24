@@ -98,7 +98,7 @@ func TestGuestCreationIsAtomic(t *testing.T) {
 
 func TestGuestCreationRandomnessFailureHasNoWrites(t *testing.T) {
 	_, identities, db, clock := newService(t)
-	service, err := auth.NewService(identities, clock, domain.DefaultPolicy("island-battles"), failingIdentifiers{}, []byte(signingSecret), "wss://public.example")
+	service, err := auth.NewService(identities, clock, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}), failingIdentifiers{}, []byte(signingSecret), "wss://public.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestConnectionTokenRefreshHasNoLobbySideEffects(t *testing.T) {
 
 func TestConnectionTokenFailsClosed(t *testing.T) {
 	_, identities, _, clock := newService(t)
-	policy := domain.DefaultPolicy("island-battles")
+	policy := domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})
 	if _, err := auth.NewService(identities, clock, policy, domain.CryptoIdentifiers{}, nil, "wss://public.example"); err == nil {
 		t.Fatal("empty signing secret configured successfully")
 	}
@@ -279,7 +279,7 @@ func newService(t *testing.T) (*auth.Service, *lobbypostgres.IdentityStore, *gor
 		t.Fatal(err)
 	}
 	clock := &testClock{now: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)}
-	service, err := auth.NewService(identities, clock, domain.DefaultPolicy("island-battles"), domain.CryptoIdentifiers{}, []byte(signingSecret), "wss://lobby.example.test/connection/websocket")
+	service, err := auth.NewService(identities, clock, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}), domain.CryptoIdentifiers{}, []byte(signingSecret), "wss://lobby.example.test/connection/websocket")
 	if err != nil {
 		t.Fatal(err)
 	}

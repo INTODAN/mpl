@@ -65,7 +65,7 @@ func TestJoinCodeNormalization(t *testing.T) {
 	}
 }
 func TestPolicyValidation(t *testing.T) {
-	valid := domain.DefaultPolicy("island-battles", "quiz-demo")
+	valid := domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo"})
 	if err := valid.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestPolicyValidation(t *testing.T) {
 	if err := (domain.Policy{}).Validate(); err == nil {
 		t.Fatal("zero policy accepted")
 	}
-	for _, mutate := range []func(*domain.Policy){func(p *domain.Policy) { p.RegisteredGameKeys = nil }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"quiz", "quiz"} }, func(p *domain.Policy) { p.RegisteredGameKeys = []string{"Quiz"} }, func(p *domain.Policy) { p.HeartbeatInterval = 0 }, func(p *domain.Policy) { p.LeaseDuration = p.HeartbeatInterval }, func(p *domain.Policy) { p.GraceDuration = -time.Second }, func(p *domain.Policy) { p.SessionDuration = 0 }, func(p *domain.Policy) { p.ConnectionTokenDuration = p.SessionDuration + time.Second }, func(p *domain.Policy) { p.SubscriptionDuration = 0 }} {
+	for _, mutate := range []func(*domain.Policy){func(p *domain.Policy) { p.Games = nil }, func(p *domain.Policy) { p.Games = []domain.GameRegistration{{Key: "quiz"}, {Key: "quiz"}} }, func(p *domain.Policy) { p.Games = []domain.GameRegistration{{Key: "Quiz"}} }, func(p *domain.Policy) { p.HeartbeatInterval = 0 }, func(p *domain.Policy) { p.LeaseDuration = p.HeartbeatInterval }, func(p *domain.Policy) { p.GraceDuration = -time.Second }, func(p *domain.Policy) { p.SessionDuration = 0 }, func(p *domain.Policy) { p.ConnectionTokenDuration = p.SessionDuration + time.Second }, func(p *domain.Policy) { p.SubscriptionDuration = 0 }} {
 		invalid := valid
 		mutate(&invalid)
 		if err := invalid.Validate(); err == nil {
@@ -84,6 +84,9 @@ func TestPolicyValidation(t *testing.T) {
 	}
 	if valid.ValidateGame("quiz-demo") != nil || valid.ValidateGame("unregistered") == nil {
 		t.Fatal("game registration ignored")
+	}
+	if game, err := valid.Game("quiz-demo"); err != nil || game.Key != "quiz-demo" {
+		t.Fatalf("game lookup = %#v %v", game, err)
 	}
 }
 func TestTeamDefinitionValidation(t *testing.T) {

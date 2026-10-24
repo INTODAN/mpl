@@ -8,6 +8,7 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"islandBattles/lobby/domain"
@@ -27,7 +28,7 @@ func NewService(store domain.Store, clock domain.Clock, identifiers domain.Ident
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	policy.RegisteredGameKeys = append([]string{}, policy.RegisteredGameKeys...)
+	policy.Games = slices.Clone(policy.Games)
 	return &Service{store: store, clock: clock, identifiers: identifiers, policy: policy}, nil
 }
 

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,15 +16,15 @@ type Policy struct {
 	SessionDuration         time.Duration
 	ConnectionTokenDuration time.Duration
 	SubscriptionDuration    time.Duration
-	RegisteredGameKeys      []string
+	Games                   []GameRegistration
 }
 
 // DefaultPolicy is explicit: the zero Policy is invalid, never silently defaulted.
-func DefaultPolicy(gameKeys ...string) Policy {
+func DefaultPolicy(games ...GameRegistration) Policy {
 	return Policy{HeartbeatInterval: 15 * time.Second, LeaseDuration: 45 * time.Second,
 		GraceDuration:   60 * time.Second,
 		SessionDuration: 24 * time.Hour, ConnectionTokenDuration: 5 * time.Minute,
-		SubscriptionDuration: 60 * time.Second, RegisteredGameKeys: append([]string{}, gameKeys...)}
+		SubscriptionDuration: 60 * time.Second, Games: slices.Clone(games)}
 }
 func (policy Policy) Validate() error {
 	if policy.HeartbeatInterval <= 0 || policy.LeaseDuration <= policy.HeartbeatInterval ||
@@ -32,28 +33,34 @@ func (policy Policy) Validate() error {
 		policy.SubscriptionDuration <= 0 || policy.SubscriptionDuration > policy.SessionDuration {
 		return NewError(CodeInvalidInput, "invalid lobby policy durations")
 	}
-	if len(policy.RegisteredGameKeys) == 0 {
+	if len(policy.Games) == 0 {
 		return NewError(CodeInvalidInput, "at least one game must be registered")
 	}
 	seen := map[string]bool{}
-	for _, key := range policy.RegisteredGameKeys {
-		if ValidateGameKey(key) != nil || seen[key] {
+	for _, game := range policy.Games {
+		if ValidateGameKey(game.Key) != nil || seen[game.Key] {
 			return NewError(CodeInvalidInput, "invalid or duplicate registered game key")
 		}
-		seen[key] = true
+		seen[game.Key] = true
 	}
 	return nil
 }
-func (policy Policy) ValidateGame(key string) error {
+
+// Game returns the registration for a game key.
+func (policy Policy) Game(key string) (GameRegistration, error) {
 	if err := ValidateGameKey(key); err != nil {
-		return err
+		return GameRegistration{}, err
 	}
-	for _, registered := range policy.RegisteredGameKeys {
-		if registered == key {
-			return nil
+	for _, game := range policy.Games {
+		if game.Key == key {
+			return game, nil
 		}
 	}
-	return NewError(CodeInvalidInput, "game is not registered")
+	return GameRegistration{}, NewError(CodeInvalidInput, "game is not registered")
+}
+func (policy Policy) ValidateGame(key string) error {
+	_, err := policy.Game(key)
+	return err
 }
 func (policy Policy) ValidateScope(scope Scope) error {
 	if err := policy.ValidateGame(scope.GameKey); err != nil {
