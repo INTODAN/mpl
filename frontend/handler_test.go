@@ -76,10 +76,33 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		"invalid key":            func(game *frontend.Game) { game.Key = "Quiz" },
 		"missing name":           func(game *frontend.Game) { game.Name = " " },
 		"no lobby placeholder":   func(game *frontend.Game) { game.ResultURL = "/quiz/result" },
-		"cross-origin result":    func(game *frontend.Game) { game.ResultURL = "https://example.com/{lobby_id}" },
-		"protocol-relative":      func(game *frontend.Game) { game.ResultURL = "//example.com/{lobby_id}" },
-		"cross-origin module":    func(game *frontend.Game) { game.ExamplePlayer.Module = "https://example.com/player.mjs" },
 		"missing player summary": func(game *frontend.Game) { game.ExamplePlayer.Summary = "" },
+		"missing strategy":       func(game *frontend.Game) { game.ExamplePlayer.Strategy = "" },
+		"empty result url":       func(game *frontend.Game) { game.ResultURL = "" },
+		"empty module":           func(game *frontend.Game) { game.ExamplePlayer.Module = "" },
+		"module //":              func(game *frontend.Game) { game.ExamplePlayer.Module = "//" },
+	}
+	// Hostile values for both URL fields. A browser strips tab, LF and CR
+	// before parsing, so "/<ctrl>/evil.com" reads as "//evil.com".
+	hostile := map[string]string{
+		"cross-origin":       "https://example.com/",
+		"protocol-relative":  "//evil.com/",
+		"no leading slash":   "quiz/",
+		"relative dots":      "../quiz/",
+		"tab":                "/\t/evil.com/",
+		"line feed":          "/\n/evil.com/",
+		"carriage return":    "/\r/evil.com/",
+		"embedded tab":       "/quiz\t/",
+		"space":              "/quiz /",
+		"delete":             "/quiz\x7f/",
+		"leading backslash":  `\evil.com/`,
+		"slash backslash":    `/\evil.com/`,
+		"embedded backslash": `/quiz\evil/`,
+		"javascript scheme":  "javascript:alert(1)//",
+	}
+	for name, value := range hostile {
+		cases["result url "+name] = func(game *frontend.Game) { game.ResultURL = value + "{lobby_id}" }
+		cases["module "+name] = func(game *frontend.Game) { game.ExamplePlayer.Module = value + "player.mjs" }
 	}
 	for name, mutate := range cases {
 		game := quizGame()
@@ -107,7 +130,7 @@ func TestAssetsNameNoGame(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := strings.ToLower(string(body))
-		for _, word := range []string{"island", "soldier", "castle", "python"} {
+		for _, word := range []string{"island", "soldier", "castle", "python", "/game/", "from-lobby"} {
 			if strings.Contains(text, word) {
 				t.Errorf("%s mentions %q", path, word)
 			}

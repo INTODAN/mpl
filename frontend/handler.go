@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -108,7 +109,19 @@ func validateCatalog(games []Game) error {
 }
 
 // sameOriginPath accepts absolute paths only, so the guest credential that
-// accompanies these requests never leaves the frontend's origin.
+// accompanies these requests never leaves the frontend's origin. Browsers drop
+// tab, line feed and carriage return from a URL before parsing it, so "/\t/host"
+// would become "//host". Every control character and space is therefore
+// rejected, along with the backslash that browsers read as a slash.
 func sameOriginPath(value string) bool {
-	return strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") && !strings.Contains(value, `\`)
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
+		return false
+	}
+	for _, char := range value {
+		if char <= 0x20 || char == 0x7f {
+			return false
+		}
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "" && parsed.Host == ""
 }
