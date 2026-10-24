@@ -8,7 +8,7 @@ lobby/
   domain/             Types, ports, errors, policies, and pure state rules
   application/        Membership commands, teams, leases, binding, and sweeping
   auth/               Guest credentials and connection tokens
-  postgres/           Persistence and schema
+  postgres/           Persistence and versioned schema migrations
   httpapi/            HTTP routes and DTOs
   frontend/           Temporary browser playground and embedded asset handler
   realtime/           Centrifugo authorization and transport
@@ -35,6 +35,14 @@ uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
 Go database tests use disposable PostgreSQL containers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests additionally need a host application implementing the lobby endpoints; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the host application's suite.
 
 The module path remains `islandBattles/lobby`. Go consumers import `islandBattles/lobby/domain` for contracts and `islandBattles/lobby/application` for services; there is no root Go package or compatibility alias layer. It has no dependency or filesystem replacement pointing to the parent repository. To extract it, copy this directory, verify with `GOWORK=off`, then choose the published repository's module path and update imports. The monorepo's `go.work` and root `go.mod` local replacement are consumer-side wiring only. A plain `go test ./...` at the monorepo root tests the host module; use `go test ./... ./lobby/...` there to test both modules.
+
+## Schema migrations
+
+The PostgreSQL schema is versioned SQL in `postgres/migrations/`. A host calls `postgres.Migrate(ctx, db)` before using the stores. It runs every pending migration in one transaction under a PostgreSQL advisory lock and records each in `lobby_schema_migrations`, so concurrent runs wait for each other and a failed run changes nothing. A database whose lobby tables were created before versioning is recorded at migration 1 without running it.
+
+To change the schema, add the next file, `NNNN_description.sql` numbered without gaps, and update the GORM record in the same change; a test fails when records and columns differ. Never edit an applied migration: `Migrate` fails when an applied file has changed. Migrations cannot use statements that PostgreSQL refuses inside a transaction, such as `CREATE INDEX CONCURRENTLY`.
+
+A host can version its own tables with `postgres.MigrationSet`, which takes its own history table and files. Island Battles does this for its map templates.
 
 ## Temporary browser frontend
 

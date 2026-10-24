@@ -255,7 +255,7 @@ async def test_schema_initialization_is_repeatable(guests):
     assert lobby_tables == {
         "lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
         "lobby_memberships", "lobby_leases", "lobby_start_roster",
-        "lobby_create_requests", "lobby_outbox",
+        "lobby_create_requests", "lobby_outbox", "lobby_schema_migrations",
     }
     await control_backend(signal.SIGUSR1)
     assert await sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename") == tables

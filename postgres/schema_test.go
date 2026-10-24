@@ -22,7 +22,7 @@ func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	expected := []string{
 		"lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
 		"lobby_memberships", "lobby_leases", "lobby_start_roster",
-		"lobby_create_requests", "lobby_outbox",
+		"lobby_create_requests", "lobby_outbox", "lobby_schema_migrations",
 	}
 	slices.Sort(tables)
 	slices.Sort(expected)
@@ -31,26 +31,26 @@ func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	}
 }
 
-func TestSchemaInitializationIsRepeatable(t *testing.T) {
+func TestSchemaMigrationIsRepeatable(t *testing.T) {
 	db := testutil.NewPostgresFixture(t)
 	player := seedPlayer(t, db)
 	room := seedRoom(t, db, player.ID, "island-battles", "REPEAT01")
-	if err := lobbypostgres.InitializeSchema(context.Background(), db); err != nil {
-		t.Fatalf("second initialization: %v", err)
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("second migration: %v", err)
 	}
 	var count int64
 	if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: room.ID}).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
-		t.Fatalf("room count after repeated initialization = %d, want 1", count)
+		t.Fatalf("room count after repeated migration = %d, want 1", count)
 	}
 	var loaded lobbypostgres.RoomRecord
 	if err := db.First(&loaded, "id = ?", room.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if loaded.Name != room.Name || loaded.Version != room.Version {
-		t.Fatalf("room changed after repeated initialization: %#v", loaded)
+		t.Fatalf("room changed after repeated migration: %#v", loaded)
 	}
 }
 

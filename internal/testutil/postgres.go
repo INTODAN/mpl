@@ -15,9 +15,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// NewPostgresFixture starts an isolated PostgreSQL database, creates only the
+// NewPostgresFixture starts an isolated PostgreSQL database, migrates only the
 // generic lobby schema, and registers both pool and container cleanup.
 func NewPostgresFixture(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := NewEmptyPostgres(t)
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate disposable lobby PostgreSQL schema: %v", err)
+	}
+	return db
+}
+
+// NewEmptyPostgres starts an isolated PostgreSQL database without any schema
+// and registers both pool and container cleanup.
+func NewEmptyPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
 	ctx := context.Background()
 
@@ -57,9 +68,5 @@ func NewPostgresFixture(t *testing.T) *gorm.DB {
 			t.Errorf("close disposable lobby PostgreSQL pool: %v", err)
 		}
 	})
-
-	if err := lobbypostgres.InitializeSchema(ctx, db); err != nil {
-		t.Fatalf("initialize disposable lobby PostgreSQL schema: %v", err)
-	}
 	return db
 }
