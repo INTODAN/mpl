@@ -280,7 +280,8 @@ func writeArtifacts(files []pendingFile) error {
 		}
 		temporaryName := temporary.Name()
 		temps = append(temps, temporaryName)
-		if _, err := temporary.Write(file.contents); err == nil {
+		_, err = temporary.Write(file.contents)
+		if err == nil {
 			err = temporary.Close()
 			if err == nil {
 				err = os.Chmod(temporaryName, 0o644)

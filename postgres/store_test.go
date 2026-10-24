@@ -103,7 +103,7 @@ func TestStoreReadsConsistentSnapshot(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	defer fixture.db.Callback().Query().Remove(callback)
+	defer func() { _ = fixture.db.Callback().Query().Remove(callback) }()
 	type readResult struct {
 		aggregate domain.Aggregate
 		err       error

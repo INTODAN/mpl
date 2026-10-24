@@ -23,7 +23,7 @@ func ValidateGameKey(key string) error {
 		return NewError(CodeInvalidInput, "invalid game key")
 	}
 	for _, char := range key {
-		if !(char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-') {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
 			return NewError(CodeInvalidInput, "invalid game key")
 		}
 	}
@@ -42,7 +42,7 @@ func ValidateUUID(value string) error {
 			}
 			continue
 		}
-		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
 			return NewError(CodeInvalidInput, "invalid UUID")
 		}
 	}

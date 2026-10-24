@@ -143,7 +143,7 @@ func releaseLease(ctx context.Context, client *http.Client, baseURL, token, game
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(response.Body)
 		return fmt.Errorf("release lease: %s: %s", response.Status, body)
@@ -169,7 +169,7 @@ func postJSON[T any](ctx context.Context, client *http.Client, endpoint, token s
 	if err != nil {
 		return result, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		responseBody, _ := io.ReadAll(response.Body)
 		return result, fmt.Errorf("%s: %s", response.Status, responseBody)

@@ -35,9 +35,8 @@ func TestSelectLastTeamSeatConcurrent(t *testing.T) {
 	}
 	close(barrier)
 	winners, losers := 0, 0
-	aggregate := domain.Aggregate{}
 	outcomes := []outcome{<-results, <-results}
-	aggregate = fixture.read(t)
+	aggregate := fixture.read(t)
 	for _, result := range outcomes {
 		member := memberFor(t, aggregate, result.player)
 		if result.err == nil {
