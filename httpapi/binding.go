@@ -23,6 +23,7 @@ type bindOutput[Result any] struct {
 func RegisterGameBinding[Result any](api huma.API, operation huma.Operation, binding *application.GameBinding[Result], authenticator domain.Authenticator) {
 	registerSchemas(api)
 	group := huma.NewGroup(api)
+	group.UseTransformer(BoundErrorDetails)
 	group.UseMiddleware(authenticate(authenticator))
 	operation.Method = http.MethodPost
 	operation.DefaultStatus = http.StatusOK
