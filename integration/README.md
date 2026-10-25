@@ -20,9 +20,9 @@ CONNECTION_TOKEN_HMAC_SECRET
 LOBBY_PROXY_SECRET
 ```
 
-`--env-prefix` prepends a host-specific configuration namespace to these names. The host must expose `/healthz`, the lobby HTTP API and trusted Centrifugo proxy routes; initialize the lobby schema; push each committed change through the lobby's `realtime.Publisher`, whose failures it logs to standard output; and register `island-battles` and `quiz-demo` as example game keys. Tests read that log through `LOBBY_TEST_BACKEND_LOG`. `LOBBY_TEST_GAME_KEY` can override the first game key. These keys carry no game-specific behavior in this suite.
+`--env-prefix` prepends a host-specific configuration namespace to these names. The host must expose `/healthz`, the lobby HTTP API and trusted Centrifugo proxy routes; initialize the lobby schema, or supply `--migrate-package` with a Go package that does and exits, which the runner then runs with the same environment before every host start; push each committed change through the lobby's `realtime.Publisher`, whose failures it logs to standard output; and register `island-battles` and `quiz-demo` as example game keys. Tests read that log through `LOBBY_TEST_BACKEND_LOG`. `LOBBY_TEST_GAME_KEY` can override the first game key. These keys carry no game-specific behavior in this suite.
 
-`--extra-tests /path/to/tests` adds host-owned pytest suites. They can reuse the fixtures and helpers in `integration.test_live`. In the Island Battles monorepo, the root `scripts/test-lobby-acceptance.sh` supplies the backend package, its environment prefix, and `integration/island_battles/` tests.
+`--extra-tests /path/to/tests` adds host-owned pytest suites. They can reuse the fixtures and helpers in `integration.test_live`. In the Island Battles monorepo, the root `scripts/test-lobby-acceptance.sh` supplies the backend package, its migrate command, its environment prefix, and `integration/island_battles/` tests.
 
 The runner uses temporary ports, generated credentials, and unique container names. No configured developer database is used. It restarts the supplied host process to verify persisted state and cleans containers and processes on success or failure. Failure logs remain under a printed `/tmp/lobby-acceptance-*` directory. `LOBBY_CONTAINER_RUNTIME` can select a Docker-compatible executable. Infrastructure failures fail the suite instead of skipping it.
 

@@ -46,6 +46,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server-root", type=Path, required=True, help="Go module/workspace containing the host application")
     parser.add_argument("--server-package", required=True, help="Go package for the host executable")
+    parser.add_argument("--migrate-package", help="Go package that migrates the schema before each host start, "
+                        "for hosts that don't migrate on startup")
     parser.add_argument("--env-prefix", default="", help="Host configuration environment-variable prefix")
     parser.add_argument("--extra-tests", type=Path, action="append", default=[], help="Additional host-owned pytest suites")
     parser.add_argument("--skip-lobby-suite", action="store_true", help="Run only --extra-tests against the started stack")
@@ -91,8 +93,20 @@ def main() -> int:
             f"{args.env_prefix}LOBBY_PROXY_SECRET": proxy_key,
         })
         command("go", "build", "-o", str(temporary / "backend"), args.server_package, cwd=server_root, env=environment)
-        backend = subprocess.Popen([str(temporary / "backend")], cwd=server_root, env=environment, stdout=log_file, stderr=subprocess.STDOUT, text=True)
-        wait_http(f"http://127.0.0.1:{http_port}/healthz", backend)
+        if args.migrate_package:
+            command("go", "build", "-o", str(temporary / "migrate"), args.migrate_package, cwd=server_root, env=environment)
+
+        def start_backend() -> subprocess.Popen[str]:
+            # A deploy migrates before the new build serves, so every start does too.
+            if args.migrate_package:
+                log_file.flush()
+                command(str(temporary / "migrate"), cwd=server_root, env=environment, stdout=log_file, stderr=subprocess.STDOUT)
+            started = subprocess.Popen([str(temporary / "backend")], cwd=server_root, env=environment,
+                                       stdout=log_file, stderr=subprocess.STDOUT, text=True)
+            wait_http(f"http://127.0.0.1:{http_port}/healthz", started)
+            return started
+
+        backend = start_backend()
         control_status = temporary / "backend-control"
         control_generation = 0
 
@@ -103,9 +117,7 @@ def main() -> int:
                 backend.wait(timeout=10)
             backend = None
             if signum == signal.SIGUSR1:
-                backend = subprocess.Popen([str(temporary / "backend")], cwd=server_root, env=environment,
-                                           stdout=log_file, stderr=subprocess.STDOUT, text=True)
-                wait_http(f"http://127.0.0.1:{http_port}/healthz", backend)
+                backend = start_backend()
             control_generation += 1
             control_status.write_text(str(control_generation))
 
