@@ -22,6 +22,7 @@ func Register(api huma.API, app domain.Application, authenticator domain.Authent
 	handler := handlers{app: app, authenticator: authenticator, issuer: issuer}
 	group := huma.NewGroup(api, basePath)
 	group.UseMiddleware(validationProblems)
+	group.UseTransformer(BoundErrorDetails)
 	protected := huma.NewGroup(group)
 	protected.UseMiddleware(authenticate(authenticator))
 	huma.Register(group, operation(http.MethodPost, "/sessions", "createLobbySession", http.StatusCreated, nil, "Create a guest session", "Creates one guest identity and bearer credential."), handler.session)
