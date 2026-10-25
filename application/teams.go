@@ -54,7 +54,7 @@ func (service *Service) SelectTeam(ctx context.Context, principal domain.Princip
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return domain.BuildSnapshot(aggregate, principal.PlayerID)
+	return service.snapshot(aggregate, principal.PlayerID)
 }
 
 func (service *Service) SetReady(ctx context.Context, principal domain.Principal, scope domain.Scope, request domain.ReadyRequest) (domain.Snapshot, error) {
@@ -81,5 +81,5 @@ func (service *Service) SetReady(ctx context.Context, principal domain.Principal
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return domain.BuildSnapshot(aggregate, principal.PlayerID)
+	return service.snapshot(aggregate, principal.PlayerID)
 }

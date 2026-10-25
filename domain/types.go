@@ -92,6 +92,9 @@ type Snapshot struct {
 	StartRoster          StartRoster `json:"start_roster"`
 	MembershipGeneration int64       `json:"membership_generation"`
 	Channel              string      `json:"channel"`
+	// StartRules are the game's declared start conditions. The service fills
+	// them from the policy; snapshots built elsewhere leave them zero.
+	StartRules StartRules `json:"start_rules"`
 }
 
 const InvalidationSchemaVersion = 1

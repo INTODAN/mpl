@@ -58,7 +58,7 @@ membership expires. Running one credential in two clients creates two leases
 but consumes one lobby seat.
 
 Expected conflicts such as `lobby_full`, `team_full`, `not_ready`,
-`not_host`, and `phase_conflict` are printed as typed command failures. An
+`empty_teams`, `not_host`, and `phase_conflict` are printed as typed command failures. An
 expired credential or lost membership explains that an explicit new session or
 join is required. Create uses one UUID request id for the process lifetime;
 the CLI never retries it with a new id or mints another guest after a network

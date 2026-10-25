@@ -24,6 +24,7 @@ from .select_team_body import SelectTeamBody
 from .snapshot import Snapshot
 from .start_input_body import StartInputBody
 from .start_roster_entry import StartRosterEntry
+from .start_rules import StartRules
 from .team import Team
 from .team_definition import TeamDefinition
 
@@ -52,6 +53,7 @@ __all__ = (
     "Snapshot",
     "StartInputBody",
     "StartRosterEntry",
+    "StartRules",
     "Team",
     "TeamDefinition",
 )

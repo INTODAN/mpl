@@ -11,6 +11,10 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 	if err := validatePrincipal(principal); err != nil {
 		return domain.Snapshot{}, err
 	}
+	game, err := service.policy.Game(scope.GameKey)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
 	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
 		if _, err := activeMember(aggregate, principal.PlayerID); err != nil {
 			return domain.Change{}, err
@@ -47,6 +51,9 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 		if len(roster) < 2 {
 			return domain.Change{}, domain.ErrNotReady
 		}
+		if err := game.StartRules.Check(aggregate.Teams, roster); err != nil {
+			return domain.Change{}, err
+		}
 		aggregate.StartRoster = roster
 		aggregate.Lobby.Phase = domain.PhaseStarted
 		return domain.Change{PublicChanged: true}, nil
@@ -54,7 +61,7 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return domain.BuildSnapshot(aggregate, principal.PlayerID)
+	return service.snapshot(aggregate, principal.PlayerID)
 }
 
 func (service *Service) Leave(ctx context.Context, principal domain.Principal, scope domain.Scope) error {

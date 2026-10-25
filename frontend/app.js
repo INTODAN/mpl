@@ -106,6 +106,7 @@ function reportError(error) {
     lobby_full: "This lobby is full. There’s room for two players.",
     team_full: "That team is taken. Please choose the other team.",
     not_ready: "Both players need a team and must be ready before starting.",
+    empty_teams: "Every team needs a player before the game can start.",
     not_host: "Only the host can start the lobby.",
     phase_conflict: "The lobby has already started or closed.",
     unavailable: "The lobby server is temporarily unavailable. Please try again.",
@@ -162,6 +163,13 @@ function acceptSnapshot(next) {
   if (!heartbeatTimer) heartbeatTimer = setTimeout(heartbeat, 15000);
 }
 
+// emptyTeams lists the teams that block the start under the game's declared
+// start rules: with every_team_needs_member, the teams that have no member.
+function emptyTeams(room) {
+  if (!room.start_rules?.every_team_needs_member) return [];
+  return room.teams.filter((team) => !room.members.some((member) => member.team_id === team.id));
+}
+
 function scheduleSync(delay = 0) {
   clearTimeout(timer);
   if (state.room) timer = setTimeout(sync, delay);
@@ -178,7 +186,8 @@ async function sync() {
     if (epoch !== roomEpoch) return;
     acceptSnapshot(next);
     if (state.demoPlayer && next.lobby.phase === "waiting" && next.lobby.host_player_id === state.session.player_id &&
-        next.members.length === 2 && next.members.every((member) => member.ready && member.team_id && !member.disconnected_until)) {
+        next.members.length === 2 && next.members.every((member) => member.ready && member.team_id && !member.disconnected_until) &&
+        !emptyTeams(next).length) {
       const started = await api(`${roomPath(room)}/start`, "POST", {});
       if (epoch !== roomEpoch) return;
       acceptSnapshot(started);
@@ -418,11 +427,16 @@ function render() {
   $("ready-button").textContent = self?.ready ? "Not ready" : "Mark ready";
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
-  $("start-button").disabled = busy || members.length < 2 || !members.every((member) => member.ready && member.team_id && !member.disconnected_until);
+  const allReady = members.length >= 2 && members.every((member) => member.ready && member.team_id && !member.disconnected_until);
+  const empty = emptyTeams(snapshot);
+  $("start-button").disabled = busy || !allReady || empty.length > 0;
+  const emptyHint = empty.length
+    ? `Every team needs a player before the game can start. Still empty: ${empty.map((team) => team.name).join(", ")}.`
+    : "";
   const startedHint = state.demoPlayer && game?.example_player
     ? `${game.example_player.summary} Keep both tabs open; pause either player to hold the next turn.`
     : game?.started_hint || "The game has started.";
-  $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
+  $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : allReady && emptyHint ? emptyHint : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
   if (!waiting) { loadResult(); ensureGamePlayer(); }
 }

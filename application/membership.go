@@ -72,7 +72,10 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		if errors.Is(err, domain.ErrJoinCodeCollision) {
 			continue
 		}
-		return snapshot, err
+		if err != nil {
+			return domain.Snapshot{}, err
+		}
+		return service.withStartRules(snapshot), nil
 	}
 	return domain.Snapshot{}, domain.ErrUnavailable
 }
@@ -169,7 +172,7 @@ func (service *Service) Join(ctx context.Context, principal domain.Principal, re
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return domain.BuildSnapshot(aggregate, principal.PlayerID)
+	return service.snapshot(aggregate, principal.PlayerID)
 }
 
 func (service *Service) Snapshot(ctx context.Context, principal domain.Principal, scope domain.Scope) (domain.Snapshot, error) {
@@ -183,5 +186,5 @@ func (service *Service) Snapshot(ctx context.Context, principal domain.Principal
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return domain.BuildSnapshot(aggregate, principal.PlayerID)
+	return service.snapshot(aggregate, principal.PlayerID)
 }

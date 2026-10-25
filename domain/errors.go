@@ -12,6 +12,7 @@ const (
 	CodeTeamFull            ErrorCode = "team_full"
 	CodePhaseConflict       ErrorCode = "phase_conflict"
 	CodeNotReady            ErrorCode = "not_ready"
+	CodeEmptyTeams          ErrorCode = "empty_teams"
 	CodeStaleMembership     ErrorCode = "stale_membership"
 	CodeIdempotencyConflict ErrorCode = "idempotency_conflict"
 	CodeInvalidInput        ErrorCode = "invalid_input"
@@ -26,6 +27,9 @@ const (
 type Error struct {
 	Code    ErrorCode
 	Message string
+	// TeamIDs names the teams an error is about, such as the empty teams of
+	// CodeEmptyTeams. They are safe to show the client.
+	TeamIDs []string
 	Cause   error
 }
 

@@ -112,6 +112,7 @@ The host declares each game with a `GameRegistration`. The lobby applies its fie
 
 - `Key` is the canonical game key.
 - `ValidateSettings` checks the optional `game_settings` object of a create request. A nil validator means the game takes no settings and accepts only `{}`.
+- `StartRules` adds start conditions to the default ones: at least two members, each with a team, ready and connected, or `not_ready`. With `EveryTeamNeedsMember`, a start with an empty team fails with `empty_teams`, whose `team_ids` list the empty teams in team order. Snapshots carry the game's rules as `start_rules`, so clients can explain why the lobby can't start yet.
 
 `ValidateGameSettings` first canonicalizes the settings with `NormalizeGameSettings`: one compact JSON object with sorted keys and at most `MaxGameSettingsBytes`, and `{}` when the request had none. The validator receives that canonical object. A rejection becomes `invalid_game_settings` with the validator's message as the client-facing detail, and the create request fails without writes. A validator that can't run returns the context's error or one wrapping `ErrUnavailable`. The lobby stores the canonical object with the room, includes it in the create fingerprint and returns it as `lobby.game_settings` in every snapshot, including the started snapshot a game binding receives. Settings never change after creation.
 

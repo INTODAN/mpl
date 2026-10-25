@@ -512,6 +512,7 @@
               "team_full",
               "phase_conflict",
               "not_ready",
+              "empty_teams",
               "stale_membership",
               "idempotency_conflict",
               "invalid_input",
@@ -527,6 +528,16 @@
           "status": {
             "format": "int64",
             "type": "integer"
+          },
+          "team_ids": {
+            "description": "The teams the error is about. For empty_teams, the teams that still need a player, in team order.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -626,6 +637,9 @@
               "null"
             ]
           },
+          "start_rules": {
+            "$ref": "#/components/schemas/StartRules"
+          },
           "teams": {
             "items": {
               "$ref": "#/components/schemas/Team"
@@ -642,7 +656,8 @@
           "members",
           "start_roster",
           "membership_generation",
-          "channel"
+          "channel",
+          "start_rules"
         ],
         "type": "object"
       },
@@ -683,6 +698,19 @@
           "team_id",
           "member_id",
           "team_order"
+        ],
+        "type": "object"
+      },
+      "StartRules": {
+        "additionalProperties": false,
+        "properties": {
+          "every_team_needs_member": {
+            "description": "Starting fails with empty_teams while a team has no member.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "every_team_needs_member"
         ],
         "type": "object"
       },
@@ -1468,7 +1496,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start": {
       "post": {
-        "description": "Starts an eligible lobby and freezes its roster.",
+        "description": "Starts an eligible lobby and freezes its roster. The host can start once at least two members are present and every member has chosen a team, is ready and is connected; otherwise it fails with not_ready. The snapshot's start_rules list the game's extra conditions: with every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the empty teams.",
         "operationId": "startLobby",
         "parameters": [
           {

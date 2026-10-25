@@ -102,7 +102,11 @@ def sync_detailed(
 ) -> Response[Problem | Snapshot]:
     """Start a lobby
 
-     Starts an eligible lobby and freezes its roster.
+     Starts an eligible lobby and freezes its roster. The host can start once at least two members are
+    present and every member has chosen a team, is ready and is connected; otherwise it fails with
+    not_ready. The snapshot's start_rules list the game's extra conditions: with
+    every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
+    empty teams.
 
     Args:
         game_key (str):
@@ -139,7 +143,11 @@ def sync(
 ) -> Problem | Snapshot | None:
     """Start a lobby
 
-     Starts an eligible lobby and freezes its roster.
+     Starts an eligible lobby and freezes its roster. The host can start once at least two members are
+    present and every member has chosen a team, is ready and is connected; otherwise it fails with
+    not_ready. The snapshot's start_rules list the game's extra conditions: with
+    every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
+    empty teams.
 
     Args:
         game_key (str):
@@ -171,7 +179,11 @@ async def asyncio_detailed(
 ) -> Response[Problem | Snapshot]:
     """Start a lobby
 
-     Starts an eligible lobby and freezes its roster.
+     Starts an eligible lobby and freezes its roster. The host can start once at least two members are
+    present and every member has chosen a team, is ready and is connected; otherwise it fails with
+    not_ready. The snapshot's start_rules list the game's extra conditions: with
+    every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
+    empty teams.
 
     Args:
         game_key (str):
@@ -206,7 +218,11 @@ async def asyncio(
 ) -> Problem | Snapshot | None:
     """Start a lobby
 
-     Starts an eligible lobby and freezes its roster.
+     Starts an eligible lobby and freezes its roster. The host can start once at least two members are
+    present and every member has chosen a team, is ready and is connected; otherwise it fails with
+    not_ready. The snapshot's start_rules list the game's extra conditions: with
+    every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
+    empty teams.
 
     Args:
         game_key (str):

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from ..models.lobby import Lobby
     from ..models.member import Member
     from ..models.start_roster_entry import StartRosterEntry
+    from ..models.start_rules import StartRules
     from ..models.team import Team
 
 
@@ -26,6 +27,7 @@ class Snapshot:
         members (list[Member] | None):
         membership_generation (int):
         start_roster (list[StartRosterEntry] | None):
+        start_rules (StartRules):
         teams (list[Team] | None):
         schema (str | Unset): A URL to the JSON Schema for this object.
     """
@@ -35,6 +37,7 @@ class Snapshot:
     members: list[Member] | None
     membership_generation: int
     start_roster: list[StartRosterEntry] | None
+    start_rules: StartRules
     teams: list[Team] | None
     schema: str | Unset = UNSET
 
@@ -65,6 +68,8 @@ class Snapshot:
         else:
             start_roster = self.start_roster
 
+        start_rules = self.start_rules.to_dict()
+
         teams: list[dict[str, Any]] | None
         if isinstance(self.teams, list):
             teams = []
@@ -86,6 +91,7 @@ class Snapshot:
                 "members": members,
                 "membership_generation": membership_generation,
                 "start_roster": start_roster,
+                "start_rules": start_rules,
                 "teams": teams,
             }
         )
@@ -99,6 +105,7 @@ class Snapshot:
         from ..models.lobby import Lobby
         from ..models.member import Member
         from ..models.start_roster_entry import StartRosterEntry
+        from ..models.start_rules import StartRules
         from ..models.team import Team
 
         d = dict(src_dict)
@@ -148,6 +155,8 @@ class Snapshot:
 
         start_roster = _parse_start_roster(d.pop("start_roster"))
 
+        start_rules = StartRules.from_dict(d.pop("start_rules"))
+
         def _parse_teams(data: object) -> list[Team] | None:
             if data is None:
                 return data
@@ -176,6 +185,7 @@ class Snapshot:
             members=members,
             membership_generation=membership_generation,
             start_roster=start_roster,
+            start_rules=start_rules,
             teams=teams,
             schema=schema,
         )

@@ -171,6 +171,37 @@ func TestStartRequiresHostAndLiveReadyRoster(t *testing.T) {
 	_, err = fixture.service.SetReady(context.Background(), guest, fixture.scope, domain.ReadyRequest{Ready: false})
 	requireDomainError(t, err, domain.ErrPhaseConflict)
 }
+func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
+	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
+		request.GameKey = "team-game"
+		request.Teams = append(request.Teams, domain.TeamDefinition{Name: "Green", Capacity: 1})
+	})
+	if !fixture.initial.StartRules.EveryTeamNeedsMember {
+		t.Fatal("snapshot lacks the game's start rule")
+	}
+	guest := fixture.player(t, "Guest")
+	fixture.join(t, guest)
+	fixture.assign(t, fixture.host, 1, true)
+	fixture.assign(t, guest, 1, true)
+	before := fixture.read(t)
+	_, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	requireDomainError(t, err, domain.NewError(domain.CodeEmptyTeams, ""))
+	var domainError *domain.Error
+	if !errors.As(err, &domainError) || !reflect.DeepEqual(domainError.TeamIDs, []string{fixture.initial.Teams[0].ID, fixture.initial.Teams[2].ID}) || domainError.Message != "every team needs a player before the lobby can start; empty: Red, Green" {
+		t.Fatalf("empty teams not named: %#v", domainError)
+	}
+	if after := fixture.read(t); after.Lobby.Phase != domain.PhaseWaiting || after.Lobby.Version != before.Lobby.Version {
+		t.Fatal("refused start changed the lobby")
+	}
+	third := fixture.player(t, "Third")
+	fixture.join(t, third)
+	fixture.assign(t, guest, 0, true)
+	fixture.assign(t, third, 2, true)
+	snapshot, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 3 || !snapshot.StartRules.EveryTeamNeedsMember {
+		t.Fatal("filled teams did not start", err)
+	}
+}
 func TestStartAndTeamChangeSerialize(t *testing.T) {
 	fixture := newServiceFixture(t, 3)
 	guest, _ := fixture.readyPair(t)

@@ -167,6 +167,13 @@ type Snapshot struct {
 	StartRoster          []StartRosterEntry `json:"start_roster"`
 	MembershipGeneration int64              `json:"membership_generation"`
 	Channel              string             `json:"channel"`
+	StartRules           StartRules         `json:"start_rules"`
+}
+
+// StartRules are the start conditions the lobby's game declares on top of the
+// default ones, so a client can show why the lobby can't start yet.
+type StartRules struct {
+	EveryTeamNeedsMember bool `json:"every_team_needs_member" doc:"Starting fails with empty_teams while a team has no member."`
 }
 type Lobby struct {
 	ID           string       `json:"id"`
@@ -227,5 +234,5 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		roster[index] = StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder}
 	}
 	room := source.Lobby
-	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel}
+	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}}
 }

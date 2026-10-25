@@ -171,9 +171,22 @@ func TestProblemStatusAndCodeMapping(t *testing.T) {
 		if problem.Status != testCase.status || string(problem.Code) != testCase.code {
 			t.Fatalf("problemFor(%v) = %#v", testCase.errorValue, problem)
 		}
-		if strings.Contains(problem.Detail, "secret") {
+		if strings.Contains(problem.Detail, "secret") || problem.TeamIDs != nil {
 			t.Fatalf("problem leaked internal error: %#v", problem)
 		}
+	}
+}
+
+func TestEmptyTeamsProblemNamesTheTeams(t *testing.T) {
+	t.Parallel()
+	err := domain.StartRules{EveryTeamNeedsMember: true}.Check([]domain.Team{{ID: "b", Name: "Blue", Order: 2}, {ID: "r", Name: "Red", Order: 1}}, domain.StartRoster{})
+	problem := problemFor(err).(*Problem)
+	encoded, _ := json.Marshal(problem)
+	if problem.Status != http.StatusConflict || problem.Code != domain.CodeEmptyTeams || !strings.Contains(string(encoded), `"team_ids":["r","b"]`) || problem.Detail != "every team needs a player before the lobby can start; empty: Red, Blue" {
+		t.Fatalf("empty teams problem = %s", encoded)
+	}
+	if err := (domain.StartRules{}).Check([]domain.Team{{ID: "r"}}, domain.StartRoster{}); err != nil {
+		t.Fatalf("zero rules refused a start: %v", err)
 	}
 }
 

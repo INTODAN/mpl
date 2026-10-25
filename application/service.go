@@ -105,3 +105,19 @@ func unavailable(cause error) error {
 }
 
 var _ domain.Application = (*Service)(nil)
+
+// snapshot builds the player's view of the room with its game's start rules.
+func (service *Service) snapshot(aggregate domain.Aggregate, playerID string) (domain.Snapshot, error) {
+	snapshot, err := domain.BuildSnapshot(aggregate, playerID)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	return service.withStartRules(snapshot), nil
+}
+
+func (service *Service) withStartRules(snapshot domain.Snapshot) domain.Snapshot {
+	// Every stored room has a registered game, and a missing one has no rules.
+	game, _ := service.policy.Game(snapshot.Lobby.GameKey)
+	snapshot.StartRules = game.StartRules
+	return snapshot
+}

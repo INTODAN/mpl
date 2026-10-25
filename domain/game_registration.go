@@ -2,10 +2,12 @@ package domain
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -18,6 +20,44 @@ type GameRegistration struct {
 	// ValidateSettings checks the game settings of a create request. Nil means
 	// the game takes no settings and accepts only an empty object.
 	ValidateSettings GameSettingsValidator
+	// StartRules adds start conditions to the lobby's default ones.
+	StartRules StartRules
+}
+
+// StartRules are conditions a game declares for starting its lobbies, on top
+// of the default that at least two members are ready and every active member
+// has chosen a team. The zero value adds none. Snapshots carry them, so
+// clients can explain why a lobby can't start yet.
+type StartRules struct {
+	// EveryTeamNeedsMember refuses to start while a team has no member.
+	EveryTeamNeedsMember bool `json:"every_team_needs_member"`
+}
+
+// Check reports the first rule that the frozen roster breaks. An empty team
+// fails with CodeEmptyTeams, whose TeamIDs list the empty teams in order.
+func (rules StartRules) Check(teams []Team, roster StartRoster) error {
+	if !rules.EveryTeamNeedsMember {
+		return nil
+	}
+	filled := make(map[string]bool, len(roster))
+	for _, entry := range roster {
+		filled[entry.TeamID] = true
+	}
+	ordered := slices.Clone(teams)
+	slices.SortFunc(ordered, func(first, second Team) int {
+		return cmp.Or(cmp.Compare(first.Order, second.Order), strings.Compare(first.ID, second.ID))
+	})
+	var ids, names []string
+	for _, team := range ordered {
+		if !filled[team.ID] {
+			ids = append(ids, team.ID)
+			names = append(names, team.Name)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return &Error{Code: CodeEmptyTeams, Message: "every team needs a player before the lobby can start; empty: " + strings.Join(names, ", "), TeamIDs: ids}
 }
 
 // GameSettingsValidator receives the settings of a create request as a
