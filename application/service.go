@@ -112,12 +112,17 @@ func (service *Service) snapshot(aggregate domain.Aggregate, playerID string) (d
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	return service.withStartRules(snapshot), nil
+	return service.withStartRules(snapshot)
 }
 
-func (service *Service) withStartRules(snapshot domain.Snapshot) domain.Snapshot {
-	// Every stored room has a registered game, and a missing one has no rules.
-	game, _ := service.policy.Game(snapshot.Lobby.GameKey)
+// withStartRules fills the snapshot's start rules from the game's
+// registration. A room whose game is no longer registered fails like any
+// request for an unregistered game.
+func (service *Service) withStartRules(snapshot domain.Snapshot) (domain.Snapshot, error) {
+	game, err := service.policy.Game(snapshot.Lobby.GameKey)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
 	snapshot.StartRules = game.StartRules
-	return snapshot
+	return snapshot, nil
 }

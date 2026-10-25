@@ -75,7 +75,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		if err != nil {
 			return domain.Snapshot{}, err
 		}
-		return service.withStartRules(snapshot), nil
+		return service.withStartRules(snapshot)
 	}
 	return domain.Snapshot{}, domain.ErrUnavailable
 }

@@ -171,6 +171,24 @@ func TestStartRequiresHostAndLiveReadyRoster(t *testing.T) {
 	_, err = fixture.service.SetReady(context.Background(), guest, fixture.scope, domain.ReadyRequest{Ready: false})
 	requireDomainError(t, err, domain.ErrPhaseConflict)
 }
+
+func TestDefaultStartRuleAllowsEmptyTeam(t *testing.T) {
+	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
+		request.GameKey = "quiz-demo"
+	})
+	if fixture.initial.StartRules.EveryTeamNeedsMember {
+		t.Fatal("quiz-demo snapshot declares a start rule it lacks")
+	}
+	guest := fixture.player(t, "Guest")
+	fixture.join(t, guest)
+	fixture.assign(t, fixture.host, 1, true)
+	fixture.assign(t, guest, 1, true)
+	snapshot, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 2 {
+		t.Fatal("quiz-demo with an empty team did not start", err)
+	}
+}
+
 func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
 	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
 		request.GameKey = "team-game"
