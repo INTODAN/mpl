@@ -79,11 +79,17 @@ func NormalizeName(name string, maximum int) (string, error) {
 	return name, nil
 }
 
+// MinTeams and MaxTeams bound the number of teams in a lobby.
+const (
+	MinTeams = 2
+	MaxTeams = 16
+)
+
 // TeamNameKey is Unicode default case folding after trimming. Persist this key
 // for the database uniqueness constraint; preserve the original normalized label.
 func TeamNameKey(name string) string { return cases.Fold().String(strings.TrimSpace(name)) }
 func ValidateTeamDefinitions(definitions []TeamDefinition, lobbyCapacity int) ([]TeamDefinition, error) {
-	if lobbyCapacity < 2 || lobbyCapacity > 64 || len(definitions) < 2 || len(definitions) > 16 {
+	if lobbyCapacity < 2 || lobbyCapacity > 64 || len(definitions) < MinTeams || len(definitions) > MaxTeams {
 		return nil, NewError(CodeInvalidInput, "invalid lobby capacity or team count")
 	}
 	result := make([]TeamDefinition, len(definitions))
