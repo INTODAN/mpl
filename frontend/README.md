@@ -29,8 +29,9 @@ The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at
 | `ResultURL` | Same-origin path of the game's result document once the lobby starts. `{lobby_id}` is replaced with the lobby ID. |
 | `StartedHint` | Optional. Tells the players of a started lobby how they take part, for example which client submits their turns. |
 | `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
+| `SettingsModule` | Optional. Same-origin URL of an ES module that adds the game's own controls to the create form and chooses the new lobby's `game_settings` and teams. |
 
-`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and URLs that leave the frontend's origin. A second game needs only another entry; nothing in `lobby/` changes.
+`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and module or result URLs that leave the frontend's origin. A second game needs only another entry; nothing in `lobby/` changes.
 
 ## Play
 
@@ -40,7 +41,7 @@ To set up players manually:
 2. Open the same page in another tab, browser, or device. Enter another name and join using the eight-character code.
 3. Each player chooses a different team and marks ready. The host can then start the lobby.
 
-New lobbies have two seats, on the teams Blue and Red. Starting freezes the roster and the host backend launches the selected game. On another device, use the host's reachable address instead of `localhost`.
+New lobbies have one seat per team. Without a settings module there are two teams, Blue and Red; a game's settings module can choose others. Starting freezes the roster and the host backend launches the selected game. On another device, use the host's reachable address instead of `localhost`.
 
 **New demo lobby** appears when the selected game has an example player. It creates Alex on Blue in the current tab, opens Sam on Red in a second tab, marks both ready, and starts automatically. Both tabs run the game's example player. If the browser blocks the second tab, use **Open second player tab**. Each demo creates fresh player sessions; using it from an existing lobby leaves that lobby first. **Pause this player** stops that tab from submitting its next turn, and **Resume this player** continues. Only demo invitations let the example player submit turns; in other lobbies it only follows the game's state.
 
@@ -60,6 +61,14 @@ An example player module is an ES module that exports an `ExamplePlayer` class. 
 - `pending` and `savePending(pending)` keep an unfinished request in `sessionStorage` across reloads.
 - `onState(state)` passes game state on to the result frame, and `onStatus(title, detail)` updates the example player panel.
 - The page calls `start()` once the lobby starts and `stop()` when the player leaves the room.
+
+A settings module is an ES module that exports a `SettingsForm` class and, optionally, a `describeSettings` function:
+
+- The page constructs `new SettingsForm({container, onChange})` when the game is selected. The form adds its controls to `container`, an element inside the create form.
+- When the host creates a lobby, the page calls `form.choice()`. It returns `{settings, teams}`: `settings` is the `game_settings` object, sent only when it has keys, and `teams` lists the team names in order, or is null for the default teams. The lobby gets one seat per team. To stop the create request, `choice()` throws an `Error` whose message the page shows.
+- `describeSettings(game_settings)` returns a short line, or a promise of one, that the room shows under the lobby name for every member, such as the chosen map's name.
+
+The game checks the settings when the lobby is created. A rejection shows the game's message, which can name the invalid field. **New demo lobby** uses the form's choice too, and needs it to have exactly two teams.
 
 ## Realtime
 

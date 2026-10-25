@@ -113,38 +113,40 @@ func TestNormalizeGameSettings(t *testing.T) {
 }
 func TestValidateGameSettingsUsesTheGameValidator(t *testing.T) {
 	var received string
+	var receivedTeams []domain.TeamDefinition
 	policy := domain.DefaultPolicy(
 		domain.GameRegistration{Key: "no-settings"},
-		domain.GameRegistration{Key: "strict", ValidateSettings: func(_ context.Context, settings json.RawMessage) error {
-			received = string(settings)
+		domain.GameRegistration{Key: "strict", ValidateSettings: func(_ context.Context, settings json.RawMessage, teams []domain.TeamDefinition) error {
+			received, receivedTeams = string(settings), teams
 			if !strings.Contains(received, `"rounds"`) {
 				return errors.New("rounds is required")
 			}
 			return nil
 		}},
-		domain.GameRegistration{Key: "offline", ValidateSettings: func(context.Context, json.RawMessage) error {
+		domain.GameRegistration{Key: "offline", ValidateSettings: func(context.Context, json.RawMessage, []domain.TeamDefinition) error {
 			return &domain.Error{Code: domain.CodeUnavailable, Message: "map store offline", Cause: errors.New("connection refused")}
 		}},
 	)
 	ctx := context.Background()
-	if settings, err := policy.ValidateGameSettings(ctx, "no-settings", nil); err != nil || string(settings) != "{}" {
+	teams := []domain.TeamDefinition{{Name: "Red", Capacity: 1}, {Name: "Blue", Capacity: 1}}
+	if settings, err := policy.ValidateGameSettings(ctx, "no-settings", nil, teams); err != nil || string(settings) != "{}" {
 		t.Fatalf("empty settings = %q, %v", settings, err)
 	}
-	if _, err := policy.ValidateGameSettings(ctx, "no-settings", json.RawMessage(`{"rounds":3}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings {
+	if _, err := policy.ValidateGameSettings(ctx, "no-settings", json.RawMessage(`{"rounds":3}`), teams); domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings {
 		t.Fatalf("a game without a validator accepted settings: %v", err)
 	}
-	settings, err := policy.ValidateGameSettings(ctx, "strict", json.RawMessage(`{ "rounds": 3, "mode": "fast" }`))
-	if err != nil || string(settings) != `{"mode":"fast","rounds":3}` || received != string(settings) {
-		t.Fatalf("validated settings = %q, %v; validator saw %q", settings, err, received)
+	settings, err := policy.ValidateGameSettings(ctx, "strict", json.RawMessage(`{ "rounds": 3, "mode": "fast" }`), teams)
+	if err != nil || string(settings) != `{"mode":"fast","rounds":3}` || received != string(settings) || !reflect.DeepEqual(receivedTeams, teams) {
+		t.Fatalf("validated settings = %q, %v; validator saw %q with teams %v", settings, err, received, receivedTeams)
 	}
-	_, err = policy.ValidateGameSettings(ctx, "strict", nil)
+	_, err = policy.ValidateGameSettings(ctx, "strict", nil, teams)
 	if domain.ErrorCodeOf(err) != domain.CodeInvalidGameSettings || err.Error() != "rounds is required" {
 		t.Fatalf("rejection = %v", err)
 	}
-	if _, err := policy.ValidateGameSettings(ctx, "offline", nil); !errors.Is(err, domain.ErrUnavailable) {
+	if _, err := policy.ValidateGameSettings(ctx, "offline", nil, teams); !errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("validator outage = %v", err)
 	}
-	if _, err := policy.ValidateGameSettings(ctx, "unregistered", nil); !errors.Is(err, domain.ErrInvalidInput) {
+	if _, err := policy.ValidateGameSettings(ctx, "unregistered", nil, teams); !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("unregistered game = %v", err)
 	}
 }

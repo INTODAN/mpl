@@ -79,7 +79,7 @@ DefaultPolicy(games ...GameRegistration) Policy
 (Policy).Validate() error
 (Policy).Game(string) (GameRegistration, error)
 (Policy).ValidateGame(string) error
-(Policy).ValidateGameSettings(context.Context, string, json.RawMessage) (json.RawMessage, error)
+(Policy).ValidateGameSettings(context.Context, string, json.RawMessage, []TeamDefinition) (json.RawMessage, error)
 NormalizeGameSettings(json.RawMessage) (json.RawMessage, error)
 (Policy).ValidateScope(Scope) error
 ValidateGameKey(string) error
@@ -111,10 +111,10 @@ Policy defaults are explicit: `DefaultPolicy(registrations...)` supplies 15s hea
 The host declares each game with a `GameRegistration`. The lobby applies its fields without knowing the game, and a zero field keeps the default behavior, so new declarations are added as new fields:
 
 - `Key` is the canonical game key.
-- `ValidateSettings` checks the optional `game_settings` object of a create request. A nil validator means the game takes no settings and accepts only `{}`.
+- `ValidateSettings` checks the optional `game_settings` object of a create request against the request's validated teams, so a game can require settings that fit the lobby, such as a map with one starting position per team. A nil validator means the game takes no settings and accepts only `{}`.
 - `StartRules` adds start conditions to the default ones: at least two members, each with a team, ready and connected, or `not_ready`. With `EveryTeamNeedsMember`, a start with an empty team fails with `empty_teams`, whose `team_ids` list the empty teams in team order. Snapshots carry the game's rules as `start_rules`, so clients can explain why the lobby can't start yet.
 
-`ValidateGameSettings` first canonicalizes the settings with `NormalizeGameSettings`: one compact JSON object with sorted keys and at most `MaxGameSettingsBytes`, and `{}` when the request had none. The validator receives that canonical object. A rejection becomes `invalid_game_settings` with the validator's message as the client-facing detail, and the create request fails without writes. A validator that can't run returns the context's error or one wrapping `ErrUnavailable`. The lobby stores the canonical object with the room, includes it in the create fingerprint and returns it as `lobby.game_settings` in every snapshot, including the started snapshot a game binding receives. Settings never change after creation.
+`ValidateGameSettings` first canonicalizes the settings with `NormalizeGameSettings`: one compact JSON object with sorted keys and at most `MaxGameSettingsBytes`, and `{}` when the request had none. The validator receives that canonical object and the request's teams in order, after they pass `ValidateTeamDefinitions`. A rejection becomes `invalid_game_settings` with the validator's message as the client-facing detail, and the create request fails without writes. A validator that can't run returns the context's error or one wrapping `ErrUnavailable`. The lobby stores the canonical object with the room, includes it in the create fingerprint and returns it as `lobby.game_settings` in every snapshot, including the started snapshot a game binding receives. Settings never change after creation.
 
 `Store.Create` atomically saves its original authorized `BuildSnapshot` response alongside the validated create fingerprint and request key; code uniqueness collisions return the internal `ErrJoinCodeCollision` sentinel, which services bound to five attempts. `Change.PrivateChanged` preserves lease/counter writes without implying an event. `Change.PublicChanged` implies persistence and one invalidation/version increment. Revocation intents contain scope/player/generation. The store validates them before commit and never calls the network. `MergeChanges` preserves first-seen order and deduplicates exact intents.
 

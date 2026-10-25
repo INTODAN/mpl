@@ -61,10 +61,12 @@ func (rules StartRules) Check(teams []Team, roster StartRoster) error {
 }
 
 // GameSettingsValidator receives the settings of a create request as a
-// canonical JSON object, `{}` when the request had none. To reject them, return
-// an error whose message is safe to show the client. To report that the check
-// itself failed, return the context's error or an error wrapping ErrUnavailable.
-type GameSettingsValidator func(context.Context, json.RawMessage) error
+// canonical JSON object, `{}` when the request had none, with the request's
+// validated teams in order, so settings can be checked against the lobby they
+// configure. To reject them, return an error whose message is safe to show the
+// client. To report that the check itself failed, return the context's error or
+// an error wrapping ErrUnavailable.
+type GameSettingsValidator func(ctx context.Context, settings json.RawMessage, teams []TeamDefinition) error
 
 // EmptyGameSettings is stored for a lobby created without game settings.
 const EmptyGameSettings = "{}"
@@ -127,8 +129,9 @@ func containsNUL(value any) bool {
 }
 
 // ValidateGameSettings normalizes settings and checks them with the game's
-// validator. It returns the canonical settings to store with the lobby.
-func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, settings json.RawMessage) (json.RawMessage, error) {
+// validator against the lobby's validated teams. It returns the canonical
+// settings to store with the lobby.
+func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, settings json.RawMessage, teams []TeamDefinition) (json.RawMessage, error) {
 	game, err := policy.Game(gameKey)
 	if err != nil {
 		return nil, err
@@ -143,7 +146,7 @@ func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, s
 		}
 		return canonical, nil
 	}
-	err = game.ValidateSettings(ctx, bytes.Clone(canonical))
+	err = game.ValidateSettings(ctx, bytes.Clone(canonical), slices.Clone(teams))
 	switch {
 	case err == nil:
 		return canonical, nil

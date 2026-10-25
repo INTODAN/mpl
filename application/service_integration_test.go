@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -112,10 +113,12 @@ func integrationID(t *testing.T) string {
 }
 
 // quizSettings stands in for a game's settings validator. It accepts an
-// optional rounds count from 1 to 10 and nothing else.
-func quizSettings(_ context.Context, settings json.RawMessage) error {
+// optional rounds count from 1 to 10 and an optional teams count that must
+// match the lobby's teams, and nothing else.
+func quizSettings(_ context.Context, settings json.RawMessage, teams []domain.TeamDefinition) error {
 	var decoded struct {
 		Rounds *int `json:"rounds"`
+		Teams  *int `json:"teams"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(settings))
 	decoder.DisallowUnknownFields()
@@ -124,6 +127,9 @@ func quizSettings(_ context.Context, settings json.RawMessage) error {
 	}
 	if decoded.Rounds != nil && (*decoded.Rounds < 1 || *decoded.Rounds > 10) {
 		return errors.New("rounds must be between 1 and 10")
+	}
+	if decoded.Teams != nil && *decoded.Teams != len(teams) {
+		return fmt.Errorf("teams must be %d, the lobby's team count", len(teams))
 	}
 	return nil
 }
@@ -360,6 +366,7 @@ func TestCreateRejectsInvalidGameSettings(t *testing.T) {
 	}{
 		{"island-battles", `{"rounds":3}`, "this game takes no settings"},
 		{"quiz-demo", `{"rounds":0}`, "rounds must be between 1 and 10"},
+		{"quiz-demo", `{"teams":3}`, "teams must be 2, the lobby's team count"},
 		{"quiz-demo", `{"theme":"space"}`, `json: unknown field "theme"`},
 		{"quiz-demo", `[1]`, "game settings must be a JSON object"},
 		{"quiz-demo", `{"note":"a\u0000b"}`, "game settings must not contain NUL characters"},

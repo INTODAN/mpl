@@ -42,6 +42,10 @@ type Game struct {
 	// ExamplePlayer optionally lets the browser follow and play the game, and
 	// enables the demo lobby for it.
 	ExamplePlayer *ExamplePlayer `json:"example_player,omitempty"`
+	// SettingsModule is the optional same-origin URL of an ES module that adds
+	// the game's own controls to the create form and returns its
+	// game_settings and teams. The frontend README describes its contract.
+	SettingsModule string `json:"settings_module,omitempty"`
 }
 
 // ExamplePlayer describes a browser player that a game supplies as an ES module.
@@ -95,6 +99,9 @@ func validateCatalog(games []Game) error {
 		}
 		if !sameOriginPath(game.ResultURL) || !strings.Contains(game.ResultURL, LobbyIDPlaceholder) {
 			return fmt.Errorf("frontend: game %q needs a same-origin result URL containing %s", game.Key, LobbyIDPlaceholder)
+		}
+		if game.SettingsModule != "" && !sameOriginPath(game.SettingsModule) {
+			return fmt.Errorf("frontend: game %q needs a same-origin settings module", game.Key)
 		}
 		if player := game.ExamplePlayer; player != nil {
 			if !sameOriginPath(player.Module) {

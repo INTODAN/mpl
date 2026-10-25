@@ -15,7 +15,7 @@ import (
 func quizGame() frontend.Game {
 	return frontend.Game{
 		Key: "quiz-demo", Name: "Quiz", ResultURL: "/quiz/{lobby_id}/result",
-		StartedHint: "Answer in the quiz app.",
+		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs",
 		ExamplePlayer: &frontend.ExamplePlayer{
 			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.",
 		},
@@ -58,7 +58,7 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 	}
 	want := []map[string]any{
 		{
-			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.",
+			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.", "settings_module": "/quiz/settings.mjs",
 			"example_player": map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
 		},
 		{"key": "chess", "name": "Chess", "result_url": "/chess/{lobby_id}"},
@@ -103,6 +103,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 	for name, value := range hostile {
 		cases["result url "+name] = func(game *frontend.Game) { game.ResultURL = value + "{lobby_id}" }
 		cases["module "+name] = func(game *frontend.Game) { game.ExamplePlayer.Module = value + "player.mjs" }
+		cases["settings module "+name] = func(game *frontend.Game) { game.SettingsModule = value + "settings.mjs" }
 	}
 	for name, mutate := range cases {
 		game := quizGame()
@@ -130,7 +131,8 @@ func TestAssetsNameNoGame(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := strings.ToLower(string(body))
-		for _, word := range []string{"island", "soldier", "castle", "python", "/game/", "from-lobby"} {
+		// Map choice belongs to the game's settings module, not to the frontend.
+		for _, word := range []string{"island", "soldier", "castle", "python", "/game/", "from-lobby", "map_template", "map file", "player_amount", "/map/"} {
 			if strings.Contains(text, word) {
 				t.Errorf("%s mentions %q", path, word)
 			}

@@ -22,6 +22,13 @@ let resultRequest = null;
 let gamePlayer = null;
 let playerLoading = false;
 let latestGameState = null;
+// The selected game's settings form, from its catalog settings module.
+let settingsForm = null;
+let settingsFormGame = null;
+let describedRoom = null;
+const settingsModules = new Map();
+// Lobbies without a game settings module get these teams.
+const defaultTeams = ["Blue", "Red"];
 
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -87,6 +94,8 @@ function dropRoom() {
   lobbySubscription = null;
   playerLoading = false;
   latestGameState = null;
+  describedRoom = null;
+  $("room-settings").hidden = true;
   snapshot = null;
   resultRequest?.abort();
   resultRequest = null;
@@ -103,9 +112,9 @@ function dropRoom() {
 
 function reportError(error) {
   const messages = {
-    lobby_full: "This lobby is full. There’s room for two players.",
-    team_full: "That team is taken. Please choose the other team.",
-    not_ready: "Both players need a team and must be ready before starting.",
+    lobby_full: "This lobby is full. Every seat is taken.",
+    team_full: "That team is taken. Please choose another team.",
+    not_ready: "Every player needs a team and must be ready before starting.",
     empty_teams: "Every team needs a player before the game can start.",
     not_host: "Only the host can start the lobby.",
     phase_conflict: "The lobby has already started or closed.",
@@ -370,7 +379,66 @@ async function loadResult() {
   }
 }
 
+// A game's settings module adds its own controls to the create form. Each
+// module is imported once per page.
+function settingsModule(game) {
+  if (!settingsModules.has(game.settings_module)) {
+    settingsModules.set(game.settings_module, import(game.settings_module).catch((error) => {
+      settingsModules.delete(game.settings_module);
+      throw error;
+    }));
+  }
+  return settingsModules.get(game.settings_module);
+}
+
+async function mountSettingsForm() {
+  const game = selectedGame();
+  if (!game || settingsFormGame === game.key) return;
+  settingsFormGame = game.key;
+  settingsForm = null;
+  $("game-settings").replaceChildren();
+  if (!game.settings_module) return;
+  try {
+    const { SettingsForm } = await settingsModule(game);
+    if (settingsFormGame !== game.key) return;
+    settingsForm = new SettingsForm({ container: $("game-settings"), onChange: () => {} });
+  } catch {
+    if (settingsFormGame !== game.key) return;
+    settingsFormGame = null;
+    $("game-settings").replaceChildren(element("p", "hint", "Could not load this game’s settings. Choose the game again to retry."));
+  }
+}
+
+// The selected game's settings and teams for a new lobby.
+function lobbyChoice() {
+  const game = selectedGame();
+  if (game?.settings_module && (!settingsForm || settingsFormGame !== game.key)) throw new Error("This game’s settings are still loading. Try again in a moment.");
+  const choice = settingsForm && game?.settings_module ? settingsForm.choice() : { settings: {}, teams: null };
+  const teams = choice.teams || defaultTeams;
+  if (teams.length < 2) throw new Error("A lobby needs at least two teams. Choose other settings.");
+  return { settings: choice.settings || {}, teams };
+}
+
+// Show the room's settings as the game's settings module describes them.
+async function describeRoomSettings() {
+  const game = games.get(snapshot.lobby.game_key);
+  if (describedRoom === snapshot.lobby.id) return;
+  describedRoom = snapshot.lobby.id;
+  if (!game?.settings_module) return;
+  const epoch = roomEpoch;
+  try {
+    const { describeSettings } = await settingsModule(game);
+    const text = describeSettings ? await describeSettings(snapshot.lobby.game_settings) : "";
+    if (epoch !== roomEpoch) return;
+    $("room-settings").textContent = text || "";
+    $("room-settings").hidden = !text;
+  } catch {
+    if (epoch === roomEpoch) describedRoom = null;
+  }
+}
+
 function render() {
+  void mountSettingsForm();
   const demoExample = selectedGame()?.example_player;
   $("demo-setup").hidden = !demoExample;
   $("demo-summary").textContent = demoExample?.summary || "";
@@ -396,6 +464,7 @@ function render() {
   $("room-game").textContent = game?.name || lobby.game_key;
   $("example-strategy").textContent = game?.example_player?.strategy || "";
   $("room-name").textContent = lobby.name;
+  void describeRoomSettings();
   $("room-code").value = lobby.join_code;
   $("player-count").textContent = `${members.length} / ${lobby.capacity}`;
   $("phase").textContent = waiting ? "Waiting" : "Started";
@@ -436,18 +505,21 @@ function render() {
   const startedHint = state.demoPlayer && game?.example_player
     ? `${game.example_player.summary} Keep both tabs open; pause either player to hold the next turn.`
     : game?.started_hint || "The game has started.";
-  $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite your second player." : allReady && emptyHint ? emptyHint : host ? "Once both players choose a team and mark ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
+  $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite the other players." : allReady && emptyHint ? emptyHint : host ? "Once every player chooses a team and marks ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
   if (!waiting) { loadResult(); ensureGamePlayer(); }
 }
 
-async function createLobby(name) {
+// A playground lobby has one seat per team. The teams come from the game's
+// settings form when it has one.
+async function createLobby(name, choice) {
   await ensureSession();
   const payload = {
     game_key: $("game").value, name: name || `${state.session.display_name}’s lobby`,
-    capacity: 2, teams: [{ name: "Blue", capacity: 1 }, { name: "Red", capacity: 1 }],
+    capacity: choice.teams.length, teams: choice.teams.map((team) => ({ name: team, capacity: 1 })),
     client_instance_id: state.clientInstanceID,
   };
+  if (Object.keys(choice.settings).length) payload.game_settings = choice.settings;
   // Retain the idempotency key if a request succeeds but its response is lost.
   if (JSON.stringify(state.pendingCreate?.payload) !== JSON.stringify(payload)) state.pendingCreate = { payload, requestID: uuid() };
   save();
@@ -471,13 +543,15 @@ $("demo-button").addEventListener("click", () => {
   }
   action(async () => {
     try {
+      const choice = lobbyChoice();
+      if (choice.teams.length !== 2) throw new Error("The demo has two players, so it needs settings with exactly two teams.");
       if (state.room) await api(`${roomPath()}/membership`, "DELETE");
       dropRoom();
       state = { demoPlayer: { enabled: true } };
       save();
       $("demo-player-link").hidden = true;
       $("display-name").value = "Alex";
-      await createLobby("Demo lobby");
+      await createLobby("Demo lobby", choice);
       await readyOnTeam(0);
       const url = new URL(location.pathname, location.origin);
       // Only an invitation is transferred. Sam creates an independent session.
@@ -498,7 +572,7 @@ $("demo-button").addEventListener("click", () => {
 
 $("create-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  action(() => createLobby($("lobby-name").value.trim()));
+  action(() => createLobby($("lobby-name").value.trim(), lobbyChoice()));
 });
 $("join-form").addEventListener("submit", (event) => {
   event.preventDefault();

@@ -188,6 +188,26 @@ async def test_create_sends_game_settings_in_the_fingerprint(h):
     assert len(seen) == 4
 
 
+async def test_rejected_game_settings_carry_the_game_message(h):
+    async def rejected(request):
+        if request.url.path.endswith("/lobbies"):
+            return httpx.Response(422, json={"code": "invalid_game_settings", "status": 422, "title": "Unprocessable Entity",
+                                             "detail": "game_settings.rounds: must be between 1 and 10"})
+        if request.url.path.endswith("/start"):
+            return httpx.Response(409, json={"code": "not_ready", "status": 409, "title": "Conflict", "detail": "members are not ready"})
+    h.hook = rejected
+    kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=uuid4())
+    with pytest.raises(LobbyError) as invalid:
+        await h.client.create_lobby(**kwargs, game_settings={"rounds": 0})
+    assert (invalid.value.code, invalid.value.status) == ("invalid_game_settings", 422)
+    assert invalid.value.detail == "game_settings.rounds: must be between 1 and 10"
+    assert str(invalid.value) == "invalid_game_settings: game_settings.rounds: must be between 1 and 10"
+    await h.join()
+    with pytest.raises(LobbyError) as other:
+        await h.client.start(SCOPE)
+    assert (other.value.code, other.value.detail, str(other.value)) == ("not_ready", None, "not_ready")
+
+
 async def test_explicit_identity(h):
     h.client.credential = None
     assert h.calls == []
