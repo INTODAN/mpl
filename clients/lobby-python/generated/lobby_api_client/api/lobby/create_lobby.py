@@ -96,7 +96,9 @@ def sync_detailed(
      Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
     with invalid_game_settings. The lobby stores the settings without reading them and returns them in
     every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload returns the committed snapshot.
+    request_id and payload within the idempotency window, 24 hours by default, returns the committed
+    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
+    in any case a day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -130,7 +132,9 @@ def sync(
      Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
     with invalid_game_settings. The lobby stores the settings without reading them and returns them in
     every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload returns the committed snapshot.
+    request_id and payload within the idempotency window, 24 hours by default, returns the committed
+    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
+    in any case a day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -159,7 +163,9 @@ async def asyncio_detailed(
      Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
     with invalid_game_settings. The lobby stores the settings without reading them and returns them in
     every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload returns the committed snapshot.
+    request_id and payload within the idempotency window, 24 hours by default, returns the committed
+    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
+    in any case a day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -191,7 +197,9 @@ async def asyncio(
      Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
     with invalid_game_settings. The lobby stores the settings without reading them and returns them in
     every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload returns the committed snapshot.
+    request_id and payload within the idempotency window, 24 hours by default, returns the committed
+    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
+    in any case a day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):

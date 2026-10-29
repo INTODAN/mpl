@@ -39,9 +39,21 @@ type Lobby struct {
 	GameSettings json.RawMessage `json:"game_settings"`
 	// NextJoinSequence is persisted, including when older memberships deactivate.
 	NextJoinSequence int64 `json:"-"`
+	// LastConnectedAt is the last time a client showed it was connected, by
+	// creating, joining, heartbeating, releasing a lease or leaving. The
+	// retention pass deletes the lobby once it is older than the idle period.
+	LastConnectedAt time.Time `json:"-"`
 }
 
 func (room Lobby) Scope() Scope { return Scope{GameKey: room.GameKey, LobbyID: room.ID} }
+
+// MarkConnected records that a client was connected at now. It never moves
+// the time back, so a slower clock on another instance can't shorten it.
+func (room *Lobby) MarkConnected(now time.Time) {
+	if now.After(room.LastConnectedAt) {
+		room.LastConnectedAt = now.UTC()
+	}
+}
 
 type Team struct {
 	ID       string `json:"id"`

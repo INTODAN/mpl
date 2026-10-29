@@ -15,19 +15,24 @@ const basePath = "/lobby/v1"
 
 var lobbyBearer = []map[string][]string{{"LobbyBearer": {}}}
 
-// Register installs the public lobby API. app, authenticator and issuer are
-// invoked only while serving requests, so offline OpenAPI export may use fakes.
-func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer) {
+// Register installs the public lobby API. app, authenticator, issuer and
+// retention are invoked only while serving requests, so offline OpenAPI export
+// may use fakes. After each lobby request, retention runs a pass if one is
+// due; a nil retention deletes nothing.
+func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer, retention domain.RetentionRunner) {
 	registerSchemas(api)
 	handler := handlers{app: app, authenticator: authenticator, issuer: issuer}
 	group := huma.NewGroup(api, basePath)
 	group.UseMiddleware(validationProblems)
 	group.UseTransformer(BoundErrorDetails)
+	if retention != nil {
+		group.UseMiddleware(runRetentionAfter(retention))
+	}
 	protected := huma.NewGroup(group)
 	protected.UseMiddleware(authenticate(authenticator))
 	huma.Register(group, operation(http.MethodPost, "/sessions", "createLobbySession", http.StatusCreated, nil, "Create a guest session", "Creates one guest identity and bearer credential."), handler.session)
 	huma.Register(protected, operation(http.MethodPost, "/connection-token", "createLobbyConnectionToken", http.StatusOK, lobbyBearer, "Create a connection token", "Creates an authenticated Centrifugo connection token; it never creates or joins a lobby."), handler.token)
-	huma.Register(protected, operation(http.MethodPost, "/lobbies", "createLobby", http.StatusCreated, lobbyBearer, "Create a lobby", "Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail with invalid_game_settings. The lobby stores the settings without reading them and returns them in every snapshot, including the started one. They can't change after creation. Repeating the same request_id and payload returns the committed snapshot."), handler.create)
+	huma.Register(protected, operation(http.MethodPost, "/lobbies", "createLobby", http.StatusCreated, lobbyBearer, "Create a lobby", "Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail with invalid_game_settings. The lobby stores the settings without reading them and returns them in every snapshot, including the started one. They can't change after creation. Repeating the same request_id and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a day after creation, unless its game sets other times."), handler.create)
 	huma.Register(protected, operation(http.MethodPost, "/memberships", "joinLobby", http.StatusOK, lobbyBearer, "Join a lobby", "Joins by game key and join code; started lobbies allow only frozen-roster rejoin."), handler.join)
 	huma.Register(protected, operation(http.MethodGet, "/games/{game_key}/lobbies/{lobby_id}", "getLobby", http.StatusOK, lobbyBearer, "Get a lobby", "Returns the caller-authorized lobby snapshot."), handler.snapshot)
 	huma.Register(protected, operation(http.MethodPut, "/games/{game_key}/lobbies/{lobby_id}/team", "selectLobbyTeam", http.StatusOK, lobbyBearer, "Select a team", "team_id is required and may be null to clear the selection."), handler.team)
@@ -37,6 +42,15 @@ func Register(api huma.API, app domain.Application, authenticator domain.Authent
 	huma.Register(protected, operation(http.MethodPost, "/games/{game_key}/lobbies/{lobby_id}/heartbeat", "heartbeatLobby", http.StatusOK, lobbyBearer, "Heartbeat a lease", "Renews one client lease; reconnecting does not create membership."), handler.heartbeat)
 	huma.Register(protected, operation(http.MethodDelete, "/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}", "releaseLobbyLease", http.StatusNoContent, lobbyBearer, "Release a lease", "Releases one client lease without leaving durable membership."), handler.release)
 	registerProblemResponses(api)
+}
+
+// runRetentionAfter runs the retention pass once the request is handled, so
+// lobby data is deleted only while the lobby is in use.
+func runRetentionAfter(retention domain.RetentionRunner) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		next(ctx)
+		retention.RunIfDue(ctx.Context())
+	}
 }
 func operation(method, path, identifier string, status int, security []map[string][]string, summary, description string) huma.Operation {
 	return huma.Operation{Method: method, Path: path, OperationID: identifier, DefaultStatus: status, Tags: []string{"Lobby"}, Summary: summary, Description: description, Security: security, Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable}}

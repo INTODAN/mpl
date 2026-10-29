@@ -80,6 +80,7 @@ func (service *Service) Leave(ctx context.Context, principal domain.Principal, s
 		member.TeamID = nil
 		member.Ready = false
 		member.DisconnectedUntil = nil
+		aggregate.Lobby.MarkConnected(now)
 		for index := range aggregate.Leases {
 			lease := &aggregate.Leases[index]
 			if lease.PlayerID == principal.PlayerID && lease.Generation == member.Generation && lease.ReleasedAt == nil {

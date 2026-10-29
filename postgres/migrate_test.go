@@ -12,11 +12,13 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/internal/testutil"
 	lobbypostgres "islandBattles/lobby/postgres"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -223,6 +225,64 @@ func TestMigrateAddsGameSettingsToExistingRooms(t *testing.T) {
 	aggregate, err := store.Read(context.Background(), domain.Scope{GameKey: room.GameKey, LobbyID: room.ID})
 	if err != nil || aggregate.Lobby.JoinCode != room.JoinCode || string(aggregate.Lobby.GameSettings) != domain.EmptyGameSettings {
 		t.Fatalf("existing room = %#v, %v", aggregate.Lobby, err)
+	}
+}
+
+// Rooms that existed before migration 0004 must not look idle while they are
+// in use, so each gets the latest end of its leases, or its creation time.
+func TestMigrateRecordsLastConnectionOfExistingRooms(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	before := lobbypostgres.Migrations()
+	files := fstest.MapFS{}
+	for _, name := range migrationNames(t, before.Files)[:3] {
+		data, err := fs.ReadFile(before.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: data}
+	}
+	before.Files = files
+	if err := before.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	created := time.Date(2026, 10, 25, 10, 0, 0, 0, time.UTC)
+	seed := func(code string, leases ...lobbypostgres.LeaseRecord) string {
+		room := seedRoom(t, db, player.ID, "island-battles", code)
+		if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: room.ID}).Update("created_at", created).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(leases) > 0 {
+			mustCreate(t, db, &[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)})
+		}
+		for _, lease := range leases {
+			lease.LobbyID, lease.PlayerID, lease.Generation = room.ID, player.ID, 1
+			lease.ClientInstanceID = uuid.NewString()
+			mustCreate(t, db, &lease)
+		}
+		return room.ID
+	}
+	released := created.Add(20 * time.Minute)
+	connected := seed("LASTCON1",
+		lobbypostgres.LeaseRecord{ExpiresAt: created.Add(30 * time.Minute)},
+		lobbypostgres.LeaseRecord{ExpiresAt: created.Add(2 * time.Hour)},
+	)
+	releasedEarly := seed("LASTCON2", lobbypostgres.LeaseRecord{ExpiresAt: created.Add(time.Hour), ReleasedAt: &released})
+	withoutLeases := seed("LASTCON3")
+
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate existing rooms: %v", err)
+	}
+	for id, want := range map[string]time.Time{connected: created.Add(2 * time.Hour), releasedEarly: released, withoutLeases: created} {
+		var room lobbypostgres.RoomRecord
+		mustFind(t, db, &room, id)
+		if !room.LastConnectedAt.Equal(want) {
+			t.Errorf("room %s last connected at %v, want %v", id, room.LastConnectedAt, want)
+		}
+	}
+	var nullable string
+	if err := db.Raw(`SELECT is_nullable FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'lobby_rooms' AND column_name = 'last_connected_at'`).Scan(&nullable).Error; err != nil || nullable != "NO" {
+		t.Fatalf("last_connected_at nullable = %q, %v", nullable, err)
 	}
 }
 

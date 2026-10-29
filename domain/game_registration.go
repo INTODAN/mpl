@@ -22,6 +22,9 @@ type GameRegistration struct {
 	ValidateSettings GameSettingsValidator
 	// StartRules adds start conditions to the lobby's default ones.
 	StartRules StartRules
+	// Retention overrides when the game's lobbies are deleted. Each zero
+	// period keeps the policy's default.
+	Retention LobbyRetention
 }
 
 // StartRules are conditions a game declares for starting its lobbies, on top

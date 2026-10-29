@@ -30,6 +30,7 @@ func (service *Service) Heartbeat(ctx context.Context, principal domain.Principa
 		lease.ExpiresAt = now.Add(service.policy.LeaseDuration)
 		change := domain.Change{PrivateChanged: true, PublicChanged: member.DisconnectedUntil != nil}
 		member.DisconnectedUntil = nil
+		aggregate.Lobby.MarkConnected(now)
 		return change, nil
 	})
 	if err != nil {
@@ -60,6 +61,7 @@ func (service *Service) ReleaseLease(ctx context.Context, principal domain.Princ
 			return domain.Change{}, nil
 		}
 		lease.ReleasedAt = &now
+		aggregate.Lobby.MarkConnected(now)
 		change, err := domain.NormalizeExpired(aggregate, now, service.policy)
 		return domain.MergeChanges(change, domain.Change{PrivateChanged: true}), err
 	})

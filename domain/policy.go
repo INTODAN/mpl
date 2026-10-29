@@ -16,6 +16,7 @@ type Policy struct {
 	SessionDuration         time.Duration
 	ConnectionTokenDuration time.Duration
 	SubscriptionDuration    time.Duration
+	Retention               RetentionPolicy
 	Games                   []GameRegistration
 }
 
@@ -24,7 +25,7 @@ func DefaultPolicy(games ...GameRegistration) Policy {
 	return Policy{HeartbeatInterval: 15 * time.Second, LeaseDuration: 45 * time.Second,
 		GraceDuration:   60 * time.Second,
 		SessionDuration: 24 * time.Hour, ConnectionTokenDuration: 5 * time.Minute,
-		SubscriptionDuration: 60 * time.Second, Games: slices.Clone(games)}
+		SubscriptionDuration: 60 * time.Second, Retention: DefaultRetention(), Games: slices.Clone(games)}
 }
 func (policy Policy) Validate() error {
 	if policy.HeartbeatInterval <= 0 || policy.LeaseDuration <= policy.HeartbeatInterval ||
@@ -33,6 +34,9 @@ func (policy Policy) Validate() error {
 		policy.SubscriptionDuration <= 0 || policy.SubscriptionDuration > policy.SessionDuration {
 		return NewError(CodeInvalidInput, "invalid lobby policy durations")
 	}
+	if err := policy.Retention.validate(policy); err != nil {
+		return err
+	}
 	if len(policy.Games) == 0 {
 		return NewError(CodeInvalidInput, "at least one game must be registered")
 	}
@@ -40,6 +44,9 @@ func (policy Policy) Validate() error {
 	for _, game := range policy.Games {
 		if ValidateGameKey(game.Key) != nil || seen[game.Key] {
 			return NewError(CodeInvalidInput, "invalid or duplicate registered game key")
+		}
+		if err := game.Retention.validate(policy, true); err != nil {
+			return err
 		}
 		seen[game.Key] = true
 	}

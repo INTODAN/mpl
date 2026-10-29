@@ -82,6 +82,11 @@ DefaultPolicy(games ...GameRegistration) Policy
 (Policy).ValidateGameSettings(context.Context, string, json.RawMessage, []TeamDefinition) (json.RawMessage, error)
 NormalizeGameSettings(json.RawMessage) (json.RawMessage, error)
 (Policy).ValidateScope(Scope) error
+DefaultRetention() RetentionPolicy
+(Policy).LobbyRetention(string) LobbyRetention
+(Policy).RetentionCutoffs(time.Time) RetentionCutoffs
+(RetentionResult).Backlog(int) bool
+(*Lobby).MarkConnected(time.Time)
 ValidateGameKey(string) error
 ValidateUUID(string) error
 NormalizeName(string, int) (string, error)
@@ -106,13 +111,14 @@ BuildSnapshot(Aggregate, string) (Snapshot, error)
 
 The exact lease error ordering is membership-history existence (outsider: `ErrNotFound`), generation equality (otherwise `ErrStaleMembership`), then tuple policy. Unknown current-generation heartbeat and inactive/released-tuple heartbeat return `ErrStaleMembership`. Unknown current-generation release and repeated released-tuple release succeed without changes, including an inactive historical membership. Heartbeats never create or reopen tuples. Explicit join with a new client UUID establishes a lease. Persist `Lobby.NextJoinSequence=2` after the creator receives sequence 1; increment under the room lock for every new/reactivated membership, never derive it from active members.
 
-Policy defaults are explicit: `DefaultPolicy(registrations...)` supplies 15s heartbeat, 45s lease, 60s grace, 24h session, 5m connection JWT and 60s subscription authorization. `Policy{}` is invalid. Policies must have positive durations, heartbeat shorter than lease, token/subscription lifetimes no longer than session, and a nonempty list of registrations with unique canonical game keys. Constructors validate then retain a detached registration slice.
+Policy defaults are explicit: `DefaultPolicy(registrations...)` supplies 15s heartbeat, 45s lease, 60s grace, 24h session, 5m connection JWT, 60s subscription authorization and `DefaultRetention()`. `Policy{}` is invalid. Policies must have positive durations, heartbeat shorter than lease, token/subscription lifetimes no longer than session, a valid retention policy (see [Deleting old data](#deleting-old-data)), and a nonempty list of registrations with unique canonical game keys. Constructors validate then retain a detached registration slice.
 
 The host declares each game with a `GameRegistration`. The lobby applies its fields without knowing the game, and a zero field keeps the default behavior, so new declarations are added as new fields:
 
 - `Key` is the canonical game key.
 - `ValidateSettings` checks the optional `game_settings` object of a create request against the request's validated teams, so a game can require settings that fit the lobby, such as a map with one starting position per team. A nil validator means the game takes no settings and accepts only `{}`.
 - `StartRules` adds start conditions to the default ones: at least two members, each with a team, ready and connected, or `not_ready`. With `EveryTeamNeedsMember`, a start with an empty team fails with `empty_teams`, whose `team_ids` list the empty teams in team order. Snapshots carry the game's rules as `start_rules`, so clients can explain why the lobby can't start yet.
+- `Retention` overrides the policy's `LobbyRetention`, the idle period and the maximum age after which the game's lobbies are deleted. Each zero period keeps the default.
 
 `ValidateGameSettings` first canonicalizes the settings with `NormalizeGameSettings`: one compact JSON object with sorted keys and at most `MaxGameSettingsBytes`, and `{}` when the request had none. The validator receives that canonical object and the request's teams in order, after they pass `ValidateTeamDefinitions`. A rejection becomes `invalid_game_settings` with the validator's message as the client-facing detail, and the create request fails without writes. A validator that can't run returns the context's error or one wrapping `ErrUnavailable`. The lobby stores the canonical object with the room, includes it in the create fingerprint and returns it as `lobby.game_settings` in every snapshot, including the started snapshot a game binding receives. Settings never change after creation.
 
@@ -135,6 +141,25 @@ Postgres holds only state. No table holds messages waiting to be sent, and nothi
 - Expiry is applied lazily. Every command, the heartbeat included, and every Centrifugo subscribe or sub-refresh proxy call normalizes due lease and grace deadlines in its transaction and pushes the result. A lobby with a connected member is therefore normalized within one heartbeat or refresh, and a lobby nobody is connected to is normalized on its next access.
 
 Centrifugo keeps history for both the `lobby` and `player` namespaces, so a reconnecting client recovers recent messages before it reconciles over HTTP.
+
+## Deleting old data
+
+Lobby data is deleted once it is past its retention period, in small batches at the end of lobby requests. There is no timer, so when nobody uses the lobby nothing runs, and nothing grows either. `Policy.Retention` holds the periods, and `DefaultRetention()` gives:
+
+| Data | Deleted | Default |
+|---|---|---|
+| Create requests | After the idempotency window. A retry inside it replays the original response; a later one creates a new lobby. | 24 hours after the request |
+| Sessions | After they have been expired for a grace period, which covers requests that verified one just before it expired | 1 hour after expiry |
+| Players | Once no session, room host, membership, start roster or create request references them. Only players older than a session and its grace are checked, since younger ones still have theirs. | As soon as nothing references them |
+| Lobbies, in any phase, with their teams, memberships, leases and start roster | When nobody has been connected for the idle period, and in any case at the maximum age. A `GameRegistration.Retention` can override either period for its game. | 1 hour idle, 1 day old |
+
+Each room records `last_connected_at`, the last time a client created, joined, heartbeated, released a lease or left. Reading a snapshot doesn't count. The idle period must be longer than a lease plus its grace, so a member who can still reconnect never loses the lobby to idleness. Started lobbies are deleted like the others: a game authorizes from its own frozen roster, takes no part in cleanup and keeps working after its lobby is gone.
+
+- `postgres.NewRetentionStore(db)` implements `domain.RetentionStore`. `DeleteExpired(ctx, policy.RetentionCutoffs(now))` deletes create requests, then sessions, then lobbies, then the players they freed. Each step is its own transaction that locks at most `BatchSize` rows with `FOR UPDATE SKIP LOCKED` and deletes them, child rows before rooms. A lobby that a request holds is left for a later pass, so a pass never waits on a lobby in use, and passes on different instances don't wait on each other. It touches only lobby tables.
+- `application.NewRetention(store, clock, policy, logger)` decides when a pass runs. `RunIfDue(ctx)` runs one when `PassInterval` has passed since the last pass in this process, or right away when the last pass filled a batch, so a backlog drains a batch per request. Only one pass runs at a time per process, and other requests skip instead of waiting. A pass outlives a canceled request, has its own 5 second timeout, and logs failures instead of failing the request.
+- `httpapi.Register(api, app, authenticator, issuer, retention)` calls `RunIfDue` after each lobby request. Pass nil to delete nothing.
+
+The defaults are a batch of 50 rows of each kind and a pass interval of one minute. A pass that finds nothing costs four indexed queries, about once a minute per instance, and a full pass is four short transactions that each lock at most 50 rows, typically a few milliseconds. Retention periods are hours long, so a minute's delay doesn't matter. A backlog, such as the first pass on a database that never deleted anything, drains at 50 rows of each kind per lobby request without making any one request much slower.
 
 ## Binding a game to a started lobby
 

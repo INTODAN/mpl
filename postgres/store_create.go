@@ -78,6 +78,8 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 			return nil
 		}
 		aggregate = aggregate.DeepCopy()
+		// Its creator is connected, so a new room is never idle.
+		aggregate.Lobby.MarkConnected(aggregate.Lobby.CreatedAt)
 		if aggregate.Lobby.Version != 1 || aggregate.Lobby.GameKey != canonical.GameKey || !bytes.Equal(aggregate.Lobby.GameSettings, canonical.GameSettings) {
 			return domain.ErrInvalidInput
 		}

@@ -98,7 +98,7 @@ func buildArtifacts() (artifact, error) {
 	config.DocsPath = ""
 	config.SchemasPath = ""
 	api := humachi.New(router, config)
-	httpapi.Register(api, nil, nil, nil)
+	httpapi.Register(api, nil, nil, nil, nil)
 
 	openapi, err := prettyJSONFrom(api.OpenAPI())
 	if err != nil {
