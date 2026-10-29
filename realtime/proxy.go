@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -16,15 +17,33 @@ const RefreshPath = "/internal/lobby/centrifugo/sub-refresh"
 const ProxySecretHeader = "X-Lobby-Proxy-Secret"
 
 type Proxy struct {
-	authorizer domain.SubscriptionAuthorizer
-	secret     string
+	authorizer  domain.SubscriptionAuthorizer
+	secret      string
+	reportError ErrorReporter
 }
 
-func NewProxy(authorizer domain.SubscriptionAuthorizer, secret string) (*Proxy, error) {
+// ErrorReporter receives the error behind a proxy answer that leaves it out,
+// such as a 503 for an unreachable store, so the host can log it with the
+// request.
+type ErrorReporter func(context.Context, error)
+
+// ProxyOption configures a Proxy.
+type ProxyOption func(*Proxy)
+
+// WithErrorReporter passes the cause of each 503 to report.
+func WithErrorReporter(report ErrorReporter) ProxyOption {
+	return func(proxy *Proxy) { proxy.reportError = report }
+}
+
+func NewProxy(authorizer domain.SubscriptionAuthorizer, secret string, options ...ProxyOption) (*Proxy, error) {
 	if authorizer == nil || secret == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	return &Proxy{authorizer: authorizer, secret: secret}, nil
+	proxy := &Proxy{authorizer: authorizer, secret: secret}
+	for _, option := range options {
+		option(proxy)
+	}
+	return proxy, nil
 }
 
 // Register deliberately bypasses public Huma registration: these are trusted
@@ -65,6 +84,9 @@ func (proxy *Proxy) ServeHTTP(response http.ResponseWriter, request *http.Reques
 	authorization, err := proxy.authorizer.AuthorizeSubscription(request.Context(), input.User, input.Channel)
 	if err != nil {
 		if !errors.Is(err, domain.ErrPermissionDenied) && !errors.Is(err, domain.ErrUnauthenticated) && !errors.Is(err, domain.ErrNotFound) {
+			if proxy.reportError != nil {
+				proxy.reportError(request.Context(), err)
+			}
 			http.Error(response, "temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}

@@ -67,6 +67,28 @@ func TestProxyWireEnvelopesAndTrustedSecret(t *testing.T) {
 	}
 }
 
+// A 503 leaves its cause out of the answer, so the host gets it to log.
+// Denials are answers, not failures, and report nothing.
+func TestProxyReportsTheCauseOfEach503(t *testing.T) {
+	for _, test := range []struct {
+		failure  error
+		reported bool
+	}{{errors.Join(domain.ErrUnavailable, errors.New("connection refused")), true}, {domain.ErrPermissionDenied, false}, {nil, false}} {
+		var reported []error
+		proxy, err := realtime.NewProxy(&fakeAuthorizer{err: test.failure, until: time.Unix(12345, 0)}, "secret",
+			realtime.WithErrorReporter(func(_ context.Context, err error) { reported = append(reported, err) }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, realtime.SubscribePath, strings.NewReader(`{"client":"client","user":"user","channel":"channel"}`))
+		request.Header.Set(realtime.ProxySecretHeader, "secret")
+		proxy.ServeHTTP(httptest.NewRecorder(), request)
+		if test.reported != (len(reported) == 1) || test.reported && !strings.Contains(reported[0].Error(), "connection refused") {
+			t.Fatalf("failure %v reported %v", test.failure, reported)
+		}
+	}
+}
+
 func TestProxyRejectsMalformedAndOversizedBody(t *testing.T) {
 	for _, body := range []string{`{}`, `{"user":"x"}`, `{"client":"c","user":"u","channel":"x"} {}`, strings.Repeat("a", 70<<10)} {
 		authorizer := &fakeAuthorizer{}

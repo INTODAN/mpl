@@ -36,7 +36,7 @@ func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerI
 	}
 	identity, err := authorizer.identities.LookupByPlayer(ctx, playerID)
 	if err != nil {
-		return domain.SubscriptionAuthorization{}, domain.ErrUnavailable
+		return domain.SubscriptionAuthorization{}, unavailable(err)
 	}
 	now := authorizer.clock.Now().UTC()
 	if identity == nil || identity.Principal.PlayerID != playerID || !now.Before(identity.ExpiresAt) {
@@ -61,7 +61,7 @@ func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerI
 			if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrPermissionDenied) {
 				return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 			}
-			return domain.SubscriptionAuthorization{}, domain.ErrUnavailable
+			return domain.SubscriptionAuthorization{}, unavailable(err)
 		}
 	}
 	allowedUntil := now.Add(authorizer.policy.SubscriptionDuration)
@@ -69,4 +69,10 @@ func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerI
 		allowedUntil = identity.ExpiresAt
 	}
 	return domain.SubscriptionAuthorization{AllowedUntil: allowedUntil}, nil
+}
+
+// unavailable keeps the cause of an outage for the host's log. The proxy
+// answers it with a bare 503.
+func unavailable(cause error) error {
+	return &domain.Error{Code: domain.CodeUnavailable, Message: domain.ErrUnavailable.Message, Cause: cause}
 }
