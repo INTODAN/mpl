@@ -71,7 +71,7 @@ func (publisher *Publisher) PublishChange(ctx context.Context, room domain.Lobby
 	}
 	commands, err := roomCommands(room, change, stillDue)
 	if err != nil {
-		publisher.logger.Error("Lobby change could not be pushed to Centrifugo", "lobby_id", room.ID, "error", err)
+		publisher.logger.ErrorContext(ctx, "Lobby change could not be pushed to Centrifugo", "lobby_id", room.ID, "error", err)
 		return err
 	}
 	return publisher.push(ctx, commands)
@@ -134,7 +134,7 @@ func (publisher *Publisher) push(ctx context.Context, commands []command) error 
 		time.Sleep(pause)
 		pause *= 2
 	}
-	publisher.logger.Error("Centrifugo push failed; clients recover by re-reading over HTTP",
+	publisher.logger.ErrorContext(ctx, "Centrifugo push failed; clients recover by re-reading over HTTP",
 		"failed_commands", len(commands), "channel", commands[0].channel, "attempts", publisher.retry.Attempts, "error", err)
 	return err
 }

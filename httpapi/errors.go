@@ -14,9 +14,13 @@ type Problem struct {
 	// TeamIDs lists the teams the error is about.
 	TeamIDs []string         `json:"team_ids,omitempty" doc:"The teams the error is about. For empty_teams, the teams that still need a player, in team order."`
 	Code    domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,empty_teams,stale_membership,idempotency_conflict,invalid_input,invalid_game_settings,unavailable,internal_error"`
+	// cause is the error the problem answers. Responses leave it out, but the
+	// host's request log reads it through Unwrap.
+	cause error
 }
 
 func (problem *Problem) Error() string             { return problem.Detail }
+func (problem *Problem) Unwrap() error             { return problem.cause }
 func (problem *Problem) GetStatus() int            { return problem.Status }
 func (problem *Problem) ContentType(string) string { return "application/problem+json" }
 
@@ -43,7 +47,7 @@ func problemFor(errorValue error) error {
 	default:
 		code = "internal_error"
 	}
-	problem := &Problem{Title: http.StatusText(status), Status: status, Detail: detail, Code: code}
+	problem := &Problem{Title: http.StatusText(status), Status: status, Detail: detail, Code: code, cause: errorValue}
 	var domainError *domain.Error
 	if code == domain.CodeEmptyTeams && errors.As(errorValue, &domainError) {
 		problem.TeamIDs = domainError.TeamIDs
