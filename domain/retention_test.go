@@ -32,9 +32,13 @@ func TestRetentionValidation(t *testing.T) {
 		"no idle period":               func(policy *domain.Policy) { policy.Retention.Lobbies.IdlePeriod = 0 },
 		"idle within reconnect window": func(policy *domain.Policy) { policy.Retention.Lobbies.IdlePeriod = reconnectWindow },
 		"no maximum age":               func(policy *domain.Policy) { policy.Retention.Lobbies.MaximumAge = 0 },
-		"no batch":                     func(policy *domain.Policy) { policy.Retention.BatchSize = 0 },
-		"batch too large":              func(policy *domain.Policy) { policy.Retention.BatchSize = domain.MaxRetentionBatchSize + 1 },
-		"no pass interval":             func(policy *domain.Policy) { policy.Retention.PassInterval = 0 },
+		"age within reconnect window":  func(policy *domain.Policy) { policy.Retention.Lobbies.MaximumAge = reconnectWindow },
+		"game age within reconnect window": func(policy *domain.Policy) {
+			policy.Games[0].Retention.MaximumAge = reconnectWindow
+		},
+		"no batch":         func(policy *domain.Policy) { policy.Retention.BatchSize = 0 },
+		"batch too large":  func(policy *domain.Policy) { policy.Retention.BatchSize = domain.MaxRetentionBatchSize + 1 },
+		"no pass interval": func(policy *domain.Policy) { policy.Retention.PassInterval = 0 },
 		"game idle within reconnect window": func(policy *domain.Policy) {
 			policy.Games[0].Retention.IdlePeriod = reconnectWindow
 		},
@@ -54,8 +58,9 @@ func TestRetentionValidation(t *testing.T) {
 		"game override": func(policy *domain.Policy) {
 			policy.Games[0].Retention = domain.LobbyRetention{IdlePeriod: 10 * time.Minute}
 		},
+		"shortest maximum age": func(policy *domain.Policy) { policy.Retention.Lobbies.MaximumAge = reconnectWindow + time.Second },
 		"game maximum age only": func(policy *domain.Policy) {
-			policy.Games[0].Retention = domain.LobbyRetention{MaximumAge: time.Minute}
+			policy.Games[0].Retention = domain.LobbyRetention{MaximumAge: reconnectWindow + time.Second}
 		},
 	} {
 		changed := valid

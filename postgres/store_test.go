@@ -341,6 +341,43 @@ func TestCreateReplayUsesOriginalResponse(t *testing.T) {
 		t.Fatal("replay leaked current room", err, replay, fixture.snapshot)
 	}
 }
+
+// The retention pass may delete a create request whose window just ended
+// between a retry's conflicting insert and its read. The retry then inserts
+// again and creates a new lobby instead of failing.
+func TestCreateRetryAfterRetentionDeletedTheRequestCreatesALobby(t *testing.T) {
+	fixture := newStoreFixture(t)
+	deleted := false
+	vanish := func(tx *gorm.DB) {
+		if deleted || tx.Statement.Table != "lobby_create_requests" || tx.Statement.RowsAffected != 0 {
+			return
+		}
+		deleted = true
+		// Another connection, as the retention pass would be, commits the
+		// delete before the retry reads.
+		if err := fixture.db.Session(&gorm.Session{NewDB: true}).Where(&postgres.CreateRequestRecord{PlayerID: fixture.principal.PlayerID, RequestID: fixture.request.RequestID}).Delete(&postgres.CreateRequestRecord{}).Error; err != nil {
+			t.Error(err)
+		}
+	}
+	if err := fixture.db.Callback().Create().After("gorm:create").Register("test:retention_deletes_request", vanish); err != nil {
+		t.Fatal(err)
+	}
+	_, candidate := storeCandidate(t, fixture)
+	created, err := fixture.store.Create(context.Background(), fixture.principal, fixture.request, candidate)
+	if err != nil {
+		t.Fatalf("retry after the request was deleted: %v", err)
+	}
+	if !deleted || created.Lobby.ID != candidate.Lobby.ID {
+		t.Fatalf("retry returned lobby %s (deleted request %v), want the new lobby %s", created.Lobby.ID, deleted, candidate.Lobby.ID)
+	}
+	var records []postgres.CreateRequestRecord
+	if err := fixture.db.Where(&postgres.CreateRequestRecord{PlayerID: fixture.principal.PlayerID, RequestID: fixture.request.RequestID}).Find(&records).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].LobbyID == nil || *records[0].LobbyID != candidate.Lobby.ID {
+		t.Fatalf("create request = %+v, want one linked to the new lobby", records)
+	}
+}
 func TestCreateReplaysRequestsStoredBeforeGameSettings(t *testing.T) {
 	fixture := newStoreFixture(t)
 	request := fixture.request

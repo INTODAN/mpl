@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,5 +348,65 @@ func TestRetentionRejectsUnboundedBatches(t *testing.T) {
 	}
 	if _, err := lobbypostgres.NewRetentionStore(nil); err == nil {
 		t.Fatal("nil database accepted")
+	}
+}
+
+// Deleting a lobby deletes the create request that made it, so a retry inside
+// the window creates a new lobby instead of replaying a deleted one.
+func TestRetentionDeletesTheCreateRequestOfADeletedLobby(t *testing.T) {
+	db := testutil.NewPostgresFixture(t)
+	host := playerCreated(t, db, time.Hour)
+	sessionExpiring(t, db, host, time.Hour)
+	idle := seedLobby(t, db, host, "island-battles", 2*time.Hour, 2*time.Hour)
+	active := seedLobby(t, db, host, "island-battles", 2*time.Hour, 0)
+	made := func(lobbyID string) lobbypostgres.CreateRequestRecord {
+		request := lobbypostgres.CreateRequestRecord{PlayerID: host, RequestID: uuid.NewString(), LobbyID: &lobbyID, PayloadHash: make([]byte, 32), ResponseJSON: datatypes.JSON(`{}`), CreatedAt: retentionNow.Add(-time.Minute)}
+		mustCreate(t, db, &request)
+		return request
+	}
+	made(idle)
+	kept := made(active)
+
+	result := deleteExpired(t, newRetentionStore(t, db), retentionPolicy().RetentionCutoffs(retentionNow))
+	if result != (domain.RetentionResult{Lobbies: 1}) {
+		t.Fatalf("result = %+v", result)
+	}
+	var requests []string
+	if err := db.Model(&lobbypostgres.CreateRequestRecord{}).Pluck("request_id", &requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 || requests[0] != kept.RequestID {
+		t.Fatalf("remaining create requests = %v, want only %s", requests, kept.RequestID)
+	}
+}
+
+// A step that keeps failing, here because a trigger refuses to delete create
+// requests, doesn't stop the later steps.
+func TestRetentionStepsFailIndependently(t *testing.T) {
+	db := testutil.NewPostgresFixture(t)
+	if err := db.Exec(`
+CREATE FUNCTION refuse_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$;
+CREATE TRIGGER refuse_create_request_delete BEFORE DELETE ON lobby_create_requests FOR EACH ROW EXECUTE FUNCTION refuse_delete();
+`).Error; err != nil {
+		t.Fatal(err)
+	}
+	requester := playerCreated(t, db, time.Hour)
+	sessionExpiring(t, db, requester, time.Hour)
+	createRequestMade(t, db, requester, 2*24*time.Hour)
+	abandoned := playerCreated(t, db, 3*24*time.Hour)
+	sessionExpiring(t, db, abandoned, -2*time.Hour)
+	host := playerCreated(t, db, time.Hour)
+	sessionExpiring(t, db, host, time.Hour)
+	seedLobby(t, db, host, "island-battles", 2*time.Hour, 2*time.Hour)
+
+	result, err := newRetentionStore(t, db).DeleteExpired(context.Background(), retentionPolicy().RetentionCutoffs(retentionNow))
+	if err == nil || !strings.Contains(err.Error(), "create requests") || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("error = %v, want the failing create request step", err)
+	}
+	if result != (domain.RetentionResult{Sessions: 1, Lobbies: 1, Players: 1}) {
+		t.Fatalf("result = %+v, want the later steps to run", result)
+	}
+	if count := storeCount(t, db, &lobbypostgres.CreateRequestRecord{}); count != 1 {
+		t.Fatalf("create requests = %d, want the refused one kept", count)
 	}
 }

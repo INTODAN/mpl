@@ -49,8 +49,9 @@ func DefaultRetention() RetentionPolicy {
 // MaxRetentionBatchSize bounds BatchSize, so one pass stays short.
 const MaxRetentionBatchSize = 1000
 
-// validate also requires the idle period to outlast a lease and its grace,
-// so a member who may still reconnect never loses the lobby to idleness.
+// validate also requires both lobby periods to outlast a lease and its grace,
+// so a member who may still reconnect never loses the lobby to idleness, and
+// no lobby is deleted before its creator could even have disconnected.
 func (retention RetentionPolicy) validate(policy Policy) error {
 	if retention.CreateRequests <= 0 || retention.ExpiredSessions <= 0 || retention.PassInterval <= 0 ||
 		retention.BatchSize < 1 || retention.BatchSize > MaxRetentionBatchSize {
@@ -65,7 +66,8 @@ func (retention LobbyRetention) validate(policy Policy, override bool) error {
 	}
 	if retention.IdlePeriod < 0 || retention.MaximumAge < 0 ||
 		(!override && (retention.IdlePeriod == 0 || retention.MaximumAge == 0)) ||
-		(retention.IdlePeriod != 0 && retention.IdlePeriod <= policy.LeaseDuration+policy.GraceDuration) {
+		(retention.IdlePeriod != 0 && retention.IdlePeriod <= policy.LeaseDuration+policy.GraceDuration) ||
+		(retention.MaximumAge != 0 && retention.MaximumAge <= policy.LeaseDuration+policy.GraceDuration) {
 		return NewError(CodeInvalidInput, "invalid lobby retention periods")
 	}
 	return nil

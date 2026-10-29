@@ -61,10 +61,10 @@ func (retention *Retention) RunIfDue(ctx context.Context) {
 	defer cancel()
 	result, err := retention.store.DeleteExpired(ctx, retention.policy.RetentionCutoffs(now))
 	if err != nil {
+		// The steps that succeeded still count. A failing step waits for
+		// the interval, so it isn't retried on every request.
 		retention.logger.ErrorContext(ctx, "Lobby retention pass failed", "error", err)
-		return
-	}
-	if result.Backlog(retention.policy.Retention.BatchSize) {
+	} else if result.Backlog(retention.policy.Retention.BatchSize) {
 		retention.nextPass = now
 	}
 	if result != (domain.RetentionResult{}) {

@@ -101,10 +101,13 @@ type StartRosterRecord struct {
 func (StartRosterRecord) TableName() string { return "lobby_start_roster" }
 
 // CreateRequestRecord retains the original representation used to answer an
-// idempotent create retry.
+// idempotent create retry. LobbyID, from migration 0004, names the lobby it
+// created, so the request is deleted with that lobby; it is null only for
+// requests that an older build stored.
 type CreateRequestRecord struct {
 	PlayerID     string         `gorm:"column:player_id;type:uuid;primaryKey"`
 	RequestID    string         `gorm:"column:request_id;type:uuid;primaryKey"`
+	LobbyID      *string        `gorm:"column:lobby_id;type:uuid"`
 	PayloadHash  []byte         `gorm:"column:payload_hash;type:bytea;not null"`
 	ResponseJSON datatypes.JSON `gorm:"column:response_json;type:jsonb;not null"`
 	CreatedAt    time.Time      `gorm:"column:created_at;not null"`

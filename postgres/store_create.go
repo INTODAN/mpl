@@ -53,23 +53,17 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 	err = store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Insert-first uniqueness serializes requests without a check/write gap.
 		// The temporary response cannot escape this transaction; rollback removes it.
-		record := CreateRequestRecord{PlayerID: principal.PlayerID, RequestID: request.RequestID, PayloadHash: fingerprint[:], ResponseJSON: datatypes.JSON(`{}`), CreatedAt: store.clock.Now().UTC()}
-		inserted := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "player_id"}, {Name: "request_id"}}, DoNothing: true}).Create(&record)
-		if inserted.Error != nil {
-			return inserted.Error
+		lobbyID := aggregate.Lobby.ID
+		record := CreateRequestRecord{PlayerID: principal.PlayerID, RequestID: request.RequestID, LobbyID: &lobbyID, PayloadHash: fingerprint[:], ResponseJSON: datatypes.JSON(`{}`), CreatedAt: store.clock.Now().UTC()}
+		existing, err := insertCreateRequest(tx, record)
+		if err != nil {
+			return err
 		}
-		if inserted.RowsAffected == 0 {
-			var records []CreateRequestRecord
-			if err := tx.Where(&CreateRequestRecord{PlayerID: principal.PlayerID, RequestID: request.RequestID}).Limit(1).Find(&records).Error; err != nil {
-				return err
-			}
-			if len(records) != 1 {
-				return domain.ErrUnavailable
-			}
-			if !bytes.Equal(records[0].PayloadHash, fingerprint[:]) {
+		if existing != nil {
+			if !bytes.Equal(existing.PayloadHash, fingerprint[:]) {
 				return domain.ErrIdempotencyConflict
 			}
-			if err := json.Unmarshal(records[0].ResponseJSON, &response); err != nil {
+			if err := json.Unmarshal(existing.ResponseJSON, &response); err != nil {
 				return err
 			}
 			// jsonb reformats the stored settings. The matching fingerprint
@@ -118,4 +112,28 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 		return domain.Snapshot{}, storageError(err)
 	}
 	return response, nil
+}
+
+// insertCreateRequest inserts record, or returns the stored request with the
+// same key. When the retention pass deletes that request between the
+// conflicting insert and the read, because its window just ended, it inserts
+// once more.
+func insertCreateRequest(tx *gorm.DB, record CreateRequestRecord) (*CreateRequestRecord, error) {
+	for range 2 {
+		inserted := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "player_id"}, {Name: "request_id"}}, DoNothing: true}).Create(&record)
+		if inserted.Error != nil {
+			return nil, inserted.Error
+		}
+		if inserted.RowsAffected == 1 {
+			return nil, nil
+		}
+		var records []CreateRequestRecord
+		if err := tx.Where(&CreateRequestRecord{PlayerID: record.PlayerID, RequestID: record.RequestID}).Limit(1).Find(&records).Error; err != nil {
+			return nil, err
+		}
+		if len(records) == 1 {
+			return &records[0], nil
+		}
+	}
+	return nil, domain.ErrUnavailable
 }

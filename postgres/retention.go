@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"islandBattles/lobby/domain"
 
@@ -32,27 +33,35 @@ var skipLocked = clause.Locking{Strength: clause.LockingStrengthUpdate, Options:
 // DeleteExpired deletes create requests, then sessions, then lobbies, then
 // the players that nothing references any more, so a player freed by an
 // earlier step goes in the same pass. Each step is one transaction that locks
-// and deletes at most cutoffs.BatchSize rows of its kind.
+// and deletes at most cutoffs.BatchSize rows of its kind. The steps are
+// independent: a step that fails is reported in the joined error, and the
+// later steps still run, so a row that can't be deleted never blocks the rest.
 func (store *RetentionStore) DeleteExpired(ctx context.Context, cutoffs domain.RetentionCutoffs) (domain.RetentionResult, error) {
 	if cutoffs.BatchSize < 1 || cutoffs.BatchSize > domain.MaxRetentionBatchSize {
 		return domain.RetentionResult{}, domain.ErrInvalidInput
 	}
 	database := store.db.WithContext(ctx)
 	var result domain.RetentionResult
-	var err error
-	if result.CreateRequests, err = deleteCreateRequests(database, cutoffs); err != nil {
-		return result, storageError(err)
+	var failures []error
+	for _, step := range []struct {
+		name    string
+		deleted *int
+		run     func(*gorm.DB, domain.RetentionCutoffs) (int, error)
+	}{
+		{"create requests", &result.CreateRequests, deleteCreateRequests},
+		{"sessions", &result.Sessions, deleteSessions},
+		{"lobbies", &result.Lobbies, deleteLobbies},
+		{"players", &result.Players, deletePlayers},
+	} {
+		deleted, err := step.run(database, cutoffs)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("delete expired %s: %w", step.name, err))
+			continue
+		}
+		*step.deleted = deleted
 	}
-	if result.Sessions, err = deleteSessions(database, cutoffs); err != nil {
-		return result, storageError(err)
-	}
-	if result.Lobbies, err = deleteLobbies(database, cutoffs); err != nil {
-		return result, storageError(err)
-	}
-	if result.Players, err = deletePlayers(database, cutoffs); err != nil {
-		return result, storageError(err)
-	}
-	return result, nil
+	// The error stays unwrapped, so the log names each failing step and why.
+	return result, errors.Join(failures...)
 }
 
 func deleteCreateRequests(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, error) {
@@ -66,7 +75,9 @@ func deleteSessions(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, er
 }
 
 // deleteLobbies deletes rooms with their leases, start roster, memberships
-// and teams, children first for the foreign keys.
+// and teams, children first for the foreign keys, and the create requests
+// that made them, so a later retry creates a new lobby instead of replaying
+// a deleted one.
 func deleteLobbies(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, error) {
 	return deleteBatch[RoomRecord](database, cutoffs.BatchSize, []string{"id"}, lobbiesPastRetention(cutoffs), func(transaction *gorm.DB, rooms []RoomRecord) error {
 		ids := make([]any, len(rooms))
@@ -74,7 +85,7 @@ func deleteLobbies(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, err
 			ids[index] = room.ID
 		}
 		inRooms := clause.IN{Column: clause.Column{Name: "lobby_id"}, Values: ids}
-		for _, child := range []any{&LeaseRecord{}, &StartRosterRecord{}, &MembershipRecord{}, &TeamRecord{}} {
+		for _, child := range []any{&LeaseRecord{}, &StartRosterRecord{}, &MembershipRecord{}, &TeamRecord{}, &CreateRequestRecord{}} {
 			if err := transaction.Where(inRooms).Delete(child).Error; err != nil {
 				return err
 			}

@@ -105,10 +105,13 @@ func TestRetentionRunsAgainWhileABacklogRemains(t *testing.T) {
 	}
 }
 
+// A step that fails still lets the others delete. The pass logs both, and
+// waits for the interval even with a full batch, so the failing step isn't
+// retried on every request.
 func TestRetentionFailureWaitsForTheIntervalAndIsLogged(t *testing.T) {
 	origin := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	clock := &integrationClock{now: origin}
-	store := &fakeRetentionStore{err: errors.New("database down")}
+	store := &fakeRetentionStore{err: errors.New("delete expired players: foreign key"), results: []domain.RetentionResult{{Sessions: 50}}}
 	retention, logs := newTestRetention(t, store, clock)
 
 	retention.RunIfDue(context.Background())
@@ -116,8 +119,8 @@ func TestRetentionFailureWaitsForTheIntervalAndIsLogged(t *testing.T) {
 	if store.passCount() != 1 {
 		t.Fatalf("passes = %d, want a failed pass to wait for the interval", store.passCount())
 	}
-	if !strings.Contains(logs.String(), "level=ERROR") || !strings.Contains(logs.String(), "database down") {
-		t.Fatalf("log = %q, want the failure", logs.String())
+	if !strings.Contains(logs.String(), "level=ERROR") || !strings.Contains(logs.String(), "foreign key") || !strings.Contains(logs.String(), "sessions=50") {
+		t.Fatalf("log = %q, want the failure and what the other steps deleted", logs.String())
 	}
 }
 
