@@ -434,3 +434,24 @@ func TestReadOnlyTransactionsRefuseWrites(t *testing.T) {
 		t.Fatalf("players = %d, %v; want none written", count, err)
 	}
 }
+
+// Every tool runs in ReadOnly, so a session-level advisory lock that any of
+// them takes ends with the call, although the rollback leaves it.
+func TestReadOnlyReleasesAdvisoryLocks(t *testing.T) {
+	owner := testutil.NewPostgresFixture(t)
+	database := openReadOnly(t, owner)
+	err := adminmcp.ReadOnly(context.Background(), database, func(transaction *gorm.DB) error {
+		return transaction.Exec("SELECT pg_advisory_lock(7), pg_advisory_lock_shared(8)").Error
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var locked bool
+	if err := owner.Raw("SELECT pg_try_advisory_lock(7) AND pg_try_advisory_lock(8)").Row().Scan(&locked); err != nil || !locked {
+		t.Fatalf("another session can't take the locks after the call: %t, %v", locked, err)
+	}
+	// The connection still serves the next call.
+	if err := adminmcp.ReadOnly(context.Background(), database, func(transaction *gorm.DB) error { return transaction.Exec("SELECT 1").Error }); err != nil {
+		t.Fatal(err)
+	}
+}
