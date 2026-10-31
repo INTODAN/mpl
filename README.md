@@ -10,6 +10,7 @@ lobby/
   auth/               Guest credentials and connection tokens
   postgres/           Persistence and versioned schema migrations
   httpapi/            HTTP routes and DTOs
+  adminmcp/           Read-only MCP tools for operators' questions about lobbies
   frontend/           Temporary browser playground and embedded asset handler
   realtime/           Centrifugo authorization and the push publisher
   internal/           Shared implementation helpers and test fixtures
@@ -181,3 +182,13 @@ binding, err := application.NewGameBinding("quiz-demo", lobbyService,
 `quizStore.Bind` owns the game's schema, result type, and translation of lobby teams into game state. It must atomically create or return the same game for the lobby; PostgreSQL integrations can use `BindOnce` for that orchestration. It must not start external side effects inside the transaction. No game rows are created by the normal lobby start operation.
 
 Island Battles connects these helpers through `backend/lobbyadapter`, with game-specific persistence in `backend/dal/lobby_binding.go` and model migration in `backend/dependencies/database.go`. The adapter uses the actual model types directly, without re-exporting aliases. It translates team order to numeric simulation colors and validates that persisted mappings match on replay. Generic lobby code does not import the backend or assume numeric game IDs or team colors.
+
+## Admin MCP tools
+
+`adminmcp` answers an operator's questions about lobbies and players through [Model Context Protocol](https://modelcontextprotocol.io) tools, on a server built with the official Go SDK. A game's own admin server registers them next to its game tools; Island Battles does so in [`backend/cmd/admin-mcp`](../backend/README.md#admin-mcp-server).
+
+- `adminmcp.OpenDatabase(ctx, url, logger)` connects with a single connection whose sessions start with `default_transaction_read_only=on` and a 5-second `statement_timeout`. Statements always use the extended protocol, so one query is one statement.
+- `adminmcp.ReadOnly(ctx, db, read)` runs `read` in a read-only transaction that is always rolled back, so a `SET` in it ends with it. Every tool runs in one, the game's included.
+- `adminmcp.AddTools(server, db, options)` registers `overview`, `list_lobbies`, `get_lobby` and `find_players`. They read only the `lobby_*` tables, through the records in `postgres/models.go`, and never the sessions' `bearer_hash`. `Options.Games` adds the game's counts to `overview` and the linked game's ID to each lobby.
+
+A member counts as connected while a lease of its current membership has neither expired nor been released, as `domain.NormalizeExpired` decides. The tools read this from the timestamps but never apply expiry, so they change nothing. `get_lobby` says when retention deletes the lobby at the latest, from `Options.LobbyRetention`, which defaults to `DefaultRetention()`.
