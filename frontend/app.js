@@ -294,12 +294,59 @@ function displayGameState() {
 $("game-result").addEventListener("load", displayGameState);
 window.addEventListener("message", (event) => {
   const frame = $("game-result");
-  // The sandboxed game has an opaque origin; bind sizing to this exact frame.
-  if (event.source !== frame.contentWindow || event.data?.type !== "game.result-size") return;
+  // The sandboxed game has an opaque origin; accept messages from this exact frame only.
+  if (event.source !== frame.contentWindow) return;
+  if (event.data?.type === "game.request") {
+    void relayGameRequest(event.data);
+    return;
+  }
+  if (event.data?.type !== "game.result-size") return;
   const height = event.data.height;
   if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) return;
   frame.style.height = `${Math.ceil(height)}px`;
 });
+
+// The result frame can't send the credential, so the page fetches the game's
+// data for it. relay.mjs decides which paths it may read.
+let relayModule = null;
+let relayedRequests = 0;
+
+function loadRelay() {
+  relayModule ??= import("./relay.mjs").catch((error) => {
+    relayModule = null;
+    throw error;
+  });
+  return relayModule;
+}
+
+async function relayGameRequest(data) {
+  const lobbyID = resultRoom;
+  if (!state.session || !state.room || lobbyID !== state.room.lobby_id) return;
+  const epoch = roomEpoch;
+  let relay;
+  try {
+    relay = await loadRelay();
+  } catch {
+    return;
+  }
+  const { maxRelayedRequests, refuseRequest, relayRequest } = relay;
+  let response;
+  if (relayedRequests >= maxRelayedRequests) {
+    response = refuseRequest(data, "too many requests at once; wait for an answer first");
+  } else {
+    relayedRequests++;
+    try {
+      response = await relayRequest(data, {
+        prefix: games.get(state.room.game_key)?.data_url_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
+      });
+    } finally {
+      relayedRequests--;
+    }
+  }
+  // Answer only the frame that still shows the lobby it asked about.
+  if (!response || epoch !== roomEpoch || resultRoom !== lobbyID) return;
+  $("game-result").contentWindow?.postMessage(response, "*");
+}
 
 async function ensureGamePlayer() {
   const example = games.get(snapshot?.lobby.game_key)?.example_player;

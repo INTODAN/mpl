@@ -15,7 +15,7 @@ import (
 func quizGame() frontend.Game {
 	return frontend.Game{
 		Key: "quiz-demo", Name: "Quiz", ResultURL: "/quiz/{lobby_id}/result",
-		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs",
+		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs", DataURLPrefix: "/quiz/{lobby_id}/data/",
 		ExamplePlayer: &frontend.ExamplePlayer{
 			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.",
 		},
@@ -59,7 +59,8 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 	want := []map[string]any{
 		{
 			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.", "settings_module": "/quiz/settings.mjs",
-			"example_player": map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
+			"data_url_prefix": "/quiz/{lobby_id}/data/",
+			"example_player":  map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
 		},
 		{"key": "chess", "name": "Chess", "result_url": "/chess/{lobby_id}"},
 	}
@@ -68,6 +69,10 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 	}
 	if !strings.Contains(get(t, handler, "/lobby/ui/").Body.String(), "./app.js") {
 		t.Fatal("index page not served")
+	}
+	// Browsers load ES modules only with a JavaScript content type.
+	if contentType := get(t, handler, "/lobby/ui/relay.mjs").Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/javascript") {
+		t.Fatalf("relay module content type %q", contentType)
 	}
 }
 
@@ -81,6 +86,16 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		"empty result url":       func(game *frontend.Game) { game.ResultURL = "" },
 		"empty module":           func(game *frontend.Game) { game.ExamplePlayer.Module = "" },
 		"module //":              func(game *frontend.Game) { game.ExamplePlayer.Module = "//" },
+		// The page compares requested paths with the filled-in prefix, so
+		// the prefix must be a whole, canonical directory of one lobby.
+		"data prefix without lobby": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/data/" },
+		"data prefix without slash": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}" },
+		"data prefix mid-segment":   func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/data" },
+		"data prefix with dots":     func(game *frontend.Game) { game.DataURLPrefix = "/quiz/../{lobby_id}/" },
+		"data prefix with dot":      func(game *frontend.Game) { game.DataURLPrefix = "/quiz/./{lobby_id}/" },
+		"data prefix with escape":   func(game *frontend.Game) { game.DataURLPrefix = "/quiz/%2e%2e/{lobby_id}/" },
+		"data prefix with query":    func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/?a=/" },
+		"data prefix with fragment": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/#/" },
 	}
 	// Hostile values for both URL fields. A browser strips tab, LF and CR
 	// before parsing, so "/<ctrl>/evil.com" reads as "//evil.com".
@@ -104,6 +119,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		cases["result url "+name] = func(game *frontend.Game) { game.ResultURL = value + "{lobby_id}" }
 		cases["module "+name] = func(game *frontend.Game) { game.ExamplePlayer.Module = value + "player.mjs" }
 		cases["settings module "+name] = func(game *frontend.Game) { game.SettingsModule = value + "settings.mjs" }
+		cases["data prefix "+name] = func(game *frontend.Game) { game.DataURLPrefix = value + "{lobby_id}/" }
 	}
 	for name, mutate := range cases {
 		game := quizGame()
@@ -124,7 +140,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})
 	// The file server answers index.html at the mount point itself.
-	for _, file := range []string{"", "app.js", "style.css"} {
+	for _, file := range []string{"", "app.js", "relay.mjs", "style.css"} {
 		path := "/lobby/ui/" + file
 		body, err := io.ReadAll(get(t, handler, path).Body)
 		if err != nil {

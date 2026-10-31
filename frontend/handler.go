@@ -15,7 +15,7 @@ import (
 	"islandBattles/lobby/domain"
 )
 
-//go:embed index.html app.js style.css vendor
+//go:embed index.html app.js relay.mjs style.css vendor
 var assets embed.FS
 
 // catalogPath is the file, relative to the frontend's mount point, that lists
@@ -46,6 +46,13 @@ type Game struct {
 	// the game's own controls to the create form and returns its
 	// game_settings and teams. The frontend README describes its contract.
 	SettingsModule string `json:"settings_module,omitempty"`
+	// DataURLPrefix optionally lets the result document read the game's data.
+	// The document can't send the guest credential itself, so it asks the
+	// page with a game.request message, and the page fetches same-origin
+	// paths under this prefix with GET and the credential.
+	// LobbyIDPlaceholder is replaced with the room's lobby ID, and the prefix
+	// ends with a slash. The frontend README describes the messages.
+	DataURLPrefix string `json:"data_url_prefix,omitempty"`
 }
 
 // ExamplePlayer describes a browser player that a game supplies as an ES module.
@@ -100,6 +107,12 @@ func validateCatalog(games []Game) error {
 		if !sameOriginPath(game.ResultURL) || !strings.Contains(game.ResultURL, LobbyIDPlaceholder) {
 			return fmt.Errorf("frontend: game %q needs a same-origin result URL containing %s", game.Key, LobbyIDPlaceholder)
 		}
+		// The page checks requested paths against the filled-in prefix, so a
+		// prefix that ends mid-segment would also admit sibling paths.
+		if game.DataURLPrefix != "" && (!sameOriginPath(game.DataURLPrefix) || !strings.Contains(game.DataURLPrefix, LobbyIDPlaceholder) ||
+			!strings.HasSuffix(game.DataURLPrefix, "/") || strings.ContainsAny(game.DataURLPrefix, "%?#") || hasDotSegment(game.DataURLPrefix)) {
+			return fmt.Errorf("frontend: game %q needs a same-origin data URL prefix containing %s and ending with /", game.Key, LobbyIDPlaceholder)
+		}
 		if game.SettingsModule != "" && !sameOriginPath(game.SettingsModule) {
 			return fmt.Errorf("frontend: game %q needs a same-origin settings module", game.Key)
 		}
@@ -113,6 +126,17 @@ func validateCatalog(games []Game) error {
 		}
 	}
 	return nil
+}
+
+// hasDotSegment reports whether a path has a "." or ".." segment, which a
+// browser resolves away before requesting it.
+func hasDotSegment(path string) bool {
+	for segment := range strings.SplitSeq(path, "/") {
+		if segment == "." || segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // sameOriginPath accepts absolute paths only, so the guest credential that
