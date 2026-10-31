@@ -67,6 +67,7 @@ A settings module is an ES module that exports a `SettingsForm` class and, optio
 - The page constructs `new SettingsForm({container, onChange})` when the game is selected. The form adds its controls to `container`, an element inside the create form.
 - When the host creates a lobby, the page calls `form.choice()`. It returns `{settings, teams}`: `settings` is the `game_settings` object, sent only when it has keys, and `teams` lists the team names in order, or is null for the default teams. The lobby gets one seat per team. To stop the create request, `choice()` throws an `Error` whose message the page shows.
 - `describeSettings(game_settings)` returns a short line, or a promise of one, that the room shows under the lobby name for every member, such as the chosen map's name.
+- A form may open another page and listen for its `message` events, as the Island Battles form does for the map builder. It must accept only messages from its own origin and from the window it opened.
 
 The game checks the settings when the lobby is created. A rejection shows the game's message, which can name the invalid field. **New demo lobby** uses the form's choice too, and needs it to have exactly two teams.
 
