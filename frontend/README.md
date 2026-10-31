@@ -15,6 +15,8 @@ lobbyFrontend, err := frontend.Handler([]frontend.Game{{
 	ResultURL: "/quiz/{lobby_id}/result",
 	// Optional: lets the result document read /quiz/{lobby_id}/data/... through the page.
 	DataURLPrefix: "/quiz/{lobby_id}/data/",
+	// Optional: pages of the game that the lobby page links to.
+	Links: []frontend.Link{{Label: "Past rounds", URL: "/quiz/rounds/"}},
 }})
 if err != nil {
 	return err
@@ -33,8 +35,9 @@ The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at
 | `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
 | `SettingsModule` | Optional. Same-origin URL of an ES module that adds the game's own controls to the create form and chooses the new lobby's `game_settings` and teams. |
 | `DataURLPrefix` | Optional. Same-origin path prefix under which the result document may read the game's data through the page, with `game.request`. It contains `{lobby_id}` and ends with `/`, for example `/quiz/{lobby_id}/data/`. |
+| `Links` | Optional. The game's own pages that the lobby page links to, each a `Link` with a `Label` and a same-origin `URL`, such as a page that still works after a lobby is gone. The page lists the selected game's links below the create and join forms, and the room's game's links under the room's name. Each opens in a new tab, so the player keeps their lobby. |
 
-`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and module, result or data URLs that leave the frontend's origin. It also rejects a data URL prefix without `{lobby_id}`, without a final `/`, or with `.` or `..` segments, `%`, `?` or `#`. A second game needs only another entry; nothing in `lobby/` changes.
+`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, links without a label, and module, result, data or link URLs that leave the frontend's origin. It also rejects a data URL prefix without `{lobby_id}`, without a final `/`, or with `.` or `..` segments, `%`, `?` or `#`. A second game needs only another entry; nothing in `lobby/` changes.
 
 ## Play
 
@@ -52,13 +55,13 @@ Guest credentials and the current room are saved in `sessionStorage`, so indepen
 
 ## What a game provides
 
-A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in an iframe with `sandbox="allow-scripts"`. The document has an opaque origin and no credential, so it can't make an authorized request itself. Simulation and rendering remain owned by the game backend. The page and the frame exchange these messages:
+A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in an iframe with `sandbox="allow-scripts allow-downloads"`. The document has an opaque origin and no credential, so it can't make an authorized request itself. `allow-downloads` lets it save a file that the player asks for, such as a download it read with `game.request` and saves through a `Blob` URL and an `<a download>` link; the browser shows its download as for any page. The sandbox still blocks everything else: same-origin access, forms, pop-ups and top-level navigation. Simulation and rendering remain owned by the game backend. The page and the frame exchange these messages:
 
 - The page talks only to the document it loaded into the frame. The sandbox still lets the document navigate or reload the frame, so the page counts the frame's loads: after the second load since it set the document, it ignores the frame's messages and sends it nothing, neither states nor answers, until it loads the next result document. A result document should not navigate itself; links that leave it should open elsewhere or not at all.
 
 - The page forwards every state its example player reports to the frame as `{type: "lobby.game-state", game_key, state}`. The frame should accept it only from `window.parent` and only for its own `game_key`.
 - The game can report its intrinsic content height with `{type: "game.result-size", height}` to fit summaries and responsive layouts without an inner scrollbar. The lobby accepts sizing messages only from its own result iframe.
-- The game can ask the page to fetch its data with `{type: "game.request", id, path}`, when its catalog entry has a `DataURLPrefix`. The page answers `{type: "lobby.response", id, status, body}`.
+- The game can ask the page to fetch its data with `{type: "game.request", id, path}`, when its catalog entry has a `DataURLPrefix`. The page answers `{type: "lobby.response", id, status, body}`. An optional `timeout_seconds` asks the page to wait longer than its default for a large or slow response.
 - `lobby.response` echoes the request's `id`. `status` is the HTTP status, and `body` is the parsed value when the response is JSON (`application/json` or `application/problem+json`) and its text otherwise. The frame should accept it only from `window.parent`, and match it to its request by `id`.
 
 The page relays a `game.request`, in [`relay.mjs`](relay.mjs), only when all of these hold:
@@ -66,9 +69,10 @@ The page relays a `game.request`, in [`relay.mjs`](relay.mjs), only when all of 
 - It comes from the page's own result iframe, while the frame shows the document the page loaded for the room's current lobby. The page answers only that document, and drops the answer when the room or the document changes before the fetch ends.
 - `id` is a string of at most 200 characters or a finite number. A message without one is ignored, because it can't be answered.
 - `method` is absent or `"GET"`. The page always fetches with GET.
+- `timeout_seconds` is absent or a number of seconds, more than 0 and at most 120.
 - `path` is a same-origin absolute path of at most 2048 characters that starts with the game's `DataURLPrefix`, with `{lobby_id}` replaced by the room's lobby ID. It must already be in the form the browser would request: no `.` or `..` segments, no percent-encoding before the query, and no scheme, host, backslash, space, control character or fragment. The query is passed on unchanged.
 
-The page fetches the path with GET, the guest bearer credential and `Accept: application/json`, refuses redirects, and gives up after 8 seconds. It reads at most 64 MiB of a response body, enough for a game's large downloads such as a saved demo. The credential never reaches the frame: the answer has only the status and the body. At most 8 requests of one result document run at once; a new document starts with none. The page answers every `game.request` with a usable `id` that the loaded document sends. One it refuses or can't relay, such as one sent while the page has no lobby or before it could load `relay.mjs`, and one that fails, times out or has a larger body, is answered with `status: 0`, `body: null`, and an `error` that says why, so the frame never waits for an answer that won't come. For example:
+The page fetches the path with GET, the guest bearer credential and `Accept: application/json`, and refuses redirects. It gives up when the whole response, headers and body, hasn't arrived within the request's `timeout_seconds`, or 8 seconds without one. Small reads should keep the default, so a stalled one frees its place among the 8 soon. A large download asks for more: a body of tens of megabytes can take longer than 8 seconds to arrive, for example from a host that streams it at a few megabytes a second. The page allows at most 120 seconds, so a request can't hold its place for long. It reads at most 64 MiB of a response body, enough for a game's large downloads such as a saved demo. The credential never reaches the frame: the answer has only the status and the body. At most 8 requests of one result document run at once; a new document starts with none. The page answers every `game.request` with a usable `id` that the loaded document sends. One it refuses or can't relay, such as one sent while the page has no lobby or before it could load `relay.mjs`, and one that fails, times out or has a larger body, is answered with `status: 0`, `body: null`, and an `error` that says why, so the frame never waits for an answer that won't come. For example:
 
 ```js
 // In the result document.

@@ -10,9 +10,14 @@ export const maxRelayedRequests = 8;
 // The largest response body the page reads and passes on, enough for a game's
 // biggest download, such as a saved demo of a long game.
 export const maxResponseBytes = 64 * 1024 * 1024;
+// How long the page waits for a whole response, its headers and its body,
+// unless the request asks for another time with timeout_seconds. A request
+// may ask for at most maxTimeoutSeconds, for a large download over a slow
+// connection.
+export const defaultTimeoutSeconds = 8;
+export const maxTimeoutSeconds = 120;
 const maxPathLength = 2048;
 const maxIDLength = 200;
-const timeoutMilliseconds = 8000;
 
 // relayURL returns the absolute URL to fetch for a requested path, or throws
 // an Error that says why the path is refused. The path must be the canonical
@@ -90,13 +95,18 @@ async function readText(response, maxBytes) {
 
 // relayRequest answers one game.request message with a lobby.response
 // message: the HTTP status and the body, parsed when it is JSON and as text
-// otherwise. A refused or failed request, or one whose body is larger than
-// maxBytes, has status 0, a null body and an error. A message without a
-// usable ID is ignored and returns null.
-export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, timeout = timeoutMilliseconds, maxBytes = maxResponseBytes }) {
+// otherwise. A refused or failed request, one that takes longer than its
+// timeout_seconds, or one whose body is larger than maxBytes, has status 0, a
+// null body and an error. A message without a usable ID is ignored and
+// returns null.
+export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, maxBytes = maxResponseBytes }) {
   const id = requestID(data);
   if (data?.type !== "game.request" || id === undefined) return null;
   if (data.method !== undefined && data.method !== "GET") return refused(id, "only GET requests are relayed");
+  const timeoutSeconds = data.timeout_seconds ?? defaultTimeoutSeconds;
+  if (typeof timeoutSeconds !== "number" || !(timeoutSeconds > 0 && timeoutSeconds <= maxTimeoutSeconds)) {
+    return refused(id, `timeout_seconds must be a number of seconds, more than 0 and at most ${maxTimeoutSeconds}`);
+  }
   let url;
   try {
     url = relayURL(prefix, lobbyID, data.path, origin);
@@ -104,7 +114,7 @@ export async function relayRequest(data, { prefix, lobbyID, origin, credential, 
     return refused(id, error.message);
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
     const response = await fetch(url, {
       method: "GET", headers: { Authorization: `Bearer ${credential}`, Accept: "application/json" },

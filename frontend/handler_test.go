@@ -16,6 +16,7 @@ func quizGame() frontend.Game {
 	return frontend.Game{
 		Key: "quiz-demo", Name: "Quiz", ResultURL: "/quiz/{lobby_id}/result",
 		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs", DataURLPrefix: "/quiz/{lobby_id}/data/",
+		Links: []frontend.Link{{Label: "Past rounds", URL: "/quiz/rounds/"}},
 		ExamplePlayer: &frontend.ExamplePlayer{
 			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.",
 		},
@@ -60,6 +61,7 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 		{
 			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.", "settings_module": "/quiz/settings.mjs",
 			"data_url_prefix": "/quiz/{lobby_id}/data/",
+			"links":           []any{map[string]any{"label": "Past rounds", "url": "/quiz/rounds/"}},
 			"example_player":  map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
 		},
 		{"key": "chess", "name": "Chess", "result_url": "/chess/{lobby_id}"},
@@ -96,6 +98,8 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		"data prefix with escape":   func(game *frontend.Game) { game.DataURLPrefix = "/quiz/%2e%2e/{lobby_id}/" },
 		"data prefix with query":    func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/?a=/" },
 		"data prefix with fragment": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/#/" },
+		"link without label":        func(game *frontend.Game) { game.Links[0].Label = " " },
+		"link without url":          func(game *frontend.Game) { game.Links[0].URL = "" },
 	}
 	// Hostile values for both URL fields. A browser strips tab, LF and CR
 	// before parsing, so "/<ctrl>/evil.com" reads as "//evil.com".
@@ -120,6 +124,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		cases["module "+name] = func(game *frontend.Game) { game.ExamplePlayer.Module = value + "player.mjs" }
 		cases["settings module "+name] = func(game *frontend.Game) { game.SettingsModule = value + "settings.mjs" }
 		cases["data prefix "+name] = func(game *frontend.Game) { game.DataURLPrefix = value + "{lobby_id}/" }
+		cases["link "+name] = func(game *frontend.Game) { game.Links[0].URL = value + "rounds/" }
 	}
 	for name, mutate := range cases {
 		game := quizGame()

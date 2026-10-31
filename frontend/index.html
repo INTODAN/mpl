@@ -63,11 +63,12 @@
         </form>
       </div>
       <p class="hint">Trying it yourself? Open this page in two separate tabs and use a different name in each.</p>
+      <nav id="game-links" class="game-links" aria-label="Pages of the selected game" hidden></nav>
     </section>
 
     <section id="room-panel" class="card room" aria-label="Your lobby" hidden>
       <div class="room-heading">
-        <div><p id="room-game" class="eyebrow"></p><h2 id="room-name"></h2><p id="room-settings" class="room-settings" hidden></p></div>
+        <div><p id="room-game" class="eyebrow"></p><h2 id="room-name"></h2><p id="room-settings" class="room-settings" hidden></p><nav id="room-links" class="game-links" aria-label="Pages of this game" hidden></nav></div>
         <span id="connection" class="connection" role="status">Connected</span>
       </div>
       <div class="invite">
@@ -91,7 +92,7 @@
       </div>
       <p id="result-status" role="status">Preparing the game…</p>
       <button id="retry-game" class="secondary" type="button" hidden>Retry starting game</button>
-      <iframe id="game-result" title="Game result" sandbox="allow-scripts" hidden></iframe>
+      <iframe id="game-result" title="Game result" sandbox="allow-scripts allow-downloads" hidden></iframe>
     </section>
     <footer class="page-footer">One lobby. Two players. Let’s get started.</footer>
   </main>

@@ -288,6 +288,21 @@ function selectedGame() {
   return games.get($("game").value);
 }
 
+// A game's own pages, from its catalog links. The host checked that each URL
+// is a same-origin path. They open in a new tab, so this tab keeps its lobby.
+function showGameLinks(container, game) {
+  const links = (game?.links || []).map((link) => {
+    const anchor = document.createElement("a");
+    anchor.href = link.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener";
+    anchor.textContent = link.label;
+    return anchor;
+  });
+  container.replaceChildren(...links);
+  container.hidden = !links.length;
+}
+
 // Each srcdoc assignment loads a new result document. A sandboxed frame with
 // allow-scripts can still navigate or reload itself, and its contentWindow
 // stays the same object, so the page counts the frame's loads: it trusts the
@@ -517,6 +532,7 @@ function render() {
   const demoExample = selectedGame()?.example_player;
   $("demo-setup").hidden = !demoExample;
   $("demo-summary").textContent = demoExample?.summary || "";
+  showGameLinks($("game-links"), selectedGame());
   $("entry-panel").hidden = Boolean(snapshot);
   $("room-panel").hidden = !snapshot;
   $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games.has(snapshot.lobby.game_key);
@@ -537,6 +553,7 @@ function render() {
   const host = lobby.host_player_id === state.session.player_id;
   const game = games.get(lobby.game_key);
   $("room-game").textContent = game?.name || lobby.game_key;
+  showGameLinks($("room-links"), game);
   $("example-strategy").textContent = game?.example_player?.strategy || "";
   $("room-name").textContent = lobby.name;
   void describeRoomSettings();

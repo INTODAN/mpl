@@ -92,3 +92,7 @@ h3 { font-size: 1rem; margin: 0; }
 .game-settings .hint { margin: -8px 0 20px; }
 .game-settings .hint:empty { display: none; }
 .room-settings { margin: 6px 0 0; font-size: .87rem; }
+.game-links { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; font-size: .87rem; }
+.game-links[hidden] { display: none; }
+.game-links a { color: #305dc7; }
+.game-links a:hover { color: #274faf; }

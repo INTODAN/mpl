@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { maxResponseBytes, refuseRequest, relayRequest, relayURL } from "./relay.mjs";
+import { defaultTimeoutSeconds, maxResponseBytes, maxTimeoutSeconds, refuseRequest, relayRequest, relayURL } from "./relay.mjs";
 
 const origin = "https://play.example";
 const lobby = "4a0f1a52-7f4e-4d5c-9a8e-2f3b6c1d0e9a";
@@ -139,10 +139,60 @@ test("messages without a usable ID or of another type are ignored", async () => 
   assert.deepEqual(refuseRequest({ type: "game.request", id: 5, path }, "busy"), { type: "lobby.response", id: 5, status: 0, body: null, error: "busy" });
 });
 
-test("a request that takes too long is aborted", async () => {
-  const fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
-  const answer = await relayRequest({ type: "game.request", id: 1, path: `/quiz/${lobby}/data/logs` }, { ...settings(fetch), timeout: 10 });
-  assert.deepEqual(answer, { type: "lobby.response", id: 1, status: 0, body: null, error: "the request timed out" });
+// hangingFetch never answers until its request is aborted. With a body, it
+// sends the headers at once and the body never ends.
+function hangingFetch({ headers = false } = {}) {
+  const aborted = (signal) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+  return (_url, { signal }) => {
+    if (!headers) return aborted(signal);
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); }, pull: () => aborted(signal) });
+    return Promise.resolve(new Response(body, { headers: { "Content-Type": "application/json" } }));
+  };
+}
+
+// settled reports whether a promise has settled by the time the microtasks
+// that the mocked timers released have run.
+async function settled(promise) {
+  let done = false;
+  promise.then(() => { done = true; }, () => { done = true; });
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+  return done;
+}
+
+test("a request that takes too long is aborted, also while its body arrives", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const timedOut = { type: "lobby.response", id: 1, status: 0, body: null, error: "the request timed out" };
+  for (const options of [{}, { headers: true }]) {
+    const answer = relayRequest({ type: "game.request", id: 1, path: `/quiz/${lobby}/data/logs` }, settings(hangingFetch(options)));
+    context.mock.timers.tick(defaultTimeoutSeconds * 1000 - 1);
+    assert.equal(await settled(answer), false, JSON.stringify(options));
+    context.mock.timers.tick(1);
+    assert.deepEqual(await answer, timedOut, JSON.stringify(options));
+  }
+});
+
+test("a request may ask for a longer timeout, up to the maximum", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const path = `/quiz/${lobby}/data/demo`;
+  const answer = relayRequest({ type: "game.request", id: 1, path, timeout_seconds: maxTimeoutSeconds }, settings(hangingFetch({ headers: true })));
+  context.mock.timers.tick(maxTimeoutSeconds * 1000 - 1);
+  assert.equal(await settled(answer), false);
+  context.mock.timers.tick(1);
+  assert.equal((await answer).error, "the request timed out");
+  // A shorter time is allowed too, and a slow answer within it is passed on.
+  const short = relayRequest({ type: "game.request", id: 2, path, timeout_seconds: 0.5 }, settings(hangingFetch()));
+  context.mock.timers.tick(500);
+  assert.equal((await short).error, "the request timed out");
+  context.mock.timers.reset();
+  const { calls, fetch } = recordingFetch(Response.json({ ok: true }));
+  assert.deepEqual(await relayRequest({ type: "game.request", id: 3, path, timeout_seconds: 30 }, settings(fetch)), { type: "lobby.response", id: 3, status: 200, body: { ok: true } });
+  // Anything else is refused without fetching.
+  for (const timeout of [0, -1, maxTimeoutSeconds + 1, Number.NaN, Number.POSITIVE_INFINITY, "60", {}]) {
+    const refused = await relayRequest({ type: "game.request", id: 4, path, timeout_seconds: timeout }, settings(fetch));
+    assert.equal(refused.status, 0, String(timeout));
+    assert.match(refused.error, /timeout_seconds/, String(timeout));
+  }
+  assert.equal(calls.length, 1);
 });
 
 test("a response body larger than the limit is refused, also without a length", async () => {

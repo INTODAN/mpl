@@ -53,6 +53,18 @@ type Game struct {
 	// LobbyIDPlaceholder is replaced with the room's lobby ID, and the prefix
 	// ends with a slash. The frontend README describes the messages.
 	DataURLPrefix string `json:"data_url_prefix,omitempty"`
+	// Links optionally lists the game's own pages that the lobby page links
+	// to, such as one that still works after a lobby is gone.
+	Links []Link `json:"links,omitempty"`
+}
+
+// Link is one of a game's pages that the lobby page links to. It opens in a
+// new tab, so the player keeps their lobby.
+type Link struct {
+	// Label is the link's text.
+	Label string `json:"label"`
+	// URL is the same-origin path of the page.
+	URL string `json:"url"`
 }
 
 // ExamplePlayer describes a browser player that a game supplies as an ES module.
@@ -115,6 +127,14 @@ func validateCatalog(games []Game) error {
 		}
 		if game.SettingsModule != "" && !sameOriginPath(game.SettingsModule) {
 			return fmt.Errorf("frontend: game %q needs a same-origin settings module", game.Key)
+		}
+		for _, link := range game.Links {
+			if strings.TrimSpace(link.Label) == "" {
+				return fmt.Errorf("frontend: game %q has a link without a label", game.Key)
+			}
+			if !sameOriginPath(link.URL) {
+				return fmt.Errorf("frontend: game %q needs a same-origin URL for its link %q", game.Key, link.Label)
+			}
 		}
 		if player := game.ExamplePlayer; player != nil {
 			if !sameOriginPath(player.Module) {
