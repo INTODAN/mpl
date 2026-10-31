@@ -13,6 +13,8 @@ lobbyFrontend, err := frontend.Handler([]frontend.Game{{
 	Key:       "quiz-demo",
 	Name:      "Quiz",
 	ResultURL: "/quiz/{lobby_id}/result",
+	// Optional: lets the result document read /quiz/{lobby_id}/data/... through the page.
+	DataURLPrefix: "/quiz/{lobby_id}/data/",
 }})
 if err != nil {
 	return err
@@ -30,8 +32,9 @@ The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at
 | `StartedHint` | Optional. Tells the players of a started lobby how they take part, for example which client submits their turns. |
 | `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
 | `SettingsModule` | Optional. Same-origin URL of an ES module that adds the game's own controls to the create form and chooses the new lobby's `game_settings` and teams. |
+| `DataURLPrefix` | Optional. Same-origin path prefix under which the result document may read the game's data through the page, with `game.request`. It contains `{lobby_id}` and ends with `/`, for example `/quiz/{lobby_id}/data/`. |
 
-`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and module or result URLs that leave the frontend's origin. A second game needs only another entry; nothing in `lobby/` changes.
+`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, and module, result or data URLs that leave the frontend's origin. It also rejects a data URL prefix without `{lobby_id}`, without a final `/`, or with `.` or `..` segments, `%`, `?` or `#`. A second game needs only another entry; nothing in `lobby/` changes.
 
 ## Play
 
@@ -49,10 +52,39 @@ Guest credentials and the current room are saved in `sessionStorage`, so indepen
 
 ## What a game provides
 
-A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in a sandboxed iframe. Simulation and rendering remain owned by the game backend. The page and the frame exchange two messages:
+A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in an iframe with `sandbox="allow-scripts"`. The document has an opaque origin and no credential, so it can't make an authorized request itself. Simulation and rendering remain owned by the game backend. The page and the frame exchange these messages:
 
 - The page forwards every state its example player reports to the frame as `{type: "lobby.game-state", game_key, state}`. The frame should accept it only from `window.parent` and only for its own `game_key`.
 - The game can report its intrinsic content height with `{type: "game.result-size", height}` to fit summaries and responsive layouts without an inner scrollbar. The lobby accepts sizing messages only from its own result iframe.
+- The game can ask the page to fetch its data with `{type: "game.request", id, path}`, when its catalog entry has a `DataURLPrefix`. The page answers `{type: "lobby.response", id, status, body}`.
+- `lobby.response` echoes the request's `id`. `status` is the HTTP status, and `body` is the parsed value when the response is JSON (`application/json` or `application/problem+json`) and its text otherwise. The frame should accept it only from `window.parent`, and match it to its request by `id`.
+
+The page relays a `game.request`, in [`relay.mjs`](relay.mjs), only when all of these hold:
+
+- It comes from the page's own result iframe, while the frame shows the room's current lobby. The page answers only that frame, and drops the answer when the room changes before the fetch ends.
+- `id` is a string of at most 200 characters or a finite number. A message without one is ignored, because it can't be answered.
+- `method` is absent or `"GET"`. The page always fetches with GET.
+- `path` is a same-origin absolute path of at most 2048 characters that starts with the game's `DataURLPrefix`, with `{lobby_id}` replaced by the room's lobby ID. It must already be in the form the browser would request: no `.` or `..` segments, no percent-encoding before the query, and no scheme, host, backslash, space, control character or fragment. The query is passed on unchanged.
+
+The page fetches the path with GET, the guest bearer credential and `Accept: application/json`, refuses redirects, and gives up after 8 seconds. The credential never reaches the frame: the answer has only the status and the body. At most 8 requests run at once. A refused, failed or timed-out request is answered with `status: 0`, `body: null`, and an `error` that says why, so the frame never waits for an answer that won't come. For example:
+
+```js
+// In the result document.
+const pending = new Map();
+function request(path) {
+  const id = crypto.randomUUID();
+  window.parent.postMessage({ type: "game.request", id, path }, "*");
+  return new Promise((resolve) => pending.set(id, resolve));
+}
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent || event.data?.type !== "lobby.response") return;
+  pending.get(event.data.id)?.(event.data);
+  pending.delete(event.data.id);
+});
+const { status, body } = await request(`/quiz/${lobbyID}/data/scores?round=2`);
+```
+
+Run the relay's path checks from the repository root with `node lobby/frontend/relay.test.mjs`.
 
 An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, playerID, credential, subscription, enabled, pending, savePending, onState, onStatus}`:
 
