@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { refuseRequest, relayRequest, relayURL } from "./relay.mjs";
+import { maxResponseBytes, refuseRequest, relayRequest, relayURL } from "./relay.mjs";
 
 const origin = "https://play.example";
 const lobby = "4a0f1a52-7f4e-4d5c-9a8e-2f3b6c1d0e9a";
@@ -143,4 +143,24 @@ test("a request that takes too long is aborted", async () => {
   const fetch = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
   const answer = await relayRequest({ type: "game.request", id: 1, path: `/quiz/${lobby}/data/logs` }, { ...settings(fetch), timeout: 10 });
   assert.deepEqual(answer, { type: "lobby.response", id: 1, status: 0, body: null, error: "the request timed out" });
+});
+
+test("a response body larger than the limit is refused, also without a length", async () => {
+  const path = `/quiz/${lobby}/data/demo`;
+  const limited = (response) => ({ ...settings(recordingFetch(response).fetch), maxBytes: 10 });
+  const exact = await relayRequest({ type: "game.request", id: 1, path }, limited(new Response("0123456789", { headers: { "Content-Type": "text/plain" } })));
+  assert.deepEqual(exact, { type: "lobby.response", id: 1, status: 200, body: "0123456789" });
+  const tooLarge = { type: "lobby.response", id: 2, status: 0, body: null, error: "the response is larger than 10 bytes" };
+  assert.deepEqual(await relayRequest({ type: "game.request", id: 2, path }, limited(new Response("0123456789a"))), tooLarge);
+  // A streamed body without Content-Length is cut off once it passes the limit.
+  let pulled = 0;
+  const endless = new ReadableStream({ pull(controller) { pulled++; controller.enqueue(new TextEncoder().encode("abcd")); } });
+  assert.deepEqual(await relayRequest({ type: "game.request", id: 2, path }, limited(new Response(endless))), tooLarge);
+  assert.ok(pulled <= 4, `read ${pulled} chunks`);
+  // Characters split across chunks are decoded whole.
+  const split = new TextEncoder().encode("é".repeat(4));
+  const chunked = new ReadableStream({ start(controller) { for (const byte of split) controller.enqueue(new Uint8Array([byte])); controller.close(); } });
+  assert.equal((await relayRequest({ type: "game.request", id: 3, path }, limited(new Response(chunked)))).body, "éééé");
+  // The default allows a game's large downloads.
+  assert.equal(maxResponseBytes, 64 * 1024 * 1024);
 });

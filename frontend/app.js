@@ -19,6 +19,8 @@ let syncing = false;
 let teamOptions = "";
 let resultRoom = null;
 let resultRequest = null;
+// The result document the page loaded into the frame, from its srcdoc, or null.
+let resultDocument = null;
 let gamePlayer = null;
 let playerLoading = false;
 let latestGameState = null;
@@ -100,6 +102,7 @@ function dropRoom() {
   resultRequest?.abort();
   resultRequest = null;
   resultRoom = null;
+  resultDocument = null;
   $("game-result").removeAttribute("srcdoc");
   $("game-result").style.removeProperty("height");
   $("game-result").hidden = true;
@@ -285,17 +288,35 @@ function selectedGame() {
   return games.get($("game").value);
 }
 
+// Each srcdoc assignment loads a new result document. A sandboxed frame with
+// allow-scripts can still navigate or reload itself, and its contentWindow
+// stays the same object, so the page counts the frame's loads: it trusts the
+// frame until the second load after the srcdoc, and then neither relays its
+// requests nor forwards states to it until the next srcdoc.
+function showResultDocument(html) {
+  resultDocument = { loads: 0, relayed: 0 };
+  $("game-result").srcdoc = html;
+}
+function resultDocumentShown() {
+  return resultDocument !== null && resultDocument.loads <= 1;
+}
+
 // Forward the example player's latest state to the game's own result document.
 function displayGameState() {
-  if (latestGameState && resultRoom === state.room?.lobby_id) {
+  if (latestGameState && resultRoom === state.room?.lobby_id && resultDocumentShown()) {
     $("game-result").contentWindow?.postMessage({ type: "lobby.game-state", game_key: state.room.game_key, state: latestGameState }, "*");
   }
 }
-$("game-result").addEventListener("load", displayGameState);
+$("game-result").addEventListener("load", () => {
+  if (!resultDocument) return;
+  resultDocument.loads++;
+  displayGameState();
+});
 window.addEventListener("message", (event) => {
   const frame = $("game-result");
-  // The sandboxed game has an opaque origin; accept messages from this exact frame only.
-  if (event.source !== frame.contentWindow) return;
+  // The sandboxed game has an opaque origin; accept messages from this exact
+  // frame only, while it shows the document the page loaded.
+  if (event.source !== frame.contentWindow || !resultDocumentShown()) return;
   if (event.data?.type === "game.request") {
     void relayGameRequest(event.data);
     return;
@@ -309,7 +330,6 @@ window.addEventListener("message", (event) => {
 // The result frame can't send the credential, so the page fetches the game's
 // data for it. relay.mjs decides which paths it may read.
 let relayModule = null;
-let relayedRequests = 0;
 
 function loadRelay() {
   relayModule ??= import("./relay.mjs").catch((error) => {
@@ -319,32 +339,40 @@ function loadRelay() {
   return relayModule;
 }
 
+// Every request with a usable ID is answered, also when the page can't relay
+// it, so the frame never waits for an answer that won't come.
 async function relayGameRequest(data) {
+  const shown = resultDocument;
   const lobbyID = resultRoom;
-  if (!state.session || !state.room || lobbyID !== state.room.lobby_id) return;
   const epoch = roomEpoch;
-  let relay;
-  try {
-    relay = await loadRelay();
-  } catch {
-    return;
-  }
-  const { maxRelayedRequests, refuseRequest, relayRequest } = relay;
   let response;
-  if (relayedRequests >= maxRelayedRequests) {
-    response = refuseRequest(data, "too many requests at once; wait for an answer first");
-  } else {
-    relayedRequests++;
-    try {
-      response = await relayRequest(data, {
-        prefix: games.get(state.room.game_key)?.data_url_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
-      });
-    } finally {
-      relayedRequests--;
+  try {
+    const { maxRelayedRequests, refuseRequest, relayRequest } = await loadRelay();
+    if (!state.session || !state.room || lobbyID !== state.room.lobby_id) {
+      response = refuseRequest(data, "the page shows no lobby for this game");
+    } else if (shown.relayed >= maxRelayedRequests) {
+      response = refuseRequest(data, "too many requests at once; wait for an answer first");
+    } else {
+      // Each document has its own count, so an earlier document's requests
+      // never hold up the next one's.
+      shown.relayed++;
+      try {
+        response = await relayRequest(data, {
+          prefix: games.get(state.room.game_key)?.data_url_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
+        });
+      } finally {
+        shown.relayed--;
+      }
     }
+  } catch {
+    // relay.mjs could not be loaded. Its message checks aren't available,
+    // so answer only the IDs a frame normally sends.
+    const id = data?.id;
+    if (data?.type !== "game.request" || !((typeof id === "string" && id.length <= 200) || (typeof id === "number" && Number.isFinite(id)))) return;
+    response = { type: "lobby.response", id, status: 0, body: null, error: "the page could not load its request relay; try again" };
   }
-  // Answer only the frame that still shows the lobby it asked about.
-  if (!response || epoch !== roomEpoch || resultRoom !== lobbyID) return;
+  // Answer only the document that asked, while it still shows its lobby.
+  if (!response || epoch !== roomEpoch || resultRoom !== lobbyID || resultDocument !== shown || !resultDocumentShown()) return;
   $("game-result").contentWindow?.postMessage(response, "*");
 }
 
@@ -410,7 +438,7 @@ async function loadResult() {
     const html = await response.text();
     if (controller !== resultRequest) return;
     resultRoom = room.id;
-    $("game-result").srcdoc = html;
+    showResultDocument(html);
     $("game-result").hidden = false;
     $("result-status").hidden = true;
     $("retry-game").hidden = true;

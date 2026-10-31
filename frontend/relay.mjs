@@ -4,9 +4,12 @@
 // under the game's data URL prefix for the shown lobby, only with GET, and
 // answers with the response alone; the credential never reaches the frame.
 
-// The most requests one page relays at a time. A frame that asks for more is
-// refused until earlier ones finish.
+// The most requests one result document has relayed at a time. A document
+// that asks for more is refused until earlier ones finish.
 export const maxRelayedRequests = 8;
+// The largest response body the page reads and passes on, enough for a game's
+// biggest download, such as a saved demo of a long game.
+export const maxResponseBytes = 64 * 1024 * 1024;
 const maxPathLength = 2048;
 const maxIDLength = 200;
 const timeoutMilliseconds = 8000;
@@ -62,11 +65,35 @@ export function refuseRequest(data, error) {
   return refused(id, error);
 }
 
+class ResponseTooLarge extends Error {}
+
+// readText reads a response body as text, and throws ResponseTooLarge once it
+// passes maxBytes, without reading the rest.
+async function readText(response, maxBytes) {
+  if (Number(response.headers.get("Content-Length")) > maxBytes) throw new ResponseTooLarge();
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new ResponseTooLarge();
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
 // relayRequest answers one game.request message with a lobby.response
 // message: the HTTP status and the body, parsed when it is JSON and as text
-// otherwise. A refused or failed request has status 0, a null body and an
-// error. A message without a usable ID is ignored and returns null.
-export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, timeout = timeoutMilliseconds }) {
+// otherwise. A refused or failed request, or one whose body is larger than
+// maxBytes, has status 0, a null body and an error. A message without a
+// usable ID is ignored and returns null.
+export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, timeout = timeoutMilliseconds, maxBytes = maxResponseBytes }) {
   const id = requestID(data);
   if (data?.type !== "game.request" || id === undefined) return null;
   if (data.method !== undefined && data.method !== "GET") return refused(id, "only GET requests are relayed");
@@ -83,13 +110,14 @@ export async function relayRequest(data, { prefix, lobbyID, origin, credential, 
       method: "GET", headers: { Authorization: `Bearer ${credential}`, Accept: "application/json" },
       redirect: "error", cache: "no-store", signal: controller.signal,
     });
-    const text = await response.text();
+    const text = await readText(response, maxBytes);
     let body = text;
     if (/\bjson\b/i.test(response.headers.get("Content-Type") || "")) {
       try { body = JSON.parse(text); } catch { /* Keep the text. */ }
     }
     return { type: "lobby.response", id, status: response.status, body };
   } catch (error) {
+    if (error instanceof ResponseTooLarge) return refused(id, `the response is larger than ${maxBytes} bytes`);
     return refused(id, error.name === "AbortError" ? "the request timed out" : "the request failed");
   } finally {
     clearTimeout(timer);

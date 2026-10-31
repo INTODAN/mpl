@@ -54,6 +54,8 @@ Guest credentials and the current room are saved in `sessionStorage`, so indepen
 
 A game's result URL returns its HTML document, fetched with the guest bearer credential and displayed in an iframe with `sandbox="allow-scripts"`. The document has an opaque origin and no credential, so it can't make an authorized request itself. Simulation and rendering remain owned by the game backend. The page and the frame exchange these messages:
 
+- The page talks only to the document it loaded into the frame. The sandbox still lets the document navigate or reload the frame, so the page counts the frame's loads: after the second load since it set the document, it ignores the frame's messages and sends it nothing, neither states nor answers, until it loads the next result document. A result document should not navigate itself; links that leave it should open elsewhere or not at all.
+
 - The page forwards every state its example player reports to the frame as `{type: "lobby.game-state", game_key, state}`. The frame should accept it only from `window.parent` and only for its own `game_key`.
 - The game can report its intrinsic content height with `{type: "game.result-size", height}` to fit summaries and responsive layouts without an inner scrollbar. The lobby accepts sizing messages only from its own result iframe.
 - The game can ask the page to fetch its data with `{type: "game.request", id, path}`, when its catalog entry has a `DataURLPrefix`. The page answers `{type: "lobby.response", id, status, body}`.
@@ -61,12 +63,12 @@ A game's result URL returns its HTML document, fetched with the guest bearer cre
 
 The page relays a `game.request`, in [`relay.mjs`](relay.mjs), only when all of these hold:
 
-- It comes from the page's own result iframe, while the frame shows the room's current lobby. The page answers only that frame, and drops the answer when the room changes before the fetch ends.
+- It comes from the page's own result iframe, while the frame shows the document the page loaded for the room's current lobby. The page answers only that document, and drops the answer when the room or the document changes before the fetch ends.
 - `id` is a string of at most 200 characters or a finite number. A message without one is ignored, because it can't be answered.
 - `method` is absent or `"GET"`. The page always fetches with GET.
 - `path` is a same-origin absolute path of at most 2048 characters that starts with the game's `DataURLPrefix`, with `{lobby_id}` replaced by the room's lobby ID. It must already be in the form the browser would request: no `.` or `..` segments, no percent-encoding before the query, and no scheme, host, backslash, space, control character or fragment. The query is passed on unchanged.
 
-The page fetches the path with GET, the guest bearer credential and `Accept: application/json`, refuses redirects, and gives up after 8 seconds. The credential never reaches the frame: the answer has only the status and the body. At most 8 requests run at once. A refused, failed or timed-out request is answered with `status: 0`, `body: null`, and an `error` that says why, so the frame never waits for an answer that won't come. For example:
+The page fetches the path with GET, the guest bearer credential and `Accept: application/json`, refuses redirects, and gives up after 8 seconds. It reads at most 64 MiB of a response body, enough for a game's large downloads such as a saved demo. The credential never reaches the frame: the answer has only the status and the body. At most 8 requests of one result document run at once; a new document starts with none. The page answers every `game.request` with a usable `id` that the loaded document sends. One it refuses or can't relay, such as one sent while the page has no lobby or before it could load `relay.mjs`, and one that fails, times out or has a larger body, is answered with `status: 0`, `body: null`, and an `error` that says why, so the frame never waits for an answer that won't come. For example:
 
 ```js
 // In the result document.
