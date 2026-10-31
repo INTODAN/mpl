@@ -163,29 +163,46 @@ var ErrCredentialsReadable = errors.New("the database role can read lobby_sessio
 	"nor the table's owner, so its grants are out of date, for example after a migration recreated the table; " +
 	"operator SQL is refused until the role's grants are applied again")
 
-// credentialsReadable is true when the session's role may read bearer_hash
-// without being a superuser or the owner of lobby_sessions: a read-only role
-// whose grants a migration has outrun. The superuser's pg_read_all_data and
-// the owner may read it anyway. False when the table doesn't exist.
-const credentialsReadable = `SELECT coalesce((
-	SELECT has_column_privilege(sessions.oid, 'bearer_hash', 'SELECT')
-		AND NOT roles.rolsuper
-		AND NOT pg_has_role(session_user, sessions.relowner, 'USAGE')
-	FROM pg_class AS sessions, pg_roles AS roles
-	WHERE sessions.oid = to_regclass('public.lobby_sessions') AND roles.rolname = session_user
-), false)`
+// ErrCredentialsColumnChanged refuses operator SQL when lobby_sessions has
+// no bearer_hash column any more, so the column grants that hide its
+// credentials may no longer match it.
+var ErrCredentialsColumnChanged = errors.New("lobby_sessions has no bearer_hash column any more, so the read-only role's column grants " +
+	"may no longer hide its credentials; operator SQL is refused until the grants are updated for the new columns and applied again")
+
+// credentialsState says whether the session's role can read the sessions'
+// bearer hashes. It is "readable" when the role may read bearer_hash without
+// being a superuser or the owner of lobby_sessions: a read-only role whose
+// grants a migration has outrun. The superuser's pg_read_all_data and the
+// owner may read it anyway. It is "changed" when the column is gone, and
+// "absent" before the table exists. CASE checks the column before
+// has_column_privilege, which fails on a missing one.
+const credentialsState = `SELECT CASE
+	WHEN to_regclass('public.lobby_sessions') IS NULL THEN 'absent'
+	WHEN NOT EXISTS (SELECT FROM pg_attribute
+		WHERE attrelid = to_regclass('public.lobby_sessions') AND attname = 'bearer_hash' AND NOT attisdropped) THEN 'changed'
+	WHEN has_column_privilege(to_regclass('public.lobby_sessions'), 'bearer_hash', 'SELECT')
+		AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname = session_user)
+		AND NOT pg_has_role(session_user, (SELECT relowner FROM pg_class WHERE oid = to_regclass('public.lobby_sessions')), 'USAGE')
+		THEN 'readable'
+	ELSE 'hidden'
+END`
 
 // CheckCredentialsHidden returns ErrCredentialsReadable when a role that
 // should not read bearer hashes can, such as a read-only role whose grants a
-// migration has outrun. Run it before any SQL an operator writes. It reads
-// catalogs only, so it runs as plain SQL.
+// migration has outrun, and ErrCredentialsColumnChanged when bearer_hash was
+// renamed or dropped, for every role, so a change to the table is noticed.
+// Run it before any SQL an operator writes. It reads catalogs only, so it
+// runs as plain SQL.
 func CheckCredentialsHidden(transaction *gorm.DB) error {
-	var readable bool
-	if err := transaction.Raw(credentialsReadable).Scan(&readable).Error; err != nil {
+	var state string
+	if err := transaction.Raw(credentialsState).Scan(&state).Error; err != nil {
 		return fmt.Errorf("check the role's grants: %w", err)
 	}
-	if readable {
+	switch state {
+	case "readable":
 		return ErrCredentialsReadable
+	case "changed":
+		return ErrCredentialsColumnChanged
 	}
 	return nil
 }
