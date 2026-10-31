@@ -73,7 +73,10 @@ export function refuseRequest(data, error) {
 class ResponseTooLarge extends Error {}
 
 // readText reads a response body as text, and throws ResponseTooLarge once it
-// passes maxBytes, without reading the rest.
+// passes maxBytes, without reading the rest. fetch unpacks a body sent with a
+// Content-Encoding such as gzip, so the count is of the unpacked bytes. Such
+// a body's Content-Length counts the packed bytes, which are fewer, so the
+// early check only refuses a body that is surely too large.
 async function readText(response, maxBytes) {
   if (Number(response.headers.get("Content-Length")) > maxBytes) throw new ResponseTooLarge();
   if (!response.body) return "";
@@ -103,7 +106,7 @@ export async function relayRequest(data, { prefix, lobbyID, origin, credential, 
   const id = requestID(data);
   if (data?.type !== "game.request" || id === undefined) return null;
   if (data.method !== undefined && data.method !== "GET") return refused(id, "only GET requests are relayed");
-  const timeoutSeconds = data.timeout_seconds ?? defaultTimeoutSeconds;
+  const timeoutSeconds = data.timeout_seconds === undefined ? defaultTimeoutSeconds : data.timeout_seconds;
   if (typeof timeoutSeconds !== "number" || !(timeoutSeconds > 0 && timeoutSeconds <= maxTimeoutSeconds)) {
     return refused(id, `timeout_seconds must be a number of seconds, more than 0 and at most ${maxTimeoutSeconds}`);
   }

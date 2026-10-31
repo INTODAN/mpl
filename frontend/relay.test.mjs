@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import { defaultTimeoutSeconds, maxResponseBytes, maxTimeoutSeconds, refuseRequest, relayRequest, relayURL } from "./relay.mjs";
 
 const origin = "https://play.example";
@@ -187,7 +189,7 @@ test("a request may ask for a longer timeout, up to the maximum", async (context
   const { calls, fetch } = recordingFetch(Response.json({ ok: true }));
   assert.deepEqual(await relayRequest({ type: "game.request", id: 3, path, timeout_seconds: 30 }, settings(fetch)), { type: "lobby.response", id: 3, status: 200, body: { ok: true } });
   // Anything else is refused without fetching.
-  for (const timeout of [0, -1, maxTimeoutSeconds + 1, Number.NaN, Number.POSITIVE_INFINITY, "60", {}]) {
+  for (const timeout of [null, 0, -1, maxTimeoutSeconds + 1, Number.NaN, Number.POSITIVE_INFINITY, "60", {}]) {
     const refused = await relayRequest({ type: "game.request", id: 4, path, timeout_seconds: timeout }, settings(fetch));
     assert.equal(refused.status, 0, String(timeout));
     assert.match(refused.error, /timeout_seconds/, String(timeout));
@@ -213,4 +215,26 @@ test("a response body larger than the limit is refused, also without a length", 
   assert.equal((await relayRequest({ type: "game.request", id: 3, path }, limited(new Response(chunked)))).body, "éééé");
   // The default allows a game's large downloads.
   assert.equal(maxResponseBytes, 64 * 1024 * 1024);
+});
+
+// A host may pack a large download with gzip. The browser's fetch unpacks it,
+// so the limit counts the unpacked bytes, which the frame receives.
+test("a packed response is limited by its unpacked size", async (context) => {
+  const unpacked = JSON.stringify({ lines: "x".repeat(1000) });
+  const packed = gzipSync(unpacked);
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json", "Content-Encoding": "gzip", "Content-Length": packed.length });
+    response.end(packed);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => server.close());
+  const local = `http://127.0.0.1:${server.address().port}`;
+  const path = `/quiz/${lobby}/data/demo`;
+  const settingsFor = (maxBytes) => ({ prefix, lobbyID: lobby, origin: local, credential: "secret-credential", maxBytes });
+  // The packed body is far below the limit, and the unpacked one above it.
+  assert.ok(packed.length < 100 && unpacked.length > 1000);
+  assert.deepEqual(await relayRequest({ type: "game.request", id: 1, path }, settingsFor(unpacked.length)),
+    { type: "lobby.response", id: 1, status: 200, body: JSON.parse(unpacked) });
+  assert.deepEqual(await relayRequest({ type: "game.request", id: 2, path }, settingsFor(unpacked.length - 1)),
+    { type: "lobby.response", id: 2, status: 0, body: null, error: `the response is larger than ${unpacked.length - 1} bytes` });
 });
