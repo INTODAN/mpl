@@ -100,7 +100,9 @@ func ReadOnly(ctx context.Context, database *gorm.DB, read func(transaction *gor
 
 // SQLTransaction returns the database/sql transaction behind a transaction
 // that ReadOnly began, for a statement that GORM must not rewrite, such as
-// one an operator wrote.
+// one an operator wrote. Run such a statement only in a form that can't be a
+// command, such as a cursor's query: SET TRANSACTION READ WRITE as the
+// transaction's first statement would make it read-write.
 func SQLTransaction(transaction *gorm.DB) (*sql.Tx, error) {
 	sqlTransaction, ok := transaction.Statement.ConnPool.(*sql.Tx)
 	if !ok {
