@@ -15,7 +15,7 @@ import (
 	"islandBattles/lobby/domain"
 )
 
-//go:embed index.html app.js relay.mjs style.css vendor
+//go:embed index.html app.js relay.mjs resultretry.mjs style.css vendor
 var assets embed.FS
 
 // catalogPath is the file, relative to the frontend's mount point, that lists

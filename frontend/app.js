@@ -19,6 +19,9 @@ let syncing = false;
 let teamOptions = "";
 let resultRoom = null;
 let resultRequest = null;
+// The pending retry of loadResult after a failed read, and the failed reads in a row.
+let resultRetryTimer = null;
+let resultFailures = 0;
 // The result document the page loaded into the frame, from its srcdoc, or null.
 let resultDocument = null;
 let gamePlayer = null;
@@ -101,6 +104,9 @@ function dropRoom() {
   snapshot = null;
   resultRequest?.abort();
   resultRequest = null;
+  clearTimeout(resultRetryTimer);
+  resultRetryTimer = null;
+  resultFailures = 0;
   resultRoom = null;
   resultDocument = null;
   $("game-result").removeAttribute("srcdoc");
@@ -412,6 +418,9 @@ async function ensureGamePlayer() {
         if (epoch !== roomEpoch) return;
         latestGameState = gameState;
         displayGameState();
+        // The game reports state only once it exists, so a document that isn't
+        // loaded yet can be read now instead of at its next retry.
+        if (snapshot?.lobby.phase === "started" && resultRoom !== snapshot.lobby.id) void loadResult();
       },
       onStatus: (title, detail) => {
         if (epoch !== roomEpoch) return;
@@ -442,6 +451,9 @@ async function loadResult() {
   const room = snapshot.lobby;
   const resultURL = games.get(room.game_key)?.result_url;
   if (!resultURL || resultRequest || resultRoom === room.id) return;
+  clearTimeout(resultRetryTimer);
+  resultRetryTimer = null;
+  const epoch = roomEpoch;
   const controller = new AbortController();
   resultRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -453,6 +465,7 @@ async function loadResult() {
     const html = await response.text();
     if (controller !== resultRequest) return;
     resultRoom = room.id;
+    resultFailures = 0;
     showResultDocument(html);
     $("game-result").hidden = false;
     $("result-status").hidden = true;
@@ -463,10 +476,35 @@ async function loadResult() {
     $("result-status").hidden = false;
     $("result-status").textContent = error.name === "AbortError" ? "The game is taking longer to load. Retrying…" : error.message;
     $("retry-game").hidden = room.host_player_id !== state.session.player_id;
+    void retryResult(epoch, room.id);
   } finally {
     clearTimeout(timeout);
     if (controller === resultRequest) resultRequest = null;
   }
+}
+
+// The result can be missing for a moment after the lobby starts, and no other
+// lobby change follows to ask again, so a failed read is retried with backoff
+// for as long as the lobby is started and the document isn't loaded. The retry
+// ends when the room changes or the document loads. resultretry.mjs decides
+// the delay; if it can't be loaded, the page retries at the slowest pace.
+let retryModule = null;
+async function retryResult(epoch, lobbyID) {
+  const failures = ++resultFailures;
+  retryModule ??= import("./resultretry.mjs").catch(() => {
+    retryModule = null;
+    return { resultRetryDelay: ({ phase, loaded }) => (phase === "started" && !loaded ? 10000 : null) };
+  });
+  const { resultRetryDelay } = await retryModule;
+  const delay = resultRetryDelay({ phase: snapshot?.lobby.phase, loaded: resultRoom === lobbyID, failures });
+  // A newer read, such as one the example player's first state starts, makes
+  // its own retry decision.
+  if (delay === null || epoch !== roomEpoch || snapshot?.lobby.id !== lobbyID || resultRequest) return;
+  clearTimeout(resultRetryTimer);
+  resultRetryTimer = setTimeout(() => {
+    resultRetryTimer = null;
+    if (epoch === roomEpoch && snapshot?.lobby.id === lobbyID && snapshot.lobby.phase === "started") void loadResult();
+  }, delay);
 }
 
 // A game's settings module adds its own controls to the create form. Each

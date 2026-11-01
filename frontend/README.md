@@ -92,6 +92,8 @@ const { status, body } = await request(`/quiz/${lobbyID}/data/scores?round=2`);
 
 Run the relay's path checks from the repository root with `node lobby/frontend/relay.test.mjs`.
 
+If the page can't load the result document, for example because the host binds the game just after the lobby starts, it retries with backoff of 1, 2 and 4 seconds, then every 10 seconds, while the lobby is started and the document isn't loaded. [`resultretry.mjs`](resultretry.mjs) decides the delay; run its tests with `node lobby/frontend/resultretry.test.mjs`.
+
 An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, playerID, credential, subscription, enabled, pending, savePending, onState, onStatus}`:
 
 - `credential` is the guest bearer credential, and `subscription` is an unsubscribed Centrifugo subscription to the player's `player:<player_id>` channel.
