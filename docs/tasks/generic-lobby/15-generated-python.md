@@ -23,7 +23,7 @@ Generate commands/models from Huma; do not implement lobby behavior in generated
 5. Pin runtime `centrifuge-python==0.6.0`; include `httpx`, pytest, and async test tooling as needed.
 6. Lock runtime/development dependencies and the local generated project's resolved dependencies.
 7. Configure a local editable dependency on `./generated`, whose import is `lobby_api_client`.
-8. Set generator config `project_name_override: lobby-api-client` and `package_name_override: lobby_api_client`.
+8. Set generator config `project_name_override: mpl-lobby-api-client` and `package_name_override: lobby_api_client`.
 9. Set `package_version_override: 1.0.0`; use deterministic, locked formatting hooks.
 10. Select `--meta uv` so `generated/` contains its own installable metadata and package sources. This option does not emit uv.lock; use the root/tools locks and do not require or hand-create a generated lockfile.
 11. Keep root packaging restricted to handwritten `lobby_client`, excluding tools/tests/examples/generated.

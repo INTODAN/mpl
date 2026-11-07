@@ -8,13 +8,13 @@ under `generated/`; update the schema/export and run the generator instead.
 
 ## Installing from PyPI
 
-Each release publishes this client to PyPI as `generic-lobby-client`, at the release's version (the import name is `lobby_client`):
+Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):
 
 ```sh
-pip install generic-lobby-client==X.Y.Z   # or: uv add generic-lobby-client==X.Y.Z
+pip install mpl-lobby-client==X.Y.Z   # or: uv add mpl-lobby-client==X.Y.Z
 ```
 
-It needs Python 3.14 or newer. The HTTP SDK it depends on, `lobby-api-client`, installs with it. The rest of this README describes the repository checkout.
+It needs Python 3.14 or newer. The HTTP SDK it depends on, `mpl-lobby-api-client`, installs with it. The rest of this README describes the repository checkout.
 
 The client requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/).
 A running host application exposing the lobby API, PostgreSQL, and Centrifugo are required for the live example. The host configures its database and transport credentials; clients need only the public API URL. See the [component guide](../../README.md) and [live acceptance setup](../../integration/README.md).

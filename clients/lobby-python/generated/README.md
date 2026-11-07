@@ -1,4 +1,4 @@
-# lobby-api-client
+# mpl-lobby-api-client
 A client library for accessing Generic Lobby API
 
 ## Usage
