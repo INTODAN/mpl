@@ -56,6 +56,35 @@ wheels = [
 ]
 
 [[package]]
+name = "generic-lobby-client"
+version = "0.0.0.dev0"
+source = { editable = "." }
+dependencies = [
+    { name = "centrifuge-python" },
+    { name = "httpx" },
+    { name = "lobby-api-client" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "centrifuge-python", specifier = "==0.6.0" },
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "lobby-api-client", editable = "generated" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0,<9" },
+    { name = "pytest-asyncio", specifier = ">=0.24,<1" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -123,35 +152,6 @@ dependencies = [
 requires-dist = [
     { name = "attrs", specifier = ">=22.2.0" },
     { name = "httpx", specifier = ">=0.23.1,<0.29.0" },
-]
-
-[[package]]
-name = "lobby-python"
-version = "1.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "centrifuge-python" },
-    { name = "httpx" },
-    { name = "lobby-api-client" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "centrifuge-python", specifier = "==0.6.0" },
-    { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "lobby-api-client", editable = "generated" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0,<9" },
-    { name = "pytest-asyncio", specifier = ">=0.24,<1" },
 ]
 
 [[package]]

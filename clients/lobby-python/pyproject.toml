@@ -1,6 +1,6 @@
 [project]
-name = "lobby-python"
-version = "1.0.0"
+name = "generic-lobby-client"
+version = "0.0.0.dev0"
 description = "Generic lobby Python client"
 requires-python = ">=3.14"
 dependencies = [
