@@ -6,6 +6,8 @@ wrapper. `generated/` is produced from the checked-in Huma OpenAPI document;
 heartbeats, and cleanup. Huma is the schema authority. Do not hand-edit files
 under `generated/`; update the schema/export and run the generator instead.
 
+**This is a breaking change; clients must upgrade.** The lobby API gained the error code `game_requirement` and a `type` field on error bodies: a game can refuse `PUT …/ready` with `ready: true`, or the start, until a member has done something in the game's own API (Island Battles: choosing a bot). Regenerate or upgrade the client; the SDK's error then carries the game's problem type, and a client that doesn't know the code treats it as an unrecognized error. What to do: handle `game_requirement` by showing its `detail` to the player, who must act in the game's API and then retry.
+
 ## Installing from PyPI
 
 Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):

@@ -46,10 +46,19 @@ type GameRegistration struct {
 // too.
 type ReadyGate func(ctx context.Context, lobbyID string) (ReadyCheck, error)
 
-// ReadyCheck reports whether a member may be ready. It returns nil, or an
-// error from GameRequirement that names the game's problem type and says what
-// the player still has to do. Any other error is reported as unavailable.
-type ReadyCheck func(playerID string) error
+// ReadyMember is a member that a ReadyCheck decides about.
+type ReadyMember struct {
+	PlayerID    string
+	DisplayName string
+}
+
+// ReadyCheck reports whether members may be ready. It gets the one member who
+// is getting ready, with atStart false, or the whole start roster in the
+// lobby's member order, with atStart true, so a refusal at the start can name
+// the members who must act, who are not the host who sees it. It returns nil,
+// or an error from GameRequirement that names the game's problem type and
+// says what to do. Any other error is reported as unavailable.
+type ReadyCheck func(members []ReadyMember, atStart bool) error
 
 // CheckReady loads the game's ready gate for a lobby, or returns nil when the
 // game declares none. Its errors are reported as unavailable.
@@ -64,8 +73,8 @@ func (game GameRegistration) CheckReady(ctx context.Context, lobbyID string) (Re
 	if check == nil {
 		return nil, gateUnavailable(errors.New("the game's ready gate returned no check"))
 	}
-	return func(playerID string) error {
-		err := check(playerID)
+	return func(members []ReadyMember, atStart bool) error {
+		err := check(members, atStart)
 		if err == nil || ErrorCodeOf(err) == CodeGameRequirement {
 			return err
 		}

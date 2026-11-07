@@ -61,10 +61,19 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 		// The game checks the whole roster again, which also covers members
 		// who got ready before the game declared its gate.
 		if check != nil {
+			members := make([]domain.ReadyMember, 0, len(roster))
 			for _, entry := range roster {
-				if err := check(entry.PlayerID); err != nil {
-					return domain.Change{}, err
+				name := ""
+				for _, member := range aggregate.Members {
+					if member.PlayerID == entry.PlayerID {
+						name = member.DisplayName
+						break
+					}
 				}
+				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: name})
+			}
+			if err := check(members, true); err != nil {
+				return domain.Change{}, err
 			}
 		}
 		aggregate.StartRoster = roster

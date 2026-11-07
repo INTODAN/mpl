@@ -169,9 +169,11 @@ func (game *choiceGame) gate(_ context.Context, lobbyID string) (domain.ReadyChe
 			chosen[key[1]] = true
 		}
 	}
-	return func(playerID string) error {
-		if !chosen[playerID] {
-			return domain.GameRequirement("urn:example:problem:choice-missing", "Make your choice before getting ready.")
+	return func(members []domain.ReadyMember, _ bool) error {
+		for _, member := range members {
+			if !chosen[member.PlayerID] {
+				return domain.GameRequirement("urn:example:problem:choice-missing", "Make your choice before getting ready.")
+			}
 		}
 		return nil
 	}, nil
