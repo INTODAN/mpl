@@ -134,11 +134,54 @@ func quizSettings(_ context.Context, settings json.RawMessage, teams []domain.Te
 	return nil
 }
 
+// choiceGame stands in for a game whose players make a choice in the game's
+// own API before they can get ready. It records the choices by lobby and
+// player, and can fail to read them for a lobby.
+type choiceGame struct {
+	mutex   sync.Mutex
+	chosen  map[[2]string]bool
+	failing map[string]bool
+}
+
+var gatedGame = &choiceGame{chosen: map[[2]string]bool{}, failing: map[string]bool{}}
+
+func (game *choiceGame) choose(lobbyID, playerID string, chosen bool) {
+	game.mutex.Lock()
+	defer game.mutex.Unlock()
+	game.chosen[[2]string{lobbyID, playerID}] = chosen
+}
+
+func (game *choiceGame) fail(lobbyID string) {
+	game.mutex.Lock()
+	defer game.mutex.Unlock()
+	game.failing[lobbyID] = true
+}
+
+func (game *choiceGame) gate(_ context.Context, lobbyID string) (domain.ReadyCheck, error) {
+	game.mutex.Lock()
+	defer game.mutex.Unlock()
+	if game.failing[lobbyID] {
+		return nil, errors.New("choices are unreadable")
+	}
+	chosen := map[string]bool{}
+	for key, value := range game.chosen {
+		if key[0] == lobbyID && value {
+			chosen[key[1]] = true
+		}
+	}
+	return func(playerID string) error {
+		if !chosen[playerID] {
+			return domain.GameRequirement("urn:example:problem:choice-missing", "Make your choice before getting ready.")
+		}
+		return nil
+	}, nil
+}
+
 // newServiceFixture creates an island-battles lobby; configure can change the
 // create request, for example to another game or with game settings.
 func newServiceFixture(t *testing.T, capacity int, configure ...func(*domain.CreateRequest)) *serviceFixture {
 	t.Helper()
-	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings}, domain.GameRegistration{Key: "team-game", StartRules: domain.StartRules{EveryTeamNeedsMember: true}})}
+	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings}, domain.GameRegistration{Key: "team-game", StartRules: domain.StartRules{EveryTeamNeedsMember: true}}, domain.GameRegistration{Key: "gated-game", ReadyGate: gatedGame.gate})}
 	fixture.clock = &integrationClock{now: fixture.origin}
 	fixture.pushes = &recordedPushes{invalidations: map[string]int{}, lastVersion: map[string]int64{}, revocations: map[string]int{}}
 	fixture.store = fixture.newStore(t)

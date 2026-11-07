@@ -106,7 +106,8 @@ def sync_detailed(
     present and every member has chosen a team, is ready and is connected; otherwise it fails with
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
-    empty teams.
+    empty teams. A game that requires something of each member before they get ready checks the whole
+    roster again, and fails with game_requirement for a member who doesn't meet it.
 
     Args:
         game_key (str):
@@ -147,7 +148,8 @@ def sync(
     present and every member has chosen a team, is ready and is connected; otherwise it fails with
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
-    empty teams.
+    empty teams. A game that requires something of each member before they get ready checks the whole
+    roster again, and fails with game_requirement for a member who doesn't meet it.
 
     Args:
         game_key (str):
@@ -183,7 +185,8 @@ async def asyncio_detailed(
     present and every member has chosen a team, is ready and is connected; otherwise it fails with
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
-    empty teams.
+    empty teams. A game that requires something of each member before they get ready checks the whole
+    roster again, and fails with game_requirement for a member who doesn't meet it.
 
     Args:
         game_key (str):
@@ -222,7 +225,8 @@ async def asyncio(
     present and every member has chosen a team, is ready and is connected; otherwise it fails with
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
-    empty teams.
+    empty teams. A game that requires something of each member before they get ready checks the whole
+    roster again, and fails with game_requirement for a member who doesn't meet it.
 
     Args:
         game_key (str):

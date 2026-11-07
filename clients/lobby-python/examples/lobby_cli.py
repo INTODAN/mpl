@@ -324,7 +324,10 @@ async def _command_loop(client: LobbyClient, scope: Scope, initial: Any, stdin: 
                         continue
                     print(render_snapshot(current), flush=True)
                 except LobbyError as exc:
-                    print(f"command failed: {exc.code}", flush=True)
+                    # Only a game's own messages reach the client, such as
+                    # what it requires before a player gets ready.
+                    detail = f": {exc.detail}" if exc.detail else ""
+                    print(f"command failed: {exc.code}{detail}", flush=True)
                 continue
     finally:
         reader.close()

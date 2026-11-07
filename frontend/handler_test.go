@@ -16,6 +16,7 @@ func quizGame() frontend.Game {
 	return frontend.Game{
 		Key: "quiz-demo", Name: "Quiz", ResultURL: "/quiz/{lobby_id}/result",
 		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs", DataURLPrefix: "/quiz/{lobby_id}/data/",
+		RoomModule: "/quiz/room.mjs", RoomAPIPrefix: "/quiz/{lobby_id}/players/",
 		Links: []frontend.Link{{Label: "Past rounds", URL: "/quiz/rounds/"}},
 		ExamplePlayer: &frontend.ExamplePlayer{
 			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.",
@@ -60,9 +61,9 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 	want := []map[string]any{
 		{
 			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.", "settings_module": "/quiz/settings.mjs",
-			"data_url_prefix": "/quiz/{lobby_id}/data/",
-			"links":           []any{map[string]any{"label": "Past rounds", "url": "/quiz/rounds/"}},
-			"example_player":  map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
+			"data_url_prefix": "/quiz/{lobby_id}/data/", "room_module": "/quiz/room.mjs", "room_api_prefix": "/quiz/{lobby_id}/players/",
+			"links":          []any{map[string]any{"label": "Past rounds", "url": "/quiz/rounds/"}},
+			"example_player": map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
 		},
 		{"key": "chess", "name": "Chess", "result_url": "/chess/{lobby_id}"},
 	}
@@ -90,16 +91,20 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		"module //":              func(game *frontend.Game) { game.ExamplePlayer.Module = "//" },
 		// The page compares requested paths with the filled-in prefix, so
 		// the prefix must be a whole, canonical directory of one lobby.
-		"data prefix without lobby": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/data/" },
-		"data prefix without slash": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}" },
-		"data prefix mid-segment":   func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/data" },
-		"data prefix with dots":     func(game *frontend.Game) { game.DataURLPrefix = "/quiz/../{lobby_id}/" },
-		"data prefix with dot":      func(game *frontend.Game) { game.DataURLPrefix = "/quiz/./{lobby_id}/" },
-		"data prefix with escape":   func(game *frontend.Game) { game.DataURLPrefix = "/quiz/%2e%2e/{lobby_id}/" },
-		"data prefix with query":    func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/?a=/" },
-		"data prefix with fragment": func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/#/" },
-		"link without label":        func(game *frontend.Game) { game.Links[0].Label = " " },
-		"link without url":          func(game *frontend.Game) { game.Links[0].URL = "" },
+		"data prefix without lobby":  func(game *frontend.Game) { game.DataURLPrefix = "/quiz/data/" },
+		"data prefix without slash":  func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}" },
+		"data prefix mid-segment":    func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/data" },
+		"data prefix with dots":      func(game *frontend.Game) { game.DataURLPrefix = "/quiz/../{lobby_id}/" },
+		"data prefix with dot":       func(game *frontend.Game) { game.DataURLPrefix = "/quiz/./{lobby_id}/" },
+		"data prefix with escape":    func(game *frontend.Game) { game.DataURLPrefix = "/quiz/%2e%2e/{lobby_id}/" },
+		"data prefix with query":     func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/?a=/" },
+		"data prefix with fragment":  func(game *frontend.Game) { game.DataURLPrefix = "/quiz/{lobby_id}/#/" },
+		"room prefix without lobby":  func(game *frontend.Game) { game.RoomAPIPrefix = "/quiz/players/" },
+		"room prefix mid-segment":    func(game *frontend.Game) { game.RoomAPIPrefix = "/quiz/{lobby_id}/players" },
+		"room prefix with dots":      func(game *frontend.Game) { game.RoomAPIPrefix = "/quiz/../{lobby_id}/" },
+		"room prefix without module": func(game *frontend.Game) { game.RoomModule = "" },
+		"link without label":         func(game *frontend.Game) { game.Links[0].Label = " " },
+		"link without url":           func(game *frontend.Game) { game.Links[0].URL = "" },
 	}
 	// Hostile values for both URL fields. A browser strips tab, LF and CR
 	// before parsing, so "/<ctrl>/evil.com" reads as "//evil.com".
@@ -124,6 +129,8 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		cases["module "+name] = func(game *frontend.Game) { game.ExamplePlayer.Module = value + "player.mjs" }
 		cases["settings module "+name] = func(game *frontend.Game) { game.SettingsModule = value + "settings.mjs" }
 		cases["data prefix "+name] = func(game *frontend.Game) { game.DataURLPrefix = value + "{lobby_id}/" }
+		cases["room module "+name] = func(game *frontend.Game) { game.RoomModule = value + "room.mjs" }
+		cases["room prefix "+name] = func(game *frontend.Game) { game.RoomAPIPrefix = value + "{lobby_id}/" }
 		cases["link "+name] = func(game *frontend.Game) { game.Links[0].URL = value + "rounds/" }
 	}
 	for name, mutate := range cases {
@@ -145,7 +152,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})
 	// The file server answers index.html at the mount point itself.
-	for _, file := range []string{"", "app.js", "relay.mjs", "resultretry.mjs", "style.css"} {
+	for _, file := range []string{"", "app.js", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "style.css"} {
 		path := "/lobby/ui/" + file
 		body, err := io.ReadAll(get(t, handler, path).Body)
 		if err != nil {

@@ -22,6 +22,9 @@ BASE = os.environ["LOBBY_TEST_API_URL"]
 RUNTIME = os.environ["LOBBY_TEST_CONTAINER_RUNTIME"]
 EVENTS = os.environ["LOBBY_TEST_CENTRIFUGO_CONTAINER"]
 DATABASE = os.environ["LOBBY_TEST_POSTGRES_CONTAINER"]
+# The game key of the suite's lobbies. A host whose first example game adds
+# its own rules, such as a choice to make before getting ready, sets another.
+GAME_KEY = os.environ.get("LOBBY_TEST_GAME_KEY", "island-battles")
 
 
 async def container(*arguments: str) -> str:
@@ -54,7 +57,7 @@ async def guests():
 
 
 async def create(client, game_key=None, game_settings=None):
-    game_key = game_key or os.environ.get("LOBBY_TEST_GAME_KEY", "island-battles")
+    game_key = game_key or GAME_KEY
     return await client.create_lobby(
         game_key=game_key, name="Acceptance", capacity=4,
         teams=[TeamDefinition(name="Red", capacity=4), TeamDefinition(name="Blue", capacity=4)],

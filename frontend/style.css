@@ -64,6 +64,8 @@ h3 { font-size: 1rem; margin: 0; }
 .controls { display: flex; align-items: end; gap: 12px; margin-top: 28px; }
 .controls label { flex: 1; }
 .controls button { white-space: nowrap; }
+.game-room-panel { margin-top: 28px; }
+.game-room-panel .hint { margin-top: 8px; }
 .room-footer { border-top: 1px solid #edf0f5; margin-top: 24px; padding-top: 12px; font-size: .8rem; color: #758195; }
 .page-footer { color: #8b94a4; text-align: center; font-size: .75rem; padding-top: 35px; }
 .game-result { margin-top: 20px; padding: 8px; }

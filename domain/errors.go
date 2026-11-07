@@ -17,7 +17,10 @@ const (
 	CodeIdempotencyConflict ErrorCode = "idempotency_conflict"
 	CodeInvalidInput        ErrorCode = "invalid_input"
 	CodeInvalidGameSettings ErrorCode = "invalid_game_settings"
-	CodeUnavailable         ErrorCode = "unavailable"
+	// CodeGameRequirement is a game's own refusal, from its ReadyGate. The
+	// error's Type names the game's problem.
+	CodeGameRequirement ErrorCode = "game_requirement"
+	CodeUnavailable     ErrorCode = "unavailable"
 	// PermissionDenied is private proxy authorization only, not a player API code.
 	CodePermissionDenied ErrorCode = "permission_denied"
 )
@@ -30,7 +33,11 @@ type Error struct {
 	// TeamIDs names the teams an error is about, such as the empty teams of
 	// CodeEmptyTeams. They are safe to show the client.
 	TeamIDs []string
-	Cause   error
+	// Type is the game-defined problem type of CodeGameRequirement, a URI
+	// such as urn:example:problem:choice-missing. It is safe to show
+	// the client.
+	Type  string
+	Cause error
 }
 
 func (err *Error) Error() string { return err.Message }
@@ -40,6 +47,14 @@ func (err *Error) Is(target error) bool {
 	return ok && err.Code == other.Code
 }
 func NewError(code ErrorCode, message string) *Error { return &Error{Code: code, Message: message} }
+
+// GameRequirement is a game's refusal to let a member get ready, or a lobby
+// start, for a ReadyCheck to return. problemType is a URI that names the
+// game's problem, and message tells the player what to do; both are shown to
+// the client.
+func GameRequirement(problemType, message string) *Error {
+	return &Error{Code: CodeGameRequirement, Message: message, Type: problemType}
+}
 func ErrorCodeOf(err error) ErrorCode {
 	var domainError *Error
 	if errors.As(err, &domainError) {

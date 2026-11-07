@@ -68,7 +68,12 @@ membership expires. Running one credential in two clients creates two leases
 but consumes one lobby seat.
 
 Expected conflicts such as `lobby_full`, `team_full`, `not_ready`,
-`empty_teams`, `not_host`, and `phase_conflict` are printed as typed command failures. An
+`empty_teams`, `not_host`, and `phase_conflict` are printed as typed command failures.
+A game can also refuse `ready`, or `start`, until a player does something in the
+game's own API: the failure is `game_requirement`, printed with the game's message.
+Island Battles refuses until the player has chosen a bot with
+`PUT /game/lobbies/{lobby_id}/bot` (see the [backend README](../../../backend/README.md#choosing-a-bot));
+`--game-key quiz-demo` plays a game without that rule. An
 expired credential or lost membership explains that an explicit new session or
 join is required. Create uses one UUID request id for the process lifetime;
 the CLI never retries it with a new id or mints another guest after a network
@@ -92,6 +97,11 @@ async with LobbyClient(base_url, credential=access_token) as client:
     async for update in client.updates(scope):
         print(update.lobby.version)
 ```
+
+A game's own refusal of readiness or of the start raises `LobbyError` with code
+`game_requirement`, status 409, the game's message as `detail` and the game's
+problem type as `problem_type`, such as
+`urn:island-battles:problem:bot-not-chosen`.
 
 `create_lobby` takes an optional `game_settings` dict, the game's own JSON object.
 The game checks it when the lobby is created; rejected settings raise

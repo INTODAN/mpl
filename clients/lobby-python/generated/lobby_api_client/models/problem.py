@@ -21,6 +21,8 @@ class Problem:
         title (str):
         team_ids (list[str] | None | Unset): The teams the error is about. For empty_teams, the teams that still need a
             player, in team order.
+        type_ (str | Unset): For game_requirement, the game's own problem type, a URI that the game documents, such as
+            one meaning a player has yet to choose something in the game's API. Absent for every other code.
     """
 
     code: ProblemCode
@@ -28,6 +30,7 @@ class Problem:
     status: int
     title: str
     team_ids: list[str] | None | Unset = UNSET
+    type_: str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         code = self.code.value
@@ -47,6 +50,8 @@ class Problem:
         else:
             team_ids = self.team_ids
 
+        type_ = self.type_
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -59,6 +64,8 @@ class Problem:
         )
         if team_ids is not UNSET:
             field_dict["team_ids"] = team_ids
+        if type_ is not UNSET:
+            field_dict["type"] = type_
 
         return field_dict
 
@@ -90,12 +97,15 @@ class Problem:
 
         team_ids = _parse_team_ids(d.pop("team_ids", UNSET))
 
+        type_ = d.pop("type", UNSET)
+
         problem = cls(
             code=code,
             detail=detail,
             status=status,
             title=title,
             team_ids=team_ids,
+            type_=type_,
         )
 
         return problem

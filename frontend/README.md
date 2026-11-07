@@ -35,9 +35,21 @@ The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at
 | `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
 | `SettingsModule` | Optional. Same-origin URL of an ES module that adds the game's own controls to the create form and chooses the new lobby's `game_settings` and teams. |
 | `DataURLPrefix` | Optional. Same-origin path prefix under which the result document may read the game's data through the page, with `game.request`. It contains `{lobby_id}` and ends with `/`, for example `/quiz/{lobby_id}/data/`. |
+| `RoomModule` | Optional. Same-origin URL of an ES module that shows the game's own controls to the player in a waiting room, such as a choice the game requires before the player gets ready. See [Room module](#room-module). |
+| `RoomAPIPrefix` | Optional, with `RoomModule`. Same-origin path prefix under which the room module may call the game's API with the player's credential, with `GET` or `PUT`. Like `DataURLPrefix`, it contains `{lobby_id}` and ends with `/`, for example `/quiz/{lobby_id}/players/`. |
 | `Links` | Optional. The game's own pages that the lobby page links to, each a `Link` with a `Label` and a same-origin `URL`, such as a page that still works after a lobby is gone. The page lists the selected game's links below the create and join forms, and the room's game's links under the room's name. Each opens in a new tab, so the player keeps their lobby. |
 
-`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, links without a label, and module, result, data or link URLs that leave the frontend's origin. It also rejects a data URL prefix without `{lobby_id}`, without a final `/`, or with `.` or `..` segments, `%`, `?` or `#`. A second game needs only another entry; nothing in `lobby/` changes.
+`Handler` rejects an empty catalog, invalid or duplicate keys, missing names, links without a label, and module, result, data or link URLs that leave the frontend's origin. It also rejects a data URL or room API prefix without `{lobby_id}`, without a final `/`, or with `.` or `..` segments, `%`, `?` or `#`, and a room API prefix without a room module. A second game needs only another entry; nothing in `lobby/` changes.
+
+## Room module
+
+A game whose players must do something in the game's own API before they get ready, such as choosing what plays for them, shows its controls in the room with a room module. While the lobby waits, the page imports the module once and shows an element above the team select for it; once the lobby starts, the element is hidden. The module exports:
+
+- `class RoomPanel`, constructed with `{container, lobbyID, playerID, request}`. It renders into `container`. `request(method, path, body)` calls the game's API through the page, which adds the player's bearer credential: only `GET` or `PUT`, only for a same-origin path under the catalog's `RoomAPIPrefix` with the room's lobby ID, checked like a [relayed](#what-a-game-provides) `game.request` path, and only while the page shows that lobby. It resolves to `{status, body}`, with the parsed body of a JSON or problem response and `null` otherwise, and rejects with an `Error` that says why when the page refuses the request or gets no answer within 8 seconds. [`roomapi.mjs`](roomapi.mjs) holds the checks.
+- An optional `update(snapshot)` method, which the page calls with every snapshot it shows, so the panel can read the game's data again when the lobby changes, for example when a member joins or gets ready.
+- An optional `prepareDemo({lobbyID, request})` function, which **New demo lobby** awaits for each demo player after choosing their team and before marking them ready, so the game can make the choices it requires, ones that suit its example player.
+
+The lobby page knows nothing of what the module shows. When the game refuses readiness until its choice is made, the lobby answers the ready request with `game_requirement`, and the page shows the game's message.
 
 ## Play
 
@@ -45,11 +57,11 @@ To set up players manually:
 
 1. Enter your name, choose a game, and create a lobby.
 2. Open the same page in another tab, browser, or device. Enter another name and join using the eight-character code.
-3. Each player chooses a different team and marks ready. The host can then start the lobby.
+3. Each player chooses a different team, makes any choice that the game's room module shows, and marks ready. The host can then start the lobby.
 
 New lobbies have one seat per team. Without a settings module there are two teams, Blue and Red; a game's settings module can choose others. Starting freezes the roster and the host backend launches the selected game. On another device, use the host's reachable address instead of `localhost`.
 
-**New demo lobby** appears when the selected game has an example player. It creates Alex on Blue in the current tab, opens Sam on Red in a second tab, marks both ready, and starts automatically. Both tabs run the game's example player. If the browser blocks the second tab, use **Open second player tab**. Each demo creates fresh player sessions; using it from an existing lobby leaves that lobby first. **Pause this player** stops that tab from submitting its next turn, and **Resume this player** continues. Only demo invitations let the example player submit turns; in other lobbies it only follows the game's state.
+**New demo lobby** appears when the selected game has an example player. It creates Alex on Blue in the current tab, opens Sam on Red in a second tab, lets the game's room module prepare each player, marks both ready, and starts automatically. Both tabs run the game's example player. If the browser blocks the second tab, use **Open second player tab**. Each demo creates fresh player sessions; using it from an existing lobby leaves that lobby first. **Pause this player** stops that tab from submitting its next turn, and **Resume this player** continues. Only demo invitations let the example player submit turns; in other lobbies it only follows the game's state.
 
 Guest credentials and the current room are saved in `sessionStorage`, so independently opened tabs can act as separate players and a reload restores the current player. A browser's **Duplicate tab** action may copy that identity; open a fresh tab using the URL to test a second player. **Leave lobby** removes the player immediately. Closing a tab relies on the server's lease expiry and grace period.
 

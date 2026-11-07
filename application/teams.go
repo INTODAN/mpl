@@ -61,6 +61,13 @@ func (service *Service) SetReady(ctx context.Context, principal domain.Principal
 	if err := validatePrincipal(principal); err != nil {
 		return domain.Snapshot{}, err
 	}
+	var check domain.ReadyCheck
+	if request.Ready {
+		var err error
+		if check, err = service.readyCheck(ctx, scope); err != nil {
+			return domain.Snapshot{}, err
+		}
+	}
 	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
 		member, err := activeMember(aggregate, principal.PlayerID)
 		if err != nil {
@@ -74,6 +81,11 @@ func (service *Service) SetReady(ctx context.Context, principal domain.Principal
 		}
 		if member.Ready == request.Ready {
 			return domain.Change{}, nil
+		}
+		if check != nil {
+			if err := check(member.PlayerID); err != nil {
+				return domain.Change{}, err
+			}
 		}
 		member.Ready = request.Ready
 		return domain.Change{PublicChanged: true}, nil

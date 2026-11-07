@@ -190,6 +190,19 @@ func TestEmptyTeamsProblemNamesTheTeams(t *testing.T) {
 	}
 }
 
+func TestGameRequirementProblemCarriesTheGamesType(t *testing.T) {
+	t.Parallel()
+	problem := problemFor(domain.GameRequirement("urn:example:problem:choice-missing", "Make your choice before getting ready.")).(*Problem)
+	encoded, _ := json.Marshal(problem)
+	if problem.Status != http.StatusConflict || problem.Code != domain.CodeGameRequirement || problem.Detail != "Make your choice before getting ready." ||
+		!strings.Contains(string(encoded), `"type":"urn:example:problem:choice-missing"`) {
+		t.Fatalf("game requirement problem = %s", encoded)
+	}
+	if encoded, _ := json.Marshal(problemFor(domain.ErrNotReady)); strings.Contains(string(encoded), `"type"`) {
+		t.Fatalf("a lobby problem has a type: %s", encoded)
+	}
+}
+
 func TestSnapshotDoesNotExposeInternalFieldsAndDeleteResponsesAreEmpty(t *testing.T) {
 	t.Parallel()
 	application := &fakeApplication{}

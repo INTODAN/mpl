@@ -195,6 +195,9 @@ async def test_rejected_game_settings_carry_the_game_message(h):
                                              "detail": "game_settings.rounds: must be between 1 and 10"})
         if request.url.path.endswith("/start"):
             return httpx.Response(409, json={"code": "not_ready", "status": 409, "title": "Conflict", "detail": "members are not ready"})
+        if request.url.path.endswith("/ready"):
+            return httpx.Response(409, json={"code": "game_requirement", "status": 409, "title": "Conflict",
+                                             "detail": "Choose your bot first.", "type": "urn:example:problem:bot-not-chosen"})
     h.hook = rejected
     kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=uuid4())
     with pytest.raises(LobbyError) as invalid:
@@ -206,6 +209,12 @@ async def test_rejected_game_settings_carry_the_game_message(h):
     with pytest.raises(LobbyError) as other:
         await h.client.start(SCOPE)
     assert (other.value.code, other.value.detail, str(other.value)) == ("not_ready", None, "not_ready")
+    assert other.value.problem_type is None
+    # A game's own refusal carries its message and problem type.
+    with pytest.raises(LobbyError) as refused:
+        await h.client.set_ready(SCOPE, True)
+    assert (refused.value.code, refused.value.status, refused.value.detail, refused.value.problem_type) == (
+        "game_requirement", 409, "Choose your bot first.", "urn:example:problem:bot-not-chosen")
 
 
 async def test_explicit_identity(h):

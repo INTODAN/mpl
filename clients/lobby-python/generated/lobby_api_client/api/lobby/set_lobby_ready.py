@@ -102,7 +102,10 @@ def sync_detailed(
 ) -> Response[Problem | Snapshot]:
     """Set readiness
 
-     ready is required; false explicitly clears readiness.
+     ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
+    fails with not_ready. A game can also require something of its own first, such as a choice made in
+    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
+    type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -139,7 +142,10 @@ def sync(
 ) -> Problem | Snapshot | None:
     """Set readiness
 
-     ready is required; false explicitly clears readiness.
+     ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
+    fails with not_ready. A game can also require something of its own first, such as a choice made in
+    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
+    type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -171,7 +177,10 @@ async def asyncio_detailed(
 ) -> Response[Problem | Snapshot]:
     """Set readiness
 
-     ready is required; false explicitly clears readiness.
+     ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
+    fails with not_ready. A game can also require something of its own first, such as a choice made in
+    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
+    type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -206,7 +215,10 @@ async def asyncio(
 ) -> Problem | Snapshot | None:
     """Set readiness
 
-     ready is required; false explicitly clears readiness.
+     ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
+    fails with not_ready. A game can also require something of its own first, such as a choice made in
+    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
+    type and whose detail says what to do.
 
     Args:
         game_key (str):

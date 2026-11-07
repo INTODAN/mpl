@@ -189,6 +189,69 @@ func TestDefaultStartRuleAllowsEmptyTeam(t *testing.T) {
 	}
 }
 
+func TestReadyGateRefusesUntilTheGameAllows(t *testing.T) {
+	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
+		request.GameKey = "gated-game"
+	})
+	lobbyID := fixture.scope.LobbyID
+	guest := fixture.player(t, "Guest")
+	fixture.join(t, guest)
+	fixture.assign(t, fixture.host, 0, false)
+	fixture.assign(t, guest, 1, false)
+	before := fixture.read(t)
+	_, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: true})
+	var refusal *domain.Error
+	if !errors.As(err, &refusal) || refusal.Code != domain.CodeGameRequirement || refusal.Type != "urn:example:problem:choice-missing" || refusal.Message != "Make your choice before getting ready." {
+		t.Fatalf("ready without the game's choice = %v", err)
+	}
+	if after := fixture.read(t); after.Lobby.Version != before.Lobby.Version || memberFor(t, after, fixture.host.PlayerID).Ready {
+		t.Fatal("a refused ready changed the lobby")
+	}
+	// The lobby's own rules come first: a member without a team isn't ready
+	// whatever the game says.
+	gatedGame.choose(lobbyID, fixture.host.PlayerID, true)
+	gatedGame.choose(lobbyID, guest.PlayerID, true)
+	if _, err := fixture.service.SelectTeam(context.Background(), guest, fixture.scope, domain.SelectTeamRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.service.SetReady(context.Background(), guest, fixture.scope, domain.ReadyRequest{Ready: true})
+	requireDomainError(t, err, domain.ErrNotReady)
+	fixture.assign(t, guest, 1, true)
+	fixture.assign(t, fixture.host, 0, true)
+	// The start checks the whole roster again, which catches a member who got
+	// ready before the game declared its gate, here one whose choice the game
+	// no longer has.
+	gatedGame.choose(lobbyID, guest.PlayerID, false)
+	_, err = fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	requireDomainError(t, err, domain.GameRequirement("", ""))
+	if after := fixture.read(t); after.Lobby.Phase != domain.PhaseWaiting {
+		t.Fatal("a refused start started the lobby")
+	}
+	gatedGame.choose(lobbyID, guest.PlayerID, true)
+	started, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	if err != nil || started.Lobby.Phase != domain.PhaseStarted {
+		t.Fatal("a roster that meets the gate did not start", err)
+	}
+}
+
+func TestReadyGateThatCannotReadIsUnavailable(t *testing.T) {
+	fixture := newServiceFixture(t, 2, func(request *domain.CreateRequest) {
+		request.GameKey = "gated-game"
+	})
+	gatedGame.fail(fixture.scope.LobbyID)
+	team := fixture.initial.Teams[0].ID
+	if _, err := fixture.service.SelectTeam(context.Background(), fixture.host, fixture.scope, domain.SelectTeamRequest{TeamID: &team}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: true})
+	requireDomainError(t, err, domain.ErrUnavailable)
+	_, err = fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	requireDomainError(t, err, domain.ErrUnavailable)
+	if _, err := fixture.service.SetReady(context.Background(), fixture.host, fixture.scope, domain.ReadyRequest{Ready: false}); err != nil {
+		t.Fatal("clearing readiness asked the gate", err)
+	}
+}
+
 func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
 	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
 		request.GameKey = "team-game"

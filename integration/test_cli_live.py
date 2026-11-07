@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from .test_live import BASE
+from .test_live import BASE, GAME_KEY
 
 
 pytestmark = pytest.mark.asyncio
@@ -22,7 +22,7 @@ async def test_two_real_cli_processes_choose_teams_and_start(tmp_path):
     async def launch(name, mode, argument):
         session_file = tmp_path / f"{name}.json"
         process = await asyncio.create_subprocess_exec(
-            sys.executable, str(CLI), "--base-url", BASE,
+            sys.executable, str(CLI), "--base-url", BASE, "--game-key", GAME_KEY,
             "--session-file", str(session_file), "--new-session", name, mode, argument,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

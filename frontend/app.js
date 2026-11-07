@@ -31,7 +31,13 @@ let latestGameState = null;
 let settingsForm = null;
 let settingsFormGame = null;
 let describedRoom = null;
-const settingsModules = new Map();
+// The game's controls in the waiting room, from its catalog room module:
+// {epoch, panel} for the room it was made for, with a null panel when the
+// module failed to load. roomPanelLoading is the epoch being loaded.
+let roomPanel = null;
+let roomPanelLoading = null;
+// The games' settings and room modules by URL, each imported once per page.
+const gameModules = new Map();
 // Lobbies without a game settings module get these teams.
 const defaultTeams = ["Blue", "Red"];
 
@@ -100,6 +106,10 @@ function dropRoom() {
   playerLoading = false;
   latestGameState = null;
   describedRoom = null;
+  roomPanel = null;
+  roomPanelLoading = null;
+  $("game-room-panel").replaceChildren();
+  $("game-room-panel").hidden = true;
   $("room-settings").hidden = true;
   snapshot = null;
   resultRequest?.abort();
@@ -507,16 +517,83 @@ async function retryResult(epoch, lobbyID) {
   }, delay);
 }
 
-// A game's settings module adds its own controls to the create form. Each
-// module is imported once per page.
-function settingsModule(game) {
-  if (!settingsModules.has(game.settings_module)) {
-    settingsModules.set(game.settings_module, import(game.settings_module).catch((error) => {
-      settingsModules.delete(game.settings_module);
+// A game's settings and room modules are imported once per page; a module
+// that failed to load is imported again next time.
+function gameModule(url) {
+  if (!gameModules.has(url)) {
+    gameModules.set(url, import(url).catch((error) => {
+      gameModules.delete(url);
       throw error;
     }));
   }
-  return settingsModules.get(game.settings_module);
+  return gameModules.get(url);
+}
+
+// A game's settings module adds its own controls to the create form.
+function settingsModule(game) {
+  return gameModule(game.settings_module);
+}
+
+// A game's room module calls the game's API through the page, which adds the
+// player's credential. roomapi.mjs decides which requests it may send.
+let roomAPIModule = null;
+async function requestForRoom(lobbyID, request) {
+  if (!state.session || state.room?.lobby_id !== lobbyID) throw new Error("The page no longer shows this lobby.");
+  roomAPIModule ??= import("./roomapi.mjs").catch((error) => {
+    roomAPIModule = null;
+    throw error;
+  });
+  const { roomRequest } = await roomAPIModule;
+  return roomRequest(request, {
+    prefix: games.get(state.room.game_key)?.room_api_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
+  });
+}
+function roomRequester(lobbyID) {
+  return (method, path, body) => requestForRoom(lobbyID, { method, path, body });
+}
+
+// While the lobby waits, the game's room module shows the player the game's
+// own controls, such as a choice the game requires before getting ready, and
+// sees every new snapshot.
+function ensureRoomPanel() {
+  const game = games.get(snapshot.lobby.game_key);
+  const shown = Boolean(game?.room_module) && snapshot.lobby.phase === "waiting";
+  $("game-room-panel").hidden = !shown;
+  if (!shown) return;
+  if (roomPanel?.epoch === roomEpoch) {
+    roomPanel.panel?.update?.(snapshot);
+    return;
+  }
+  if (roomPanelLoading !== roomEpoch) void loadRoomPanel(game);
+}
+async function loadRoomPanel(game) {
+  const epoch = roomEpoch;
+  const lobbyID = snapshot.lobby.id;
+  roomPanelLoading = epoch;
+  let panel = null;
+  try {
+    const { RoomPanel } = await gameModule(game.room_module);
+    if (epoch !== roomEpoch) return;
+    $("game-room-panel").replaceChildren();
+    panel = new RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID) });
+  } catch {
+    if (epoch === roomEpoch) $("game-room-panel").replaceChildren(element("p", "hint", "Could not load this game’s controls. Reload the page to try again."));
+  } finally {
+    if (epoch === roomEpoch) {
+      roomPanelLoading = null;
+      roomPanel = { epoch, panel };
+      if (snapshot) panel?.update?.(snapshot);
+    }
+  }
+}
+
+// Before a demo player gets ready, the game's room module can make the
+// choices the game requires, ones that suit its example player.
+async function prepareDemoPlayer() {
+  const game = games.get(snapshot.lobby.game_key);
+  if (!game?.room_module) return;
+  const { prepareDemo } = await gameModule(game.room_module);
+  if (prepareDemo) await prepareDemo({ lobbyID: snapshot.lobby.id, request: roomRequester(snapshot.lobby.id) });
 }
 
 async function mountSettingsForm() {
@@ -623,6 +700,7 @@ function render() {
   $("team-select").value = self?.team_id || "";
   $("team-select").disabled = busy || !waiting;
   $("waiting-controls").hidden = !waiting;
+  ensureRoomPanel();
   $("ready-button").textContent = self?.ready ? "Not ready" : "Mark ready";
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
@@ -659,6 +737,7 @@ async function createLobby(name, choice) {
 
 async function readyOnTeam(index) {
   acceptSnapshot(await api(`${roomPath()}/team`, "PUT", { team_id: snapshot.teams[index].id }));
+  await prepareDemoPlayer();
   acceptSnapshot(await api(`${roomPath()}/ready`, "PUT", { ready: true }));
 }
 

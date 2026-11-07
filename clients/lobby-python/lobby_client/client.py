@@ -178,8 +178,10 @@ class LobbyClient:
         if status >= 400:
             code = getattr(response.parsed, "code", None)
             detail = getattr(response.parsed, "detail", None)
+            problem_type = getattr(response.parsed, "type_", None)
             error = response_error(status, str(code) if code else f"http_{status}",
-                                   detail if isinstance(detail, str) else None)
+                                   detail if isinstance(detail, str) else None,
+                                   problem_type if isinstance(problem_type, str) else None)
             if isinstance(error, AuthenticationError):
                 self._auth_error, self._connected = error, False
                 for state in self._states.values():

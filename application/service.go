@@ -82,6 +82,20 @@ func (service *Service) runMutation(ctx context.Context, scope domain.Scope, com
 	return transactNormalizedTimed(ctx, service.store, service.clock, service.policy, scope, command)
 }
 
+// readyCheck loads the game's ready gate for a lobby, before the request's
+// transaction, so the game reads its own data while the room isn't locked. It
+// is nil when the game declares no gate.
+func (service *Service) readyCheck(ctx context.Context, scope domain.Scope) (domain.ReadyCheck, error) {
+	if err := service.policy.ValidateScope(scope); err != nil {
+		return nil, err
+	}
+	game, err := service.policy.Game(scope.GameKey)
+	if err != nil {
+		return nil, err
+	}
+	return game.CheckReady(ctx, scope.LobbyID)
+}
+
 func validatePrincipal(principal domain.Principal) error {
 	if domain.ValidateUUID(principal.PlayerID) != nil || domain.ValidateUUID(principal.SessionID) != nil {
 		return domain.ErrUnauthenticated
