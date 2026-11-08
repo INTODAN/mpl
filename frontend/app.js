@@ -26,6 +26,9 @@ let resultFailures = 0;
 let resultDocument = null;
 let gamePlayer = null;
 let playerLoading = false;
+// True once a player outside a demo reports what its game player does, such as
+// relaying a localhost bot's turns, so the page shows the status panel.
+let playerReports = false;
 let latestGameState = null;
 // The selected game's settings form, from its catalog settings module.
 let settingsForm = null;
@@ -104,6 +107,7 @@ function dropRoom() {
   delete state.demoPlayer;
   gamePlayer?.stop();
   gamePlayer = null;
+  playerReports = false;
   realtime?.disconnect();
   realtime = null;
   realtimeLoading = null;
@@ -429,7 +433,9 @@ async function ensureGamePlayer() {
     gamePlayer = new ExamplePlayer({
       lobbyID: snapshot.lobby.id, playerID: state.session.player_id, credential: state.session.access_token,
       subscription: client.newSubscription(`player:${state.session.player_id}`),
-      enabled: Boolean(state.demoPlayer?.enabled), pending: state.demoPlayer?.pending || null,
+      // Outside a demo the player submits only the turns of a localhost bot,
+      // which it relays; the demo's player can be paused.
+      demo: Boolean(state.demoPlayer), enabled: state.demoPlayer ? Boolean(state.demoPlayer.enabled) : true, pending: state.demoPlayer?.pending || null,
       savePending: (pending) => {
         if (epoch === roomEpoch && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
       },
@@ -443,6 +449,10 @@ async function ensureGamePlayer() {
       },
       onStatus: (title, detail) => {
         if (epoch !== roomEpoch) return;
+        if (!state.demoPlayer && !playerReports) {
+          playerReports = true;
+          render();
+        }
         $("example-status").textContent = title;
         $("example-detail").textContent = detail;
         $("example-toggle").textContent = gamePlayer.enabled ? "Pause this player" : "Resume this player";
@@ -706,7 +716,10 @@ function render() {
   $("entry-panel").hidden = Boolean(snapshot);
   $("room-panel").hidden = !snapshot;
   $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games.has(snapshot.lobby.game_key);
-  $("example-controls").hidden = !state.demoPlayer || snapshot?.lobby.phase !== "started";
+  $("example-controls").hidden = !(state.demoPlayer || playerReports) || snapshot?.lobby.phase !== "started";
+  $("example-label").textContent = state.demoPlayer ? "Example strategy · " : "Your localhost bot";
+  $("example-strategy").hidden = !state.demoPlayer;
+  $("example-toggle").hidden = !state.demoPlayer;
   $("display-name").readOnly = Boolean(state.session);
   $("change-player").hidden = !state.session;
   // Nothing can be created or joined until the host's games are known.

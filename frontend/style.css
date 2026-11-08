@@ -103,3 +103,10 @@ h3 { font-size: 1rem; margin: 0; }
 .game-links[hidden] { display: none; }
 .game-links a { color: #305dc7; }
 .game-links a:hover { color: #274faf; }
+.example-controls p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.local-bot { margin: 10px 0; }
+.local-bot code { display: inline-block; margin: 0 6px 0 2px; padding: 3px 8px; background: #eef1f7; border-radius: 6px; font-size: .82rem; overflow-wrap: anywhere; }
+.bot-health { margin: 0 0 6px; font-weight: 600; }
+.bot-health::before { content: "●"; margin-right: 6px; color: #9aa3b5; }
+.bot-health[data-state="connected"]::before { color: #1f9d55; }
+.bot-health[data-state="stopped"]::before { color: #d64545; }
