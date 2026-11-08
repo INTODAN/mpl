@@ -4,7 +4,9 @@
 [client]
 # Local browser origins. Deployments override this with
 # CENTRIFUGO_CLIENT_ALLOWED_ORIGINS.
-allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+# The desktop app (#105) connects from tauri://localhost (macOS, Linux) or
+# http://tauri.localhost (Windows).
+allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "tauri://localhost", "http://tauri.localhost"]
 
 [client.subscribe_to_user_personal_channel]
 enabled = false
