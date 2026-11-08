@@ -169,6 +169,18 @@ func (service *Service) Join(ctx context.Context, principal domain.Principal, re
 		}
 		aggregate.Leases = append(aggregate.Leases, domain.Lease{LobbyID: scope.LobbyID, PlayerID: principal.PlayerID, Generation: member.Generation, ClientInstanceID: request.ClientInstanceID, ExpiresAt: now.Add(service.policy.LeaseDuration)})
 		aggregate.Lobby.MarkConnected(now)
+		// A member isn't also a watcher: drop the row, unless it is a kick,
+		// which stays so that the session can't watch after it leaves.
+		// Kicked rows don't count as watchers.
+		if watcher := domain.FindWatcher(aggregate, principal.PlayerID); watcher != nil && watcher.Watching() {
+			kept := aggregate.Watchers[:0]
+			for _, candidate := range aggregate.Watchers {
+				if candidate.PlayerID != principal.PlayerID {
+					kept = append(kept, candidate)
+				}
+			}
+			aggregate.Watchers = kept
+		}
 		return domain.Change{PublicChanged: true}, nil
 	})
 	if err != nil {

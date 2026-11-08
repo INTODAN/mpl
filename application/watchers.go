@@ -14,8 +14,9 @@ import (
 // watcher takes no seat and counts toward nothing, so watching never changes
 // capacity, the start roster, leases, grace or retention, and doesn't mark
 // the lobby connected. An active member keeps their member access and gets
-// no watcher row. A code of another game finds no lobby, and a watcher the
-// host kicked is refused with watcher_kicked.
+// no watcher row. A code of another game finds no lobby, a watcher the host
+// kicked is refused with watcher_kicked, and a new watcher beyond
+// domain.MaxWatchersPerLobby with watchers_full.
 func (service *Service) Watch(ctx context.Context, principal domain.Principal, request domain.WatchRequest) (domain.WatchAccess, error) {
 	if err := validatePrincipal(principal); err != nil {
 		return domain.WatchAccess{}, err
@@ -50,6 +51,9 @@ func (service *Service) Watch(ctx context.Context, principal domain.Principal, r
 				return domain.Change{}, domain.ErrWatcherKicked
 			}
 			return domain.Change{}, nil
+		}
+		if domain.ActiveWatchers(aggregate) >= domain.MaxWatchersPerLobby {
+			return domain.Change{}, domain.ErrWatchersFull
 		}
 		aggregate.Watchers = append(aggregate.Watchers, domain.Watcher{PlayerID: principal.PlayerID, DisplayName: displayName, JoinedAt: now})
 		return domain.Change{PublicChanged: true}, nil
@@ -92,11 +96,17 @@ func (service *Service) Watchers(ctx context.Context, principal domain.Principal
 	if err := validatePrincipal(principal); err != nil {
 		return nil, err
 	}
-	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
-		_, err := activeMember(aggregate, principal.PlayerID)
-		return domain.Change{}, err
-	})
+	if err := service.policy.ValidateScope(scope); err != nil {
+		return nil, err
+	}
+	// A read, without the room's lock: watchers are not worth serializing
+	// behind heartbeats, and an expired member's grace is applied by the
+	// next mutation anyway.
+	aggregate, err := service.store.Read(ctx, scope)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := activeMember(&aggregate, principal.PlayerID); err != nil {
 		return nil, err
 	}
 	watchers := make([]domain.Watcher, 0, len(aggregate.Watchers))

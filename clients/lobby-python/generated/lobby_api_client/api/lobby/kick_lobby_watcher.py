@@ -93,8 +93,10 @@ def sync_detailed(
     """Kick a watcher
 
      Lets the host remove a watcher, in any phase. The watcher is unsubscribed from the watch channel at
-    once and can't watch again with the join code (watcher_kicked). Kicking them again changes nothing;
-    a player who isn't a watcher of the lobby is not_found.
+    once and can't watch again with that session and the join code (watcher_kicked); the kick bars the
+    player ID, so a new guest session can watch again, and in a waiting lobby the kicked player can
+    still join as a member. Kicking them again changes nothing; a player who isn't a watcher of the
+    lobby is not_found.
 
     Args:
         game_key (str):
@@ -132,8 +134,10 @@ def sync(
     """Kick a watcher
 
      Lets the host remove a watcher, in any phase. The watcher is unsubscribed from the watch channel at
-    once and can't watch again with the join code (watcher_kicked). Kicking them again changes nothing;
-    a player who isn't a watcher of the lobby is not_found.
+    once and can't watch again with that session and the join code (watcher_kicked); the kick bars the
+    player ID, so a new guest session can watch again, and in a waiting lobby the kicked player can
+    still join as a member. Kicking them again changes nothing; a player who isn't a watcher of the
+    lobby is not_found.
 
     Args:
         game_key (str):
@@ -166,8 +170,10 @@ async def asyncio_detailed(
     """Kick a watcher
 
      Lets the host remove a watcher, in any phase. The watcher is unsubscribed from the watch channel at
-    once and can't watch again with the join code (watcher_kicked). Kicking them again changes nothing;
-    a player who isn't a watcher of the lobby is not_found.
+    once and can't watch again with that session and the join code (watcher_kicked); the kick bars the
+    player ID, so a new guest session can watch again, and in a waiting lobby the kicked player can
+    still join as a member. Kicking them again changes nothing; a player who isn't a watcher of the
+    lobby is not_found.
 
     Args:
         game_key (str):
@@ -203,8 +209,10 @@ async def asyncio(
     """Kick a watcher
 
      Lets the host remove a watcher, in any phase. The watcher is unsubscribed from the watch channel at
-    once and can't watch again with the join code (watcher_kicked). Kicking them again changes nothing;
-    a player who isn't a watcher of the lobby is not_found.
+    once and can't watch again with that session and the join code (watcher_kicked); the kick bars the
+    player ID, so a new guest session can watch again, and in a waiting lobby the kicked player can
+    still join as a member. Kicking them again changes nothing; a player who isn't a watcher of the
+    lobby is not_found.
 
     Args:
         game_key (str):

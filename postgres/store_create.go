@@ -84,7 +84,7 @@ func (store *Store) Create(ctx context.Context, principal domain.Principal, requ
 			}
 			return err
 		}
-		if err := persistChildren(tx, aggregate, true); err != nil {
+		if err := persistChildren(tx, aggregate, true, nil); err != nil {
 			return err
 		}
 		stored, err := loadAggregate(tx, aggregate.Lobby.Scope(), false)

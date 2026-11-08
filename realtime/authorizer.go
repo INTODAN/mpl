@@ -50,21 +50,25 @@ func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerI
 		if authorizer.policy.ValidateGame(channel.Scope.GameKey) != nil {
 			return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 		}
-		_, err = application.TransactNormalized(ctx, authorizer.store, authorizer.clock, authorizer.policy, channel.Scope, func(aggregate *domain.Aggregate) (domain.Change, error) {
+		if channel.Namespace == domain.ChannelWatch {
 			// The watch channel is open to active members and to watchers
-			// the host hasn't kicked; the room channel to members only.
-			if channel.Namespace == domain.ChannelWatch {
-				if !domain.CanWatch(aggregate, playerID) {
+			// the host hasn't kicked. It is read without the room's lock,
+			// since a watcher's subscription mustn't queue behind the
+			// room's writes.
+			aggregate, readError := authorizer.store.Read(ctx, channel.Scope)
+			if readError == nil && !domain.CanWatch(&aggregate, playerID) {
+				readError = domain.ErrPermissionDenied
+			}
+			err = readError
+		} else {
+			_, err = application.TransactNormalized(ctx, authorizer.store, authorizer.clock, authorizer.policy, channel.Scope, func(aggregate *domain.Aggregate) (domain.Change, error) {
+				member := domain.FindMember(aggregate, playerID)
+				if member == nil || !member.Active {
 					return domain.Change{}, domain.ErrPermissionDenied
 				}
 				return domain.Change{}, nil
-			}
-			member := domain.FindMember(aggregate, playerID)
-			if member == nil || !member.Active {
-				return domain.Change{}, domain.ErrPermissionDenied
-			}
-			return domain.Change{}, nil
-		})
+			})
+		}
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrPermissionDenied) {
 				return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied

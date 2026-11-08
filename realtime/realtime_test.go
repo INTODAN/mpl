@@ -119,6 +119,16 @@ type aggregateStore struct {
 	err       error
 }
 
+func (store *aggregateStore) Read(_ context.Context, scope domain.Scope) (domain.Aggregate, error) {
+	if store.err != nil {
+		return domain.Aggregate{}, store.err
+	}
+	if scope != store.aggregate.Lobby.Scope() {
+		return domain.Aggregate{}, domain.ErrNotFound
+	}
+	return store.aggregate.DeepCopy(), nil
+}
+
 func (store *aggregateStore) Transact(_ context.Context, scope domain.Scope, mutation domain.Mutation) (domain.Aggregate, error) {
 	if store.err != nil {
 		return domain.Aggregate{}, store.err

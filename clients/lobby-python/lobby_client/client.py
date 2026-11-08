@@ -505,7 +505,8 @@ class LobbyClient:
         doesn't follow the lobby. For an active member of the lobby, member
         is true and no watcher row is added. A wrong code, or one of another
         game, raises LobbyError not_found; a watcher the host kicked raises
-        LobbyError watcher_kicked.
+        LobbyError watcher_kicked, and a new watcher beyond the lobby's
+        limit LobbyError watchers_full.
         """
         self._require_auth()
         return await self._request(watch_lobby, body=WatchLobbyBody(game_key=game_key, join_code=join_code))

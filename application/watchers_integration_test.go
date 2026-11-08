@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -266,5 +267,135 @@ func TestRetentionDeletesALobbyWithItsWatchers(t *testing.T) {
 	var rows int64
 	if err := fixture.db.Model(&postgres.WatcherRecord{}).Where(&postgres.WatcherRecord{LobbyID: fixture.scope.LobbyID}).Count(&rows).Error; err != nil || rows != 0 {
 		t.Fatalf("watcher rows = %d, %v", rows, err)
+	}
+}
+
+func TestALobbyHasAtMostMaxWatchersPerLobbyWatchers(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	ctx := context.Background()
+	request := domain.WatchRequest{GameKey: fixture.scope.GameKey, JoinCode: fixture.initial.Lobby.JoinCode}
+	watchers := make([]domain.Principal, domain.MaxWatchersPerLobby)
+	for index := range watchers {
+		watchers[index] = fixture.player(t, "Watcher")
+		fixture.watch(t, watchers[index])
+	}
+	late := fixture.player(t, "Late")
+	_, err := fixture.service.Watch(ctx, late, request)
+	requireDomainError(t, err, domain.ErrWatchersFull)
+	if len(fixture.read(t).Watchers) != domain.MaxWatchersPerLobby {
+		t.Fatal("a refused watcher got a row")
+	}
+	// A watcher who already has a row, and a member, are not refused.
+	fixture.watch(t, watchers[0])
+	if access := fixture.watch(t, fixture.host); !access.Member {
+		t.Fatalf("member's access = %#v", access)
+	}
+	// Kicked and departed watchers free their place.
+	if err := fixture.service.KickWatcher(ctx, fixture.host, fixture.scope, watchers[1].PlayerID); err != nil {
+		t.Fatal(err)
+	}
+	fixture.watch(t, late)
+	_, err = fixture.service.Watch(ctx, fixture.player(t, "Later"), request)
+	requireDomainError(t, err, domain.ErrWatchersFull)
+	if err := fixture.service.Unwatch(ctx, watchers[2], fixture.scope); err != nil {
+		t.Fatal(err)
+	}
+	fixture.watch(t, fixture.player(t, "Later"))
+	snapshot, err := fixture.service.Snapshot(ctx, fixture.host, fixture.scope)
+	if err != nil || snapshot.WatcherCount != domain.MaxWatchersPerLobby {
+		t.Fatalf("watcher count = %d, %v", snapshot.WatcherCount, err)
+	}
+}
+
+// watcherVersions returns each watcher row's xmin, which changes whenever the
+// row is written.
+func (fixture *serviceFixture) watcherVersions(t *testing.T) map[string]string {
+	t.Helper()
+	var rows []struct {
+		PlayerID string
+		Version  string
+	}
+	if err := fixture.db.Raw("SELECT player_id::text AS player_id, xmin::text AS version FROM lobby_watchers WHERE lobby_id = ?", fixture.scope.LobbyID).Scan(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	versions := map[string]string{}
+	for _, row := range rows {
+		versions[row.PlayerID] = row.Version
+	}
+	return versions
+}
+
+func TestMutationsWriteOnlyTheWatcherRowsThatChanged(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	ctx := context.Background()
+	kicked, left, stays := fixture.player(t, "Kicked"), fixture.player(t, "Left"), fixture.player(t, "Stays")
+	for _, watcher := range []domain.Principal{kicked, left, stays} {
+		fixture.watch(t, watcher)
+	}
+	if err := fixture.service.KickWatcher(ctx, fixture.host, fixture.scope, kicked.PlayerID); err != nil {
+		t.Fatal(err)
+	}
+	before := fixture.watcherVersions(t)
+	if len(before) != 3 {
+		t.Fatalf("watcher rows = %v", before)
+	}
+	// Heartbeats, and watchers finding their rows again, write none.
+	for range 3 {
+		if _, err := fixture.service.Heartbeat(ctx, fixture.host, fixture.scope, domain.HeartbeatRequest{ClientInstanceID: fixture.clientID, MembershipGeneration: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixture.watch(t, stays)
+	if after := fixture.watcherVersions(t); !reflect.DeepEqual(after, before) {
+		t.Fatalf("a heartbeat wrote watcher rows: %v -> %v", before, after)
+	}
+	// Another watcher's change leaves the others' rows alone.
+	if err := fixture.service.Unwatch(ctx, left, fixture.scope); err != nil {
+		t.Fatal(err)
+	}
+	newcomer := fixture.player(t, "Newcomer")
+	fixture.watch(t, newcomer)
+	after := fixture.watcherVersions(t)
+	if _, found := after[left.PlayerID]; found || after[kicked.PlayerID] != before[kicked.PlayerID] || after[stays.PlayerID] != before[stays.PlayerID] || after[newcomer.PlayerID] == "" {
+		t.Fatalf("watcher rows after a leave and a new watcher: %v -> %v", before, after)
+	}
+}
+
+func TestAWatcherWhoJoinsIsAMemberAndNoLongerAWatcher(t *testing.T) {
+	fixture := newServiceFixture(t, 3)
+	ctx := context.Background()
+	joiner, kicked := fixture.player(t, "Joiner"), fixture.player(t, "Kicked")
+	fixture.watch(t, joiner)
+	fixture.watch(t, kicked)
+	if err := fixture.service.KickWatcher(ctx, fixture.host, fixture.scope, kicked.PlayerID); err != nil {
+		t.Fatal(err)
+	}
+	fixture.join(t, joiner)
+	// The kick bars the session from watching, not from joining a waiting lobby.
+	fixture.join(t, kicked)
+	snapshot, err := fixture.service.Snapshot(ctx, fixture.host, fixture.scope)
+	if err != nil || snapshot.WatcherCount != 0 || len(snapshot.Members) != 3 {
+		t.Fatalf("snapshot after the joins: watchers %d, members %d, %v", snapshot.WatcherCount, len(snapshot.Members), err)
+	}
+	if listed, err := fixture.service.Watchers(ctx, fixture.host, fixture.scope); err != nil || len(listed) != 0 {
+		t.Fatalf("watchers after the joins = %#v, %v", listed, err)
+	}
+	rows := fixture.read(t).Watchers
+	if len(rows) != 1 || rows[0].PlayerID != kicked.PlayerID || rows[0].Watching() {
+		t.Fatalf("watcher rows = %#v, want only the kick", rows)
+	}
+	if err := fixture.service.AuthorizeWatch(ctx, joiner, fixture.scope); err != nil {
+		t.Fatalf("a member can't read what watchers read: %v", err)
+	}
+}
+
+func TestWatcherForeignKeysCascadeSoOlderBuildsCanDeleteLobbiesAndPlayers(t *testing.T) {
+	fixture := newServiceFixture(t, 2)
+	var kinds []string
+	if err := fixture.db.Raw("SELECT confdeltype::text FROM pg_constraint WHERE conname IN ('fk_lobby_watchers_room', 'fk_lobby_watchers_player')").Scan(&kinds).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(kinds) != 2 || kinds[0] != "c" || kinds[1] != "c" {
+		t.Fatalf("watcher foreign key delete actions = %v, want cascade", kinds)
 	}
 }

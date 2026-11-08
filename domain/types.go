@@ -113,6 +113,12 @@ type Watcher struct {
 	KickedAt    *time.Time `json:"kicked_at"`
 }
 
+// MaxWatchersPerLobby caps the watchers a lobby can have at once, kicked and
+// departed ones left out. A new watcher beyond it is refused with
+// watchers_full; one who already watches keeps their row. Raise or lower it
+// here; see the lobby README.
+const MaxWatchersPerLobby = 50
+
 // Watching reports whether the watcher may still watch.
 func (watcher Watcher) Watching() bool { return watcher.KickedAt == nil }
 

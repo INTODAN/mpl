@@ -102,7 +102,8 @@ def sync_detailed(
     start roster, leases, the grace period or the lobby's retention. Starting to watch changes the
     snapshot's watcher_count. An active member of the lobby gets no watcher row and keeps their member
     access (member is true). A wrong code, or a code of another game, is not_found; a watcher the host
-    kicked is refused with watcher_kicked.
+    kicked is refused with watcher_kicked, and a new watcher beyond the lobby's limit of watchers with
+    watchers_full.
 
     Args:
         body (WatchLobbyBody):
@@ -140,7 +141,8 @@ def sync(
     start roster, leases, the grace period or the lobby's retention. Starting to watch changes the
     snapshot's watcher_count. An active member of the lobby gets no watcher row and keeps their member
     access (member is true). A wrong code, or a code of another game, is not_found; a watcher the host
-    kicked is refused with watcher_kicked.
+    kicked is refused with watcher_kicked, and a new watcher beyond the lobby's limit of watchers with
+    watchers_full.
 
     Args:
         body (WatchLobbyBody):
@@ -173,7 +175,8 @@ async def asyncio_detailed(
     start roster, leases, the grace period or the lobby's retention. Starting to watch changes the
     snapshot's watcher_count. An active member of the lobby gets no watcher row and keeps their member
     access (member is true). A wrong code, or a code of another game, is not_found; a watcher the host
-    kicked is refused with watcher_kicked.
+    kicked is refused with watcher_kicked, and a new watcher beyond the lobby's limit of watchers with
+    watchers_full.
 
     Args:
         body (WatchLobbyBody):
@@ -209,7 +212,8 @@ async def asyncio(
     start roster, leases, the grace period or the lobby's retention. Starting to watch changes the
     snapshot's watcher_count. An active member of the lobby gets no watcher row and keeps their member
     access (member is true). A wrong code, or a code of another game, is not_found; a watcher the host
-    kicked is refused with watcher_kicked.
+    kicked is refused with watcher_kicked, and a new watcher beyond the lobby's limit of watchers with
+    watchers_full.
 
     Args:
         body (WatchLobbyBody):

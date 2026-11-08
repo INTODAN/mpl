@@ -93,6 +93,9 @@ func WatcherCount(watchers []Watcher) int {
 	return count
 }
 
+// ActiveWatchers counts the watchers of the aggregate who may watch.
+func ActiveWatchers(aggregate *Aggregate) int { return WatcherCount(aggregate.Watchers) }
+
 // FindWatcher returns a pointer into the aggregate for locked mutation, or
 // nil when the player has no watcher row.
 func FindWatcher(aggregate *Aggregate, playerID string) *Watcher {

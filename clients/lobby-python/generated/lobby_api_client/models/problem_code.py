@@ -18,6 +18,7 @@ class ProblemCode(str, Enum):
     TEAM_FULL = "team_full"
     UNAUTHENTICATED = "unauthenticated"
     UNAVAILABLE = "unavailable"
+    WATCHERS_FULL = "watchers_full"
     WATCHER_KICKED = "watcher_kicked"
 
     def __str__(self) -> str:
