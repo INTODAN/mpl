@@ -101,6 +101,36 @@ func (handler handlers) leave(ctx context.Context, input *LeaveInput) (*EmptyOut
 	}
 	return &EmptyOutput{}, nil
 }
+func (handler handlers) watch(ctx context.Context, input *WatchLobbyInput) (*WatchLobbyOutput, error) {
+	result, err := handler.app.Watch(ctx, principalFromContext(ctx), domain.WatchRequest{GameKey: input.Body.GameKey, JoinCode: input.Body.JoinCode})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &WatchLobbyOutput{Body: WatchAccess{GameKey: result.Scope.GameKey, LobbyID: result.Scope.LobbyID, Channel: result.Channel, Member: result.Member}}, nil
+}
+func (handler handlers) unwatch(ctx context.Context, input *LeaveInput) (*EmptyOutput, error) {
+	if err := handler.app.Unwatch(ctx, principalFromContext(ctx), scope(input.ScopeInput)); err != nil {
+		return nil, problemFor(err)
+	}
+	return &EmptyOutput{}, nil
+}
+func (handler handlers) watchers(ctx context.Context, input *ScopeInput) (*WatchersOutput, error) {
+	result, err := handler.app.Watchers(ctx, principalFromContext(ctx), scope(*input))
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	list := WatcherList{Watchers: make([]Watcher, len(result))}
+	for index, watcher := range result {
+		list.Watchers[index] = Watcher{PlayerID: watcher.PlayerID, DisplayName: watcher.DisplayName, JoinedAt: watcher.JoinedAt}
+	}
+	return &WatchersOutput{Body: list}, nil
+}
+func (handler handlers) kickWatcher(ctx context.Context, input *KickWatcherInput) (*EmptyOutput, error) {
+	if err := handler.app.KickWatcher(ctx, principalFromContext(ctx), scope(input.ScopeInput), input.PlayerID); err != nil {
+		return nil, problemFor(err)
+	}
+	return &EmptyOutput{}, nil
+}
 func (handler handlers) heartbeat(ctx context.Context, input *HeartbeatInput) (*HeartbeatOutput, error) {
 	body := input.Body
 	result, err := handler.app.Heartbeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), domain.HeartbeatRequest{ClientInstanceID: body.ClientInstanceID, MembershipGeneration: body.MembershipGeneration})

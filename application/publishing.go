@@ -78,6 +78,11 @@ func (store *PublishingStore) revocationStillDue(ctx context.Context, revocation
 }
 
 func revocationApplies(aggregate domain.Aggregate, revocation domain.RevocationIntent) bool {
+	if revocation.Watch {
+		// A watcher who left may have started watching again, and a member
+		// keeps the watch channel.
+		return !domain.CanWatch(&aggregate, revocation.PlayerID)
+	}
 	member := domain.FindMember(&aggregate, revocation.PlayerID)
 	return member == nil || !member.Active || member.Generation <= revocation.Generation
 }

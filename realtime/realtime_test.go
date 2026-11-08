@@ -170,3 +170,40 @@ func TestRoomAndPrivateAuthorizationIsolation(t *testing.T) {
 }
 
 func ptr(value string) *string { return &value }
+
+func TestWatchChannelIsForMembersAndWatchersTheHostHasNotKicked(t *testing.T) {
+	const watcher = "dddddddd-dddd-4ddd-dddd-dddddddddddd"
+	const kicked = "eeeeeeee-eeee-4eee-eeee-eeeeeeeeeeee"
+	now := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
+	kickedAt := now.Add(-time.Minute)
+	store := &aggregateStore{aggregate: domain.Aggregate{
+		Lobby:    domain.Lobby{ID: room, GameKey: "island-battles", Phase: domain.PhaseStarted, HostPlayerID: ptr(actor), Version: 1},
+		Members:  []domain.Member{{ID: actor, PlayerID: actor, Active: true, Generation: 1, JoinSequence: 1}},
+		Leases:   []domain.Lease{{PlayerID: actor, Generation: 1, ExpiresAt: now.Add(time.Minute)}},
+		Watchers: []domain.Watcher{{PlayerID: watcher, JoinedAt: now}, {PlayerID: kicked, JoinedAt: now, KickedAt: &kickedAt}},
+	}}
+	identity := &domain.SessionVerification{ExpiresAt: now.Add(time.Hour)}
+	authorizer, _ := realtime.NewAuthorizer(identityStore{identity: identity}, store, &fixedClock{now}, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo"}))
+	watch := "watch:island-battles:" + room
+	authorize := func(playerID, name string) error {
+		identity.Principal.PlayerID = playerID
+		_, err := authorizer.AuthorizeSubscription(context.Background(), playerID, name)
+		return err
+	}
+	for _, playerID := range []string{actor, watcher} {
+		if err := authorize(playerID, watch); err != nil {
+			t.Fatalf("watch channel refused %s: %v", playerID, err)
+		}
+	}
+	for _, playerID := range []string{kicked, other} {
+		if err := authorize(playerID, watch); !errors.Is(err, domain.ErrPermissionDenied) {
+			t.Fatalf("watch channel allowed %s: %v", playerID, err)
+		}
+	}
+	// A watcher never gets the room channel, nor another game's watch channel.
+	for _, name := range []string{channel, "watch:quiz-demo:" + room, watch + ":extra", "watch:island-battles:" + strings.ToUpper(room)} {
+		if err := authorize(watcher, name); err == nil {
+			t.Fatalf("authorized %s for a watcher", name)
+		}
+	}
+}

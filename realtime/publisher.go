@@ -97,12 +97,20 @@ func roomCommands(room domain.Lobby, change domain.Change, stillDue domain.Revoc
 		}
 		commands = append(commands, command{channel: channel, data: data, idempotencyKey: eventID})
 	}
+	watchChannel, err := domain.WatchChannel(room.Scope())
+	if err != nil {
+		return nil, err
+	}
 	for _, revocation := range change.Revocations {
 		if revocation.Scope != room.Scope() || domain.ValidateUUID(revocation.PlayerID) != nil {
 			return nil, domain.ErrInvalidInput
 		}
+		revoked := channel
+		if revocation.Watch {
+			revoked = watchChannel
+		}
 		// Unsubscribing by user, without a client ID, covers every device.
-		commands = append(commands, command{channel: channel, user: revocation.PlayerID, revocation: revocation, stillDue: stillDue})
+		commands = append(commands, command{channel: revoked, user: revocation.PlayerID, revocation: revocation, stillDue: stillDue})
 	}
 	return commands, nil
 }

@@ -31,6 +31,10 @@ from .start_roster_entry import StartRosterEntry
 from .start_rules import StartRules
 from .team import Team
 from .team_definition import TeamDefinition
+from .watch_access import WatchAccess
+from .watch_lobby_body import WatchLobbyBody
+from .watcher import Watcher
+from .watcher_list import WatcherList
 
 __all__ = (
     "AddSeatBody",
@@ -64,4 +68,8 @@ __all__ = (
     "StartRules",
     "Team",
     "TeamDefinition",
+    "WatchAccess",
+    "Watcher",
+    "WatcherList",
+    "WatchLobbyBody",
 )

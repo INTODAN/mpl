@@ -10,6 +10,9 @@ type ChannelNamespace string
 const (
 	ChannelLobby  ChannelNamespace = "lobby"
 	ChannelPlayer ChannelNamespace = "player"
+	// ChannelWatch carries a lobby's game to its watchers and members. The
+	// lobby authorizes it; the game decides what it publishes there.
+	ChannelWatch ChannelNamespace = "watch"
 )
 
 type Channel struct {
@@ -57,6 +60,15 @@ func RoomChannel(scope Scope) (string, error) {
 	}
 	return "lobby:" + scope.GameKey + ":" + scope.LobbyID, nil
 }
+
+// WatchChannel is the channel where a lobby's game publishes for watchers:
+// watch:<game_key>:<lobby_id>.
+func WatchChannel(scope Scope) (string, error) {
+	if _, err := RoomChannel(scope); err != nil {
+		return "", err
+	}
+	return string(ChannelWatch) + ":" + scope.GameKey + ":" + scope.LobbyID, nil
+}
 func PlayerChannel(playerID string) (string, error) {
 	if err := ValidateUUID(playerID); err != nil {
 		return "", err
@@ -70,6 +82,13 @@ func ParseChannel(value string) (Channel, error) {
 		canonical, err := RoomChannel(scope)
 		if err == nil && canonical == value {
 			return Channel{Namespace: ChannelLobby, Scope: scope}, nil
+		}
+	}
+	if len(segments) == 3 && segments[0] == string(ChannelWatch) {
+		scope := Scope{GameKey: segments[1], LobbyID: segments[2]}
+		canonical, err := WatchChannel(scope)
+		if err == nil && canonical == value {
+			return Channel{Namespace: ChannelWatch, Scope: scope}, nil
 		}
 	}
 	if len(segments) == 2 && segments[0] == string(ChannelPlayer) {

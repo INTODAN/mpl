@@ -571,6 +571,7 @@
               "invalid_game_settings",
               "invalid_seat_settings",
               "game_requirement",
+              "watcher_kicked",
               "unavailable",
               "internal_error"
             ],
@@ -706,6 +707,12 @@
               "array",
               "null"
             ]
+          },
+          "watcher_count": {
+            "description": "How many people watch the lobby with its join code, kicked watchers left out. Watchers take no seat. A change to it is a lobby change, announced with lobby.changed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -715,7 +722,8 @@
           "start_roster",
           "membership_generation",
           "channel",
-          "start_rules"
+          "start_rules",
+          "watcher_count"
         ],
         "type": "object"
       },
@@ -816,6 +824,119 @@
         "required": [
           "name",
           "capacity"
+        ],
+        "type": "object"
+      },
+      "WatchAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/WatchAccess.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "channel": {
+            "description": "The lobby's watch channel, watch:\u003cgame_key\u003e:\u003clobby_id\u003e, where its game publishes what watchers may see. The subscribe proxy allows it while you are a watcher the host hasn't kicked, or an active member.",
+            "type": "string"
+          },
+          "game_key": {
+            "type": "string"
+          },
+          "lobby_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "member": {
+            "description": "True when you are an active member of the lobby. You get no watcher row and keep your member access, which includes the watch channel.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "game_key",
+          "lobby_id",
+          "channel",
+          "member"
+        ],
+        "type": "object"
+      },
+      "WatchLobbyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/WatchLobbyBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "game_key": {
+            "pattern": "^[a-z][a-z0-9-]{0,31}$",
+            "type": "string"
+          },
+          "join_code": {
+            "maxLength": 8,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "game_key",
+          "join_code"
+        ],
+        "type": "object"
+      },
+      "Watcher": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "joined_at": {
+            "description": "When they started watching.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "player_id": {
+            "description": "The watcher's player ID, for kicking them.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id",
+          "display_name",
+          "joined_at"
+        ],
+        "type": "object"
+      },
+      "WatcherList": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/WatcherList.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "watchers": {
+            "description": "The watchers the host hasn't kicked, in the order they started watching.",
+            "items": {
+              "$ref": "#/components/schemas/Watcher"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "watchers"
         ],
         "type": "object"
       }
@@ -2061,6 +2182,354 @@
         ]
       }
     },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watch": {
+      "delete": {
+        "description": "Removes your watcher row and unsubscribes you from the watch channel. A kicked watcher stays kicked. Without a watcher row it is not_found.",
+        "operationId": "unwatchLobby",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Stop watching a lobby",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers": {
+      "get": {
+        "description": "Lists the watchers the host hasn't kicked, with their display names, for the lobby's active members.",
+        "operationId": "listLobbyWatchers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatcherList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "List a lobby's watchers",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers/{player_id}": {
+      "delete": {
+        "description": "Lets the host remove a watcher, in any phase. The watcher is unsubscribed from the watch channel at once and can't watch again with the join code (watcher_kicked). Kicking them again changes nothing; a player who isn't a watcher of the lobby is not_found.",
+        "operationId": "kickLobbyWatcher",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The watcher's player ID.",
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "description": "The watcher's player ID.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Kick a watcher",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
     "/lobby/v1/lobbies": {
       "post": {
         "description": "Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail with invalid_game_settings. The lobby stores the settings without reading them and returns them in every snapshot, including the started one. They can't change after creation. Repeating the same request_id and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a day after creation, unless its game sets other times.",
@@ -2372,6 +2841,113 @@
           }
         },
         "summary": "Create a guest session",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/watches": {
+      "post": {
+        "description": "Lets anyone with a guest session and the lobby's join code watch it, in any phase: waiting, started or closed while it still exists. Adds your watcher row, or finds the one you have, and returns the lobby and its watch channel, where its game publishes what watchers may see; the game documents its own watcher reads. A watcher takes no seat and counts toward nothing: not the lobby's capacity, the start roster, leases, the grace period or the lobby's retention. Starting to watch changes the snapshot's watcher_count. An active member of the lobby gets no watcher row and keeps their member access (member is true). A wrong code, or a code of another game, is not_found; a watcher the host kicked is refused with watcher_kicked.",
+        "operationId": "watchLobby",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchLobbyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchAccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Watch a lobby",
         "tags": [
           "Lobby"
         ]

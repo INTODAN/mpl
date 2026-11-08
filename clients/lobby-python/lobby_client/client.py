@@ -20,12 +20,14 @@ from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
     add_lobby_seat, create_lobby, create_lobby_connection_token, create_lobby_session,
     get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
-    remove_lobby_seat, select_lobby_team, set_lobby_ready, start_lobby,
+    kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, select_lobby_team,
+    set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
 )
 from lobby_api_client.models import (
     AddSeatBody, AddSeatBodySeatSettings, ConnectionTokenInputBody, CreateLobbyBody,
     CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
     JoinLobbyBody, ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
+    WatchAccess, Watcher, WatchLobbyBody,
 )
 from lobby_api_client.types import UNSET
 
@@ -493,6 +495,37 @@ class LobbyClient:
     async def remove_seat(self, scope: Scope, seat_id: str) -> Snapshot:
         """Remove a seat that the host added, by its member ID."""
         return await self._command(scope, remove_lobby_seat, seat_id=UUID(seat_id))
+
+    async def watch(self, *, game_key: str, join_code: str) -> WatchAccess:
+        """Watch a lobby with its join code, without taking a seat.
+
+        Returns the lobby's ID and its watch channel, where the lobby's game
+        publishes what watchers may see; the game documents its own watcher
+        reads. A watcher holds no lease and needs no heartbeat, so this client
+        doesn't follow the lobby. For an active member of the lobby, member
+        is true and no watcher row is added. A wrong code, or one of another
+        game, raises LobbyError not_found; a watcher the host kicked raises
+        LobbyError watcher_kicked.
+        """
+        self._require_auth()
+        return await self._request(watch_lobby, body=WatchLobbyBody(game_key=game_key, join_code=join_code))
+
+    async def unwatch(self, scope: Scope) -> None:
+        """Stop watching a lobby. A kicked watcher stays kicked."""
+        self._require_auth()
+        await self._request(unwatch_lobby, **self._path(scope))
+
+    async def watchers(self, scope: Scope) -> list[Watcher]:
+        """List the lobby's watchers that the host hasn't kicked, for its members."""
+        self._require_auth()
+        result = await self._request(list_lobby_watchers, **self._path(scope))
+        return list(result.watchers)
+
+    async def kick_watcher(self, scope: Scope, player_id: str) -> None:
+        """Let the host remove a watcher, who is unsubscribed at once and can't
+        watch again with the join code."""
+        self._require_auth()
+        await self._request(kick_lobby_watcher, **self._path(scope), player_id=UUID(player_id))
 
     async def updates(self, scope: Scope) -> AsyncIterator[Snapshot]:
         state = self._state(scope)

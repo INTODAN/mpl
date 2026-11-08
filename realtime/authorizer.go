@@ -51,6 +51,14 @@ func (authorizer *Authorizer) AuthorizeSubscription(ctx context.Context, playerI
 			return domain.SubscriptionAuthorization{}, domain.ErrPermissionDenied
 		}
 		_, err = application.TransactNormalized(ctx, authorizer.store, authorizer.clock, authorizer.policy, channel.Scope, func(aggregate *domain.Aggregate) (domain.Change, error) {
+			// The watch channel is open to active members and to watchers
+			// the host hasn't kicked; the room channel to members only.
+			if channel.Namespace == domain.ChannelWatch {
+				if !domain.CanWatch(aggregate, playerID) {
+					return domain.Change{}, domain.ErrPermissionDenied
+				}
+				return domain.Change{}, nil
+			}
 			member := domain.FindMember(aggregate, playerID)
 			if member == nil || !member.Active {
 				return domain.Change{}, domain.ErrPermissionDenied

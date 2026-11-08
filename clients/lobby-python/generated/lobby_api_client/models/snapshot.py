@@ -29,6 +29,8 @@ class Snapshot:
         start_roster (list[StartRosterEntry] | None):
         start_rules (StartRules):
         teams (list[Team] | None):
+        watcher_count (int): How many people watch the lobby with its join code, kicked watchers left out. Watchers take
+            no seat. A change to it is a lobby change, announced with lobby.changed.
         schema (str | Unset): A URL to the JSON Schema for this object.
     """
 
@@ -39,6 +41,7 @@ class Snapshot:
     start_roster: list[StartRosterEntry] | None
     start_rules: StartRules
     teams: list[Team] | None
+    watcher_count: int
     schema: str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,6 +83,8 @@ class Snapshot:
         else:
             teams = self.teams
 
+        watcher_count = self.watcher_count
+
         schema = self.schema
 
         field_dict: dict[str, Any] = {}
@@ -93,6 +98,7 @@ class Snapshot:
                 "start_roster": start_roster,
                 "start_rules": start_rules,
                 "teams": teams,
+                "watcher_count": watcher_count,
             }
         )
         if schema is not UNSET:
@@ -177,6 +183,8 @@ class Snapshot:
 
         teams = _parse_teams(d.pop("teams"))
 
+        watcher_count = d.pop("watcher_count")
+
         schema = d.pop("$schema", UNSET)
 
         snapshot = cls(
@@ -187,6 +195,7 @@ class Snapshot:
             start_roster=start_roster,
             start_rules=start_rules,
             teams=teams,
+            watcher_count=watcher_count,
             schema=schema,
         )
 

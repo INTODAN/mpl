@@ -80,6 +80,40 @@ type JoinLobbyBody struct {
 	JoinCode         string `json:"join_code" minLength:"8" maxLength:"8"`
 	ClientInstanceID string `json:"client_instance_id" format:"uuid"`
 }
+type WatchLobbyInput struct {
+	Body WatchLobbyBody `json:"-"`
+}
+type WatchLobbyBody struct {
+	GameKey  string `json:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
+	JoinCode string `json:"join_code" minLength:"8" maxLength:"8"`
+}
+type WatchLobbyOutput struct {
+	Body WatchAccess `json:"-"`
+}
+
+// WatchAccess tells a person who asked to watch where the lobby's game
+// arrives for watchers.
+type WatchAccess struct {
+	GameKey string `json:"game_key"`
+	LobbyID string `json:"lobby_id" format:"uuid"`
+	Channel string `json:"channel" doc:"The lobby's watch channel, watch:<game_key>:<lobby_id>, where its game publishes what watchers may see. The subscribe proxy allows it while you are a watcher the host hasn't kicked, or an active member."`
+	Member  bool   `json:"member" doc:"True when you are an active member of the lobby. You get no watcher row and keep your member access, which includes the watch channel."`
+}
+type WatchersOutput struct {
+	Body WatcherList `json:"-"`
+}
+type WatcherList struct {
+	Watchers []Watcher `json:"watchers" nullable:"false" doc:"The watchers the host hasn't kicked, in the order they started watching."`
+}
+type Watcher struct {
+	PlayerID    string    `json:"player_id" format:"uuid" doc:"The watcher's player ID, for kicking them."`
+	DisplayName string    `json:"display_name"`
+	JoinedAt    time.Time `json:"joined_at" doc:"When they started watching."`
+}
+type KickWatcherInput struct {
+	ScopeInput
+	PlayerID string `path:"player_id" format:"uuid" doc:"The watcher's player ID."`
+}
 type ScopeInput struct {
 	GameKey string `path:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
 	LobbyID string `path:"lobby_id" format:"uuid"`
@@ -218,6 +252,7 @@ type Snapshot struct {
 	MembershipGeneration int64              `json:"membership_generation"`
 	Channel              string             `json:"channel"`
 	StartRules           StartRules         `json:"start_rules"`
+	WatcherCount         int                `json:"watcher_count" minimum:"0" doc:"How many people watch the lobby with its join code, kicked watchers left out. Watchers take no seat. A change to it is a lobby change, announced with lobby.changed."`
 }
 
 // StartRules are the start conditions the lobby's game declares on top of the
@@ -290,5 +325,5 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		roster[index] = StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder}
 	}
 	room := source.Lobby
-	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}}
+	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}, WatcherCount: source.WatcherCount}
 }

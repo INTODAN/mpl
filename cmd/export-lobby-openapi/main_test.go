@@ -48,6 +48,10 @@ func TestExportPublicOperations(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  "leaveLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   "heartbeatLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": "releaseLobbyLease",
+		"/lobby/v1/watches":                                                         "watchLobby",
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watch":                       "unwatchLobby",
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers":                    "listLobbyWatchers",
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers/{player_id}":        "kickLobbyWatcher",
 	}
 	if len(paths) != len(want) {
 		t.Fatalf("path count = %d, want %d", len(paths), len(want))

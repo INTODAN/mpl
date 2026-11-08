@@ -38,6 +38,10 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  {http.MethodDelete, "leaveLobby", http.StatusNoContent},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   {http.MethodPost, "heartbeatLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": {http.MethodDelete, "releaseLobbyLease", http.StatusNoContent},
+		"/lobby/v1/watches":                                                         {http.MethodPost, "watchLobby", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watch":                       {http.MethodDelete, "unwatchLobby", http.StatusNoContent},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers":                    {http.MethodGet, "listLobbyWatchers", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers/{player_id}":        {http.MethodDelete, "kickLobbyWatcher", http.StatusNoContent},
 	}
 	for path, want := range expected {
 		item := api.OpenAPI().Paths[path]
@@ -194,6 +198,35 @@ func TestSeatsPassSettingsThroughUnreadAndShowTheirKind(t *testing.T) {
 	}
 }
 
+func TestWatchRoutesReturnTheWatchChannelListAndKick(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	response := api.Post("/lobby/v1/watches", "Authorization: Bearer good", map[string]string{"game_key": "island-battles", "join_code": "abcd2345"})
+	if response.Code != http.StatusOK || application.watchRequest.JoinCode != "abcd2345" ||
+		!strings.Contains(response.Body.String(), `"channel":"watch:island-battles:`+testUUID+`"`) || !strings.Contains(response.Body.String(), `"member":false`) {
+		t.Fatalf("watch = %d %s", response.Code, response.Body.String())
+	}
+	application.watchError = domain.ErrWatcherKicked
+	response = api.Post("/lobby/v1/watches", "Authorization: Bearer good", map[string]string{"game_key": "island-battles", "join_code": "abcd2345"})
+	var problem Problem
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != http.StatusForbidden || problem.Code != domain.CodeWatcherKicked {
+		t.Fatalf("kicked watch = %d %s", response.Code, response.Body.String())
+	}
+	path := "/lobby/v1/games/island-battles/lobbies/" + testUUID
+	response = api.Get(path+"/watchers", "Authorization: Bearer good")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"watchers":[{"player_id":"44444444-4444-4444-8444-444444444444","display_name":"Robin","joined_at":"1970-01-01T00:00:00Z"}]`) {
+		t.Fatalf("watchers = %d %s", response.Code, response.Body.String())
+	}
+	response = api.Delete(path+"/watchers/44444444-4444-4444-8444-444444444444", "Authorization: Bearer good")
+	if response.Code != http.StatusNoContent || application.kickedWatcher != "44444444-4444-4444-8444-444444444444" {
+		t.Fatalf("kick = %d %s", response.Code, response.Body.String())
+	}
+	if response = api.Delete(path+"/watch", "Authorization: Bearer good"); response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf("unwatch = %d %q", response.Code, response.Body.String())
+	}
+}
+
 func TestProblemStatusAndCodeMapping(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
@@ -320,6 +353,9 @@ type fakeApplication struct {
 	seatRequest     domain.AddSeatRequest
 	seatError       error
 	removedSeat     string
+	watchRequest    domain.WatchRequest
+	watchError      error
+	kickedWatcher   string
 }
 
 func fakeSnapshot() domain.Snapshot {
@@ -370,6 +406,21 @@ func (application *fakeApplication) RemoveSeat(_ context.Context, _ domain.Princ
 	return fakeSnapshot(), nil
 }
 func (*fakeApplication) Leave(context.Context, domain.Principal, domain.Scope) error { return nil }
+func (application *fakeApplication) Watch(_ context.Context, _ domain.Principal, request domain.WatchRequest) (domain.WatchAccess, error) {
+	application.watchRequest = request
+	if application.watchError != nil {
+		return domain.WatchAccess{}, application.watchError
+	}
+	return domain.WatchAccess{Scope: domain.Scope{GameKey: request.GameKey, LobbyID: testUUID}, Channel: "watch:" + request.GameKey + ":" + testUUID}, nil
+}
+func (*fakeApplication) Unwatch(context.Context, domain.Principal, domain.Scope) error { return nil }
+func (*fakeApplication) Watchers(context.Context, domain.Principal, domain.Scope) ([]domain.Watcher, error) {
+	return []domain.Watcher{{PlayerID: "44444444-4444-4444-8444-444444444444", DisplayName: "Robin", JoinedAt: time.Unix(0, 0).UTC()}}, nil
+}
+func (application *fakeApplication) KickWatcher(_ context.Context, _ domain.Principal, _ domain.Scope, playerID string) error {
+	application.kickedWatcher = playerID
+	return nil
+}
 func (*fakeApplication) Heartbeat(context.Context, domain.Principal, domain.Scope, domain.HeartbeatRequest) (domain.HeartbeatResult, error) {
 	return domain.HeartbeatResult{}, nil
 }

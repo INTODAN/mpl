@@ -107,6 +107,20 @@ type StartRosterRecord struct {
 
 func (StartRosterRecord) TableName() string { return "lobby_start_roster" }
 
+// WatcherRecord is migration 0006's: a person who watches the lobby with its
+// join code, outside its members. A watcher who leaves is deleted; one the
+// host kicked keeps the row with KickedAt set. DisplayName is copied when they
+// start watching, as a membership's is.
+type WatcherRecord struct {
+	LobbyID     string     `gorm:"column:lobby_id;type:uuid;primaryKey"`
+	PlayerID    string     `gorm:"column:player_id;type:uuid;primaryKey"`
+	DisplayName string     `gorm:"column:display_name;not null"`
+	JoinedAt    time.Time  `gorm:"column:joined_at;not null"`
+	KickedAt    *time.Time `gorm:"column:kicked_at"`
+}
+
+func (WatcherRecord) TableName() string { return "lobby_watchers" }
+
 // CreateRequestRecord retains the original representation used to answer an
 // idempotent create retry. LobbyID, from migration 0004, names the lobby it
 // created, so the request is deleted with that lobby; it is null only for

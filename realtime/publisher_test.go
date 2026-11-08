@@ -117,6 +117,23 @@ func TestPublishChangeSendsInvalidationAndRevocationsInOneRequest(t *testing.T) 
 	}
 }
 
+func TestPublishChangeUnsubscribesAWatcherFromTheWatchChannel(t *testing.T) {
+	api := &centrifugoAPI{reply: succeed}
+	publisher, _ := newPublisher(t, api)
+	lobby := domain.Lobby{ID: room, GameKey: "island-battles", Version: 3}
+	change := domain.Change{PublicChanged: true, Revocations: []domain.RevocationIntent{{PlayerID: other, Scope: lobby.Scope(), Watch: true}}}
+	if err := publisher.PublishChange(context.Background(), lobby, change, alwaysDue); err != nil {
+		t.Fatal(err)
+	}
+	requests := api.recorded()
+	if len(requests) != 1 || len(requests[0]) != 2 {
+		t.Fatalf("want one request with two commands, got %+v", requests)
+	}
+	if revocation := requests[0][1]; revocation.Method != "unsubscribe" || revocation.Params.User != other || revocation.Params.Channel != "watch:island-battles:"+room {
+		t.Fatalf("watcher revocation = %+v", revocation)
+	}
+}
+
 func TestPublishChangeRejectsRevocationForAnotherRoom(t *testing.T) {
 	api := &centrifugoAPI{reply: succeed}
 	publisher, logs := newPublisher(t, api)

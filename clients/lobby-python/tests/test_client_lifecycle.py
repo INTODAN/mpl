@@ -260,6 +260,44 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
     assert removed.members == [] and seen[-1][:2] == ("DELETE", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/seats/{seat}")
 
 
+async def test_watchers_watch_with_the_code_and_the_host_kicks_them(h):
+    watcher = str(uuid4())
+    seen = []
+
+    async def watching(request):
+        if "/watch" not in request.url.path:
+            return None
+        seen.append((request.method, request.url.path, request.content and json.loads(request.content)))
+        if request.method == "POST" and json.loads(request.content)["join_code"] == "KICKED22":
+            return httpx.Response(403, json={"code": "watcher_kicked", "status": 403, "title": "Forbidden",
+                                             "detail": "the host removed you from this lobby's watchers"})
+        if request.method == "POST":
+            return httpx.Response(200, json=dict(game_key="quiz-demo", lobby_id=SCOPE.lobby_id,
+                                                 channel=f"watch:quiz-demo:{SCOPE.lobby_id}", member=False))
+        if request.method == "GET":
+            return httpx.Response(200, json=dict(watchers=[dict(player_id=watcher, display_name="Robin",
+                                                                joined_at="2026-09-20T00:00:00Z")]))
+        return httpx.Response(204)
+    h.hook = watching
+    access = await h.client.watch(game_key="quiz-demo", join_code="ABCD2345")
+    assert (str(access.lobby_id), access.channel, access.member) == (SCOPE.lobby_id, f"watch:quiz-demo:{SCOPE.lobby_id}", False)
+    assert seen[0] == ("POST", "/lobby/v1/watches", {"game_key": "quiz-demo", "join_code": "ABCD2345"})
+    # Watching follows no lobby: no heartbeat, no lease.
+    assert not h.client._states and not h.client._leases
+    with pytest.raises(LobbyError) as kicked:
+        await h.client.watch(game_key="quiz-demo", join_code="KICKED22")
+    assert (kicked.value.code, kicked.value.status) == ("watcher_kicked", 403)
+    listed = await h.client.watchers(SCOPE)
+    assert [(str(item.player_id), item.display_name) for item in listed] == [(watcher, "Robin")]
+    await h.client.kick_watcher(SCOPE, watcher)
+    await h.client.unwatch(SCOPE)
+    assert [call[:2] for call in seen[-3:]] == [
+        ("GET", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/watchers"),
+        ("DELETE", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/watchers/{watcher}"),
+        ("DELETE", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/watch"),
+    ]
+
+
 async def test_explicit_identity(h):
     h.client.credential = None
     assert h.calls == []

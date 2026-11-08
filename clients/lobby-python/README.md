@@ -10,6 +10,8 @@ under `generated/`; update the schema/export and run the generator instead.
 
 The lobby API also gained the error code `game_requirement` and a `type` field on error bodies: a game can refuse `PUT …/ready` with `ready: true`, or the start, until a member has done something in the game's own API (Island Battles: choosing a bot). Regenerate or upgrade the client; the SDK's error then carries the game's problem type, and a client that doesn't know the code treats it as an unrecognized error. What to do: handle `game_requirement` by showing its `detail` to the player, who must act in the game's API and then retry.
 
+People outside a lobby can watch it with its join code, without a seat: `watch(game_key=..., join_code=...)` returns the lobby ID and its watch channel (`member` is true for an active member, who gets no watcher row), and `unwatch(scope)` stops. Members list the watchers with `watchers(scope)`, and the host kicks one with `kick_watcher(scope, player_id)`. A watcher holds no lease, so the client follows nothing for them; subscribe to the watch channel with the Centrifugo SDK and use the game's watcher reads. Snapshots carry `watcher_count`, and the new error code `watcher_kicked` refuses a kicked watcher. What to do: regenerate or upgrade the client, which needs `watcher_count` in every snapshot.
+
 ## Installing from PyPI
 
 Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):

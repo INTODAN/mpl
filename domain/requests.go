@@ -48,6 +48,12 @@ type AddSeatRequest struct {
 	TeamID       string          `json:"team_id"`
 	SeatSettings json.RawMessage `json:"seat_settings"`
 }
+
+// WatchRequest asks to watch the lobby of a game that has this join code.
+type WatchRequest struct {
+	GameKey  string `json:"game_key"`
+	JoinCode string `json:"join_code"`
+}
 type HeartbeatRequest struct {
 	ClientInstanceID     string `json:"client_instance_id"`
 	MembershipGeneration int64  `json:"membership_generation"`

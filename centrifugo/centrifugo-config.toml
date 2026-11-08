@@ -86,5 +86,30 @@ allow_user_limited_channels = false
 join_leave = false
 force_push_join_leave = false
 
+# A lobby's game for people who watch it with the join code. The subscribe
+# proxy allows active members and watchers the host hasn't kicked; the host's
+# kick unsubscribes a watcher at once. History lets a reconnecting watcher
+# recover what it missed, as on the player channel.
+[[channel.namespaces]]
+name = "watch"
+subscribe_proxy_enabled = true
+sub_refresh_proxy_enabled = true
+history_size = 128
+history_ttl = "300s"
+force_recovery = true
+force_positioning = true
+allow_publish_for_client = false
+allow_publish_for_subscriber = false
+allow_publish_for_anonymous = false
+allow_history_for_client = false
+allow_history_for_subscriber = false
+allow_history_for_anonymous = false
+allow_presence_for_client = false
+allow_presence_for_subscriber = false
+allow_presence_for_anonymous = false
+allow_user_limited_channels = false
+join_leave = false
+force_push_join_leave = false
+
 [admin]
 enabled = true

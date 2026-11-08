@@ -55,7 +55,7 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 	if len(rooms) == 0 {
 		return domain.Aggregate{}, domain.ErrNotFound
 	}
-	aggregate := domain.Aggregate{Lobby: domainRoom(rooms[0]), Teams: []domain.Team{}, Members: []domain.Member{}, Leases: []domain.Lease{}, StartRoster: domain.StartRoster{}}
+	aggregate := domain.Aggregate{Lobby: domainRoom(rooms[0]), Teams: []domain.Team{}, Members: []domain.Member{}, Leases: []domain.Lease{}, StartRoster: domain.StartRoster{}, Watchers: []domain.Watcher{}}
 	var teams []TeamRecord
 	if err := tx.Where(&TeamRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "team_order"}}).Find(&teams).Error; err != nil {
 		return domain.Aggregate{}, err
@@ -83,6 +83,13 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 	}
 	for _, entry := range roster {
 		aggregate.StartRoster = append(aggregate.StartRoster, domain.StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder})
+	}
+	var watchers []WatcherRecord
+	if err := tx.Where(&WatcherRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "joined_at"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "player_id"}}).Find(&watchers).Error; err != nil {
+		return domain.Aggregate{}, err
+	}
+	for _, watcher := range watchers {
+		aggregate.Watchers = append(aggregate.Watchers, domain.Watcher{PlayerID: watcher.PlayerID, DisplayName: watcher.DisplayName, JoinedAt: watcher.JoinedAt, KickedAt: watcher.KickedAt})
 	}
 	return aggregate, nil
 }

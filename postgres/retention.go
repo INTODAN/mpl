@@ -74,8 +74,8 @@ func deleteSessions(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, er
 		clause.Lt{Column: clause.Column{Name: "expires_at"}, Value: cutoffs.SessionsExpiredBefore}, nil)
 }
 
-// deleteLobbies deletes rooms with their leases, start roster, memberships
-// and teams, children first for the foreign keys, and the create requests
+// deleteLobbies deletes rooms with their leases, start roster, memberships,
+// watchers and teams, children first for the foreign keys, and the create requests
 // that made them, so a later retry creates a new lobby instead of replaying
 // a deleted one.
 func deleteLobbies(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, error) {
@@ -85,7 +85,7 @@ func deleteLobbies(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, err
 			ids[index] = room.ID
 		}
 		inRooms := clause.IN{Column: clause.Column{Name: "lobby_id"}, Values: ids}
-		for _, child := range []any{&LeaseRecord{}, &StartRosterRecord{}, &MembershipRecord{}, &TeamRecord{}, &CreateRequestRecord{}} {
+		for _, child := range []any{&LeaseRecord{}, &StartRosterRecord{}, &MembershipRecord{}, &WatcherRecord{}, &TeamRecord{}, &CreateRequestRecord{}} {
 			if err := transaction.Where(inRooms).Delete(child).Error; err != nil {
 				return err
 			}
@@ -118,7 +118,8 @@ func lobbiesPastRetention(cutoffs domain.RetentionCutoffs) clause.Expression {
 }
 
 // deletePlayers deletes players that no session, room host, membership,
-// start roster or create request references. Players hold no other lobby data.
+// watcher, start roster or create request references. Players hold no other
+// lobby data.
 func deletePlayers(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, error) {
 	player := clause.Column{Table: PlayerRecord{}.TableName(), Name: "id"}
 	unreferencedBy := func(table, column string) clause.Expression {
@@ -131,6 +132,7 @@ func deletePlayers(database *gorm.DB, cutoffs domain.RetentionCutoffs) (int, err
 		unreferencedBy(SessionRecord{}.TableName(), "player_id"),
 		unreferencedBy(RoomRecord{}.TableName(), "host_player_id"),
 		unreferencedBy(MembershipRecord{}.TableName(), "player_id"),
+		unreferencedBy(WatcherRecord{}.TableName(), "player_id"),
 		unreferencedBy(StartRosterRecord{}.TableName(), "player_id"),
 		unreferencedBy(CreateRequestRecord{}.TableName(), "player_id"),
 	), nil)

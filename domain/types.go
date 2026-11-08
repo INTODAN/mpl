@@ -101,6 +101,31 @@ type Member struct {
 // IsSeat reports whether no person plays the member.
 func (member Member) IsSeat() bool { return member.Kind == MemberSeat }
 
+// Watcher is a person outside the lobby's members who watches it with the
+// join code. A watcher takes no seat and counts toward nothing: not capacity,
+// the start roster, leases, grace or retention. The game decides what a
+// watcher may read. A watcher who leaves is removed; one the host kicked
+// stays, with KickedAt set, so the code doesn't let them back in.
+type Watcher struct {
+	PlayerID    string     `json:"player_id"`
+	DisplayName string     `json:"display_name"`
+	JoinedAt    time.Time  `json:"joined_at"`
+	KickedAt    *time.Time `json:"kicked_at"`
+}
+
+// Watching reports whether the watcher may still watch.
+func (watcher Watcher) Watching() bool { return watcher.KickedAt == nil }
+
+// WatchAccess is what a person who asked to watch a lobby receives: the
+// lobby, and the channel its game publishes on for watchers. Member is true
+// for an active member, who keeps their member access instead of becoming a
+// watcher; the watch channel is open to them too.
+type WatchAccess struct {
+	Scope   Scope  `json:"scope"`
+	Channel string `json:"channel"`
+	Member  bool   `json:"member"`
+}
+
 type Lease struct {
 	LobbyID          string     `json:"lobby_id"`
 	PlayerID         string     `json:"player_id"`
@@ -123,6 +148,8 @@ type Aggregate struct {
 	Members     []Member
 	Leases      []Lease
 	StartRoster StartRoster
+	// Watchers holds every watcher row, kicked ones included.
+	Watchers []Watcher
 }
 type Snapshot struct {
 	Lobby                Lobby       `json:"lobby"`
@@ -134,6 +161,8 @@ type Snapshot struct {
 	// StartRules are the game's declared start conditions. The service fills
 	// them from the policy; snapshots built elsewhere leave them zero.
 	StartRules StartRules `json:"start_rules"`
+	// WatcherCount counts the watchers who may watch, kicked ones left out.
+	WatcherCount int `json:"watcher_count"`
 }
 
 const InvalidationSchemaVersion = 1
@@ -149,11 +178,14 @@ type Invalidation struct {
 }
 
 // RevocationIntent unsubscribes a player from the room channel once the change
-// that deactivated this membership generation has committed.
+// that deactivated this membership generation has committed. With Watch set,
+// it unsubscribes a watcher who left or was kicked from the watch channel
+// instead, and Generation is 0.
 type RevocationIntent struct {
 	PlayerID   string `json:"player_id"`
 	Scope      Scope  `json:"scope"`
 	Generation int64  `json:"generation"`
+	Watch      bool   `json:"watch"`
 }
 
 // Change classifies persistence. Either flag or an intent requires persistence;

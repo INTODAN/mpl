@@ -23,7 +23,7 @@ func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	expected := []string{
 		"lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
 		"lobby_memberships", "lobby_leases", "lobby_start_roster",
-		"lobby_create_requests", "lobby_schema_migrations",
+		"lobby_create_requests", "lobby_watchers", "lobby_schema_migrations",
 	}
 	slices.Sort(tables)
 	slices.Sort(expected)

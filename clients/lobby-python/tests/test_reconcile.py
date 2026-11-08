@@ -18,7 +18,7 @@ SCOPE = Scope("quiz-demo", LOBBY)
 
 def snapshot(version=1, generation=1, lobby_id=LOBBY):
     return dict(channel=f"lobby:quiz-demo:{lobby_id}", membership_generation=generation,
-                members=[], teams=[], start_roster=[], start_rules=dict(every_team_needs_member=False), lobby=dict(
+                members=[], teams=[], start_roster=[], start_rules=dict(every_team_needs_member=False), watcher_count=0, lobby=dict(
                     id=lobby_id, game_key="quiz-demo", version=version, capacity=4,
                     created_at="2026-09-20T00:00:00Z", host_player_id=None,
                     name="Room", join_code="ABCD", phase="waiting", game_settings={}))

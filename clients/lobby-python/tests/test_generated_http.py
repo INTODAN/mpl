@@ -106,6 +106,7 @@ async def test_create_and_join_payloads() -> None:
                     "membership_generation": 1,
                     "start_roster": [],
                     "start_rules": {"every_team_needs_member": False},
+                    "watcher_count": 0,
                     "teams": [],
                 },
             )
@@ -286,6 +287,7 @@ def test_snapshot_and_invalidation_models() -> None:
             "membership_generation": 1,
             "start_roster": [],
             "start_rules": {"every_team_needs_member": False},
+            "watcher_count": 0,
             "teams": [],
         }
     )

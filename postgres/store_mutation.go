@@ -51,6 +51,17 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 				return domain.NewError(domain.CodeInvalidInput, "lease history cannot be removed")
 			}
 		}
+		// A kick is final: the row stays, so the join code can't let the
+		// watcher back in.
+		for _, watcher := range original.Watchers {
+			if watcher.Watching() {
+				continue
+			}
+			current := domain.FindWatcher(&aggregate, watcher.PlayerID)
+			if current == nil || current.Watching() {
+				return domain.NewError(domain.CodeInvalidInput, "a kicked watcher cannot be removed")
+			}
+		}
 		aggregate.Lobby.Version = original.Lobby.Version
 		if change.PublicChanged {
 			if aggregate.Lobby.Version == math.MaxInt64 {
@@ -134,14 +145,35 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool) error
 			return err
 		}
 	}
-	return nil
+	return persistWatchers(tx, aggregate, create)
+}
+
+// persistWatchers stores the aggregate's watchers and deletes the rows of
+// watchers who left.
+func persistWatchers(tx *gorm.DB, aggregate domain.Aggregate, create bool) error {
+	kept := make([]any, 0, len(aggregate.Watchers))
+	for _, watcher := range aggregate.Watchers {
+		record := WatcherRecord{LobbyID: aggregate.Lobby.ID, PlayerID: watcher.PlayerID, DisplayName: watcher.DisplayName, JoinedAt: watcher.JoinedAt, KickedAt: watcher.KickedAt}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "lobby_id"}, {Name: "player_id"}}, DoUpdates: clause.AssignmentColumns([]string{"kicked_at"})}).Create(&record).Error; err != nil {
+			return err
+		}
+		kept = append(kept, watcher.PlayerID)
+	}
+	if create {
+		return nil
+	}
+	left := tx.Where(&WatcherRecord{LobbyID: aggregate.Lobby.ID})
+	if len(kept) > 0 {
+		left = left.Where(clause.Not(clause.IN{Column: clause.Column{Name: "player_id"}, Values: kept}))
+	}
+	return left.Delete(&WatcherRecord{}).Error
 }
 
 // validateRevocations rejects a revocation for another room or an invalid
 // membership before commit, because it is pushed only after commit.
 func validateRevocations(scope domain.Scope, change domain.Change) error {
 	for _, intent := range change.Revocations {
-		if intent.Scope != scope || intent.Generation < 1 || domain.ValidateUUID(intent.PlayerID) != nil {
+		if intent.Scope != scope || (intent.Watch != (intent.Generation == 0)) || intent.Generation < 0 || domain.ValidateUUID(intent.PlayerID) != nil {
 			return domain.NewError(domain.CodeInvalidInput, "invalid revocation intent")
 		}
 	}

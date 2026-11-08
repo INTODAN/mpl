@@ -24,6 +24,10 @@ func (aggregate Aggregate) DeepCopy() Aggregate {
 		result.Leases[index].ReleasedAt = optional.Copy(aggregate.Leases[index].ReleasedAt)
 	}
 	result.StartRoster = append(StartRoster{}, aggregate.StartRoster...)
+	result.Watchers = append([]Watcher{}, aggregate.Watchers...)
+	for index := range result.Watchers {
+		result.Watchers[index].KickedAt = optional.Copy(aggregate.Watchers[index].KickedAt)
+	}
 	return result
 }
 
@@ -75,5 +79,40 @@ func BuildSnapshot(aggregate Aggregate, playerID string) (Snapshot, error) {
 		}
 		return detached.Teams[first].Order < detached.Teams[second].Order
 	})
-	return Snapshot{Lobby: detached.Lobby, Teams: detached.Teams, Members: members, StartRoster: detached.StartRoster, MembershipGeneration: member.Generation, Channel: channel}, nil
+	return Snapshot{Lobby: detached.Lobby, Teams: detached.Teams, Members: members, StartRoster: detached.StartRoster, MembershipGeneration: member.Generation, Channel: channel, WatcherCount: WatcherCount(detached.Watchers)}, nil
+}
+
+// WatcherCount counts the watchers who may watch.
+func WatcherCount(watchers []Watcher) int {
+	count := 0
+	for _, watcher := range watchers {
+		if watcher.Watching() {
+			count++
+		}
+	}
+	return count
+}
+
+// FindWatcher returns a pointer into the aggregate for locked mutation, or
+// nil when the player has no watcher row.
+func FindWatcher(aggregate *Aggregate, playerID string) *Watcher {
+	if aggregate == nil {
+		return nil
+	}
+	for index := range aggregate.Watchers {
+		if aggregate.Watchers[index].PlayerID == playerID {
+			return &aggregate.Watchers[index]
+		}
+	}
+	return nil
+}
+
+// CanWatch reports whether a player may watch the lobby: an active member,
+// or a watcher the host hasn't kicked.
+func CanWatch(aggregate *Aggregate, playerID string) bool {
+	if member := FindMember(aggregate, playerID); member != nil && member.Active {
+		return true
+	}
+	watcher := FindWatcher(aggregate, playerID)
+	return watcher != nil && watcher.Watching()
 }

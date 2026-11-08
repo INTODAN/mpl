@@ -19,6 +19,19 @@ type Application interface {
 	Leave(context.Context, Principal, Scope) error
 	Heartbeat(context.Context, Principal, Scope, HeartbeatRequest) (HeartbeatResult, error)
 	ReleaseLease(context.Context, Principal, Scope, ReleaseLeaseRequest) error
+	// Watch, Unwatch, Watchers and KickWatcher manage the people who watch a
+	// lobby with its join code without taking a seat.
+	Watch(context.Context, Principal, WatchRequest) (WatchAccess, error)
+	Unwatch(context.Context, Principal, Scope) error
+	Watchers(context.Context, Principal, Scope) ([]Watcher, error)
+	KickWatcher(context.Context, Principal, Scope, string) error
+}
+
+// WatchAuthorizer lets a game check that a player may watch a lobby, for the
+// reads it opens to watchers: an active member, or a watcher the host hasn't
+// kicked. It returns ErrNotFound otherwise, also for a lobby that is gone.
+type WatchAuthorizer interface {
+	AuthorizeWatch(context.Context, Principal, Scope) error
 }
 type Clock interface{ Now() time.Time }
 type IdentifierSource interface {
