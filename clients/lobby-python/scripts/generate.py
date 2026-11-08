@@ -30,6 +30,8 @@ EXPECTED_OPERATIONS = {
     "leave_lobby",
     "heartbeat_lobby",
     "release_lobby_lease",
+    "add_lobby_seat",
+    "remove_lobby_seat",
 }
 
 

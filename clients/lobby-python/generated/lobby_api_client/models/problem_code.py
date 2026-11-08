@@ -8,6 +8,7 @@ class ProblemCode(str, Enum):
     INTERNAL_ERROR = "internal_error"
     INVALID_GAME_SETTINGS = "invalid_game_settings"
     INVALID_INPUT = "invalid_input"
+    INVALID_SEAT_SETTINGS = "invalid_seat_settings"
     LOBBY_FULL = "lobby_full"
     NOT_FOUND = "not_found"
     NOT_HOST = "not_host"

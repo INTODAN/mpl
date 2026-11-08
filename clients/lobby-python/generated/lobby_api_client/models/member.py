@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
+
+from ..models.member_kind import MemberKind
+
+if TYPE_CHECKING:
+    from ..models.member_seat_settings_type_0 import MemberSeatSettingsType0
+
 
 T = TypeVar("T", bound="Member")
 
@@ -20,8 +26,13 @@ class Member:
         id (str):
         join_sequence (int):
         joined_at (datetime.datetime):
+        kind (MemberKind): human: a person who joined. seat: a seat that no person plays, such as the game's bot, which
+            the host added to a team; it is always ready, never disconnects or hosts, and the game plays it from
+            seat_settings. Its id is the seat ID for removing it.
         player_id (str):
         ready (bool):
+        seat_settings (MemberSeatSettingsType0 | None): For a seat, the settings the host added it with, compacted with
+            sorted keys, which only the game reads. Null for a person.
         team_id (None | str):
     """
 
@@ -32,11 +43,15 @@ class Member:
     id: str
     join_sequence: int
     joined_at: datetime.datetime
+    kind: MemberKind
     player_id: str
     ready: bool
+    seat_settings: MemberSeatSettingsType0 | None
     team_id: None | str
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.member_seat_settings_type_0 import MemberSeatSettingsType0
+
         active = self.active
 
         disconnected_until: None | str
@@ -55,9 +70,17 @@ class Member:
 
         joined_at = self.joined_at.isoformat()
 
+        kind = self.kind.value
+
         player_id = self.player_id
 
         ready = self.ready
+
+        seat_settings: dict[str, Any] | None
+        if isinstance(self.seat_settings, MemberSeatSettingsType0):
+            seat_settings = self.seat_settings.to_dict()
+        else:
+            seat_settings = self.seat_settings
 
         team_id: None | str
         team_id = self.team_id
@@ -73,8 +96,10 @@ class Member:
                 "id": id,
                 "join_sequence": join_sequence,
                 "joined_at": joined_at,
+                "kind": kind,
                 "player_id": player_id,
                 "ready": ready,
+                "seat_settings": seat_settings,
                 "team_id": team_id,
             }
         )
@@ -83,6 +108,8 @@ class Member:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.member_seat_settings_type_0 import MemberSeatSettingsType0
+
         d = dict(src_dict)
         active = d.pop("active")
 
@@ -111,9 +138,26 @@ class Member:
 
         joined_at = datetime.datetime.fromisoformat(d.pop("joined_at"))
 
+        kind = MemberKind(d.pop("kind"))
+
         player_id = d.pop("player_id")
 
         ready = d.pop("ready")
+
+        def _parse_seat_settings(data: object) -> MemberSeatSettingsType0 | None:
+            if data is None:
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                seat_settings_type_0 = MemberSeatSettingsType0.from_dict(data)
+
+                return seat_settings_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemberSeatSettingsType0 | None, data)
+
+        seat_settings = _parse_seat_settings(d.pop("seat_settings"))
 
         def _parse_team_id(data: object) -> None | str:
             if data is None:
@@ -130,8 +174,10 @@ class Member:
             id=id,
             join_sequence=join_sequence,
             joined_at=joined_at,
+            kind=kind,
             player_id=player_id,
             ready=ready,
+            seat_settings=seat_settings,
             team_id=team_id,
         )
 

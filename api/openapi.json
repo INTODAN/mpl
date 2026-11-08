@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "AddSeatBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/AddSeatBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "seat_settings": {
+            "additionalProperties": true,
+            "description": "Settings for a seat that no person plays, as a JSON object that only the game reads, such as the level of the game's bot that plays the seat. The game checks them when the host adds the seat; invalid settings fail with invalid_seat_settings.",
+            "type": "object"
+          },
+          "team_id": {
+            "description": "The team the seat joins.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "seat_settings"
+        ],
+        "type": "object"
+      },
       "ConnectionToken": {
         "additionalProperties": false,
         "properties": {
@@ -473,11 +502,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "kind": {
+            "description": "human: a person who joined. seat: a seat that no person plays, such as the game's bot, which the host added to a team; it is always ready, never disconnects or hosts, and the game plays it from seat_settings. Its id is the seat ID for removing it.",
+            "enum": [
+              "human",
+              "seat"
+            ],
+            "type": "string"
+          },
           "player_id": {
             "type": "string"
           },
           "ready": {
             "type": "boolean"
+          },
+          "seat_settings": {
+            "additionalProperties": true,
+            "description": "For a seat, the settings the host added it with, compacted with sorted keys, which only the game reads. Null for a person.",
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "team_id": {
             "type": [
@@ -496,7 +541,9 @@
           "ready",
           "joined_at",
           "join_sequence",
-          "disconnected_until"
+          "disconnected_until",
+          "kind",
+          "seat_settings"
         ],
         "type": "object"
       },
@@ -517,6 +564,7 @@
               "idempotency_conflict",
               "invalid_input",
               "invalid_game_settings",
+              "invalid_seat_settings",
               "game_requirement",
               "unavailable",
               "internal_error"
@@ -1494,6 +1542,261 @@
           }
         ],
         "summary": "Set readiness",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats": {
+      "post": {
+        "description": "Adds a seat that no person plays, such as the game's bot, to a team, and returns the snapshot, where the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat; settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and toward the members a start needs, is always ready, never disconnects, and joins the start roster with its own player_id. A start still needs the host, a person. A team_id that isn't one of the lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a second one; the host removes it.",
+        "operationId": "addLobbySeat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddSeatBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Add a seat",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}": {
+      "delete": {
+        "description": "Removes a seat that the host added, by its member ID, and returns the snapshot. Only the host can remove one, and only while the lobby waits. Removing a seat again changes nothing; an ID that names no seat of the lobby is invalid_input.",
+        "operationId": "removeLobbySeat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The seat's member ID.",
+            "in": "path",
+            "name": "seat_id",
+            "required": true,
+            "schema": {
+              "description": "The seat's member ID.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Remove a seat",
         "tags": [
           "Lobby"
         ]

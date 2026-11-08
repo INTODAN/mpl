@@ -18,14 +18,14 @@ import httpx
 from centrifuge.exceptions import CentrifugeError, OperationTimeoutError
 from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
-    create_lobby, create_lobby_connection_token, create_lobby_session, get_lobby,
-    heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
-    select_lobby_team, set_lobby_ready, start_lobby,
+    add_lobby_seat, create_lobby, create_lobby_connection_token, create_lobby_session,
+    get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
+    remove_lobby_seat, select_lobby_team, set_lobby_ready, start_lobby,
 )
 from lobby_api_client.models import (
-    ConnectionTokenInputBody, CreateLobbyBody, CreateLobbyBodyGameSettings,
-    CreateSessionBody, GuestSession, HeartbeatBody, JoinLobbyBody, ReadyBody,
-    SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
+    AddSeatBody, AddSeatBodySeatSettings, ConnectionTokenInputBody, CreateLobbyBody,
+    CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
+    JoinLobbyBody, ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
 )
 from lobby_api_client.types import UNSET
 
@@ -450,10 +450,10 @@ class LobbyClient:
             self._fail(state, exc)
             raise
 
-    async def _command(self, scope, operation, body):
+    async def _command(self, scope, operation, **arguments):
         state = self._state(scope)
         try:
-            result = await self._request(operation, **self._path(scope), body=body)
+            result = await self._request(operation, **self._path(scope), **arguments)
             if not self._current(state):
                 raise state.error or MembershipError("membership_replaced")
             state.install(result)
@@ -463,13 +463,29 @@ class LobbyClient:
             raise
 
     async def select_team(self, scope: Scope, team_id: str | None) -> Snapshot:
-        return await self._command(scope, select_lobby_team, SelectTeamBody(team_id=UUID(team_id) if team_id else None))
+        return await self._command(scope, select_lobby_team, body=SelectTeamBody(team_id=UUID(team_id) if team_id else None))
 
     async def set_ready(self, scope: Scope, ready: bool) -> Snapshot:
-        return await self._command(scope, set_lobby_ready, ReadyBody(ready=ready))
+        return await self._command(scope, set_lobby_ready, body=ReadyBody(ready=ready))
 
     async def start(self, scope: Scope) -> Snapshot:
-        return await self._command(scope, start_lobby, StartInputBody())
+        return await self._command(scope, start_lobby, body=StartInputBody())
+
+    async def add_seat(self, scope: Scope, team_id: str, seat_settings: dict[str, Any]) -> Snapshot:
+        """Add a seat that no person plays, such as the game's bot, to a team.
+
+        Only the host can, while the lobby waits. seat_settings is the game's
+        own JSON object for the seat; settings the game rejects raise
+        LobbyError with code invalid_seat_settings and the game's message. The
+        seat is a member of kind seat in the returned snapshot. Each call adds
+        a seat, so retrying after a lost response can add a second one.
+        """
+        body = AddSeatBody(team_id=UUID(team_id), seat_settings=AddSeatBodySeatSettings.from_dict(seat_settings))
+        return await self._command(scope, add_lobby_seat, body=body)
+
+    async def remove_seat(self, scope: Scope, seat_id: str) -> Snapshot:
+        """Remove a seat that the host added, by its member ID."""
+        return await self._command(scope, remove_lobby_seat, seat_id=UUID(seat_id))
 
     async def updates(self, scope: Scope) -> AsyncIterator[Snapshot]:
         state = self._state(scope)

@@ -183,7 +183,7 @@ func (game *choiceGame) gate(_ context.Context, lobbyID string) (domain.ReadyChe
 // create request, for example to another game or with game settings.
 func newServiceFixture(t *testing.T, capacity int, configure ...func(*domain.CreateRequest)) *serviceFixture {
 	t.Helper()
-	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings}, domain.GameRegistration{Key: "team-game", StartRules: domain.StartRules{EveryTeamNeedsMember: true}}, domain.GameRegistration{Key: "gated-game", ReadyGate: gatedGame.gate})}
+	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings}, domain.GameRegistration{Key: "team-game", StartRules: domain.StartRules{EveryTeamNeedsMember: true}}, domain.GameRegistration{Key: "gated-game", ReadyGate: gatedGame.gate}, domain.GameRegistration{Key: "seat-game", ReadyGate: gatedGame.gate, ValidateSeat: botSeat, StartRules: domain.StartRules{EveryTeamNeedsMember: true}})}
 	fixture.clock = &integrationClock{now: fixture.origin}
 	fixture.pushes = &recordedPushes{invalidations: map[string]int{}, lastVersion: map[string]int64{}, revocations: map[string]int{}}
 	fixture.store = fixture.newStore(t)

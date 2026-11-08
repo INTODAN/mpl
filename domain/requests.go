@@ -37,6 +37,14 @@ type SelectTeamRequest struct {
 type ReadyRequest struct {
 	Ready bool `json:"ready"`
 }
+
+// AddSeatRequest adds a seat that no person plays to a team. SeatSettings is
+// a JSON object that only the game reads, such as the level of the bot that
+// plays the seat.
+type AddSeatRequest struct {
+	TeamID       string          `json:"team_id"`
+	SeatSettings json.RawMessage `json:"seat_settings"`
+}
 type HeartbeatRequest struct {
 	ClientInstanceID     string `json:"client_instance_id"`
 	MembershipGeneration int64  `json:"membership_generation"`

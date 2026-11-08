@@ -62,6 +62,19 @@ type Team struct {
 	Capacity int    `json:"capacity"`
 	Order    int    `json:"order"`
 }
+
+// MemberKind says who takes a member's place in the lobby.
+type MemberKind string
+
+const (
+	// MemberHuman is a person with a guest session, who joined the lobby.
+	MemberHuman MemberKind = "human"
+	// MemberSeat is a seat that no person plays, such as a game's bot, which
+	// the host added to a team. It is always ready, holds no lease and never
+	// hosts, and the game plays it from its seat settings.
+	MemberSeat MemberKind = "seat"
+)
+
 type Member struct {
 	ID                string     `json:"id"`
 	PlayerID          string     `json:"player_id"`
@@ -73,7 +86,18 @@ type Member struct {
 	JoinedAt          time.Time  `json:"joined_at"`
 	JoinSequence      int64      `json:"join_sequence"`
 	DisconnectedUntil *time.Time `json:"disconnected_until"`
+	// Kind is MemberHuman, or MemberSeat for a seat that the host added. An
+	// empty kind is a human.
+	Kind MemberKind `json:"kind"`
+	// SeatSettings is the canonical JSON object that the game checked when
+	// the host added the seat, and nil for a human. The lobby stores it
+	// without reading it.
+	SeatSettings json.RawMessage `json:"seat_settings"`
 }
+
+// IsSeat reports whether no person plays the member.
+func (member Member) IsSeat() bool { return member.Kind == MemberSeat }
+
 type Lease struct {
 	LobbyID          string     `json:"lobby_id"`
 	PlayerID         string     `json:"player_id"`

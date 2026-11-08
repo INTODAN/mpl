@@ -1,0 +1,152 @@
+package application
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"islandBattles/lobby/domain"
+)
+
+// AddSeat adds a seat that no person plays, such as a game's bot, to a team of
+// a waiting lobby. Only the host can add one. The game checks the seat's
+// settings and names the seat before the transaction, so it never runs while
+// the room is locked. The seat counts toward the lobby's and the team's
+// capacity, is always ready, holds no lease, and joins the start roster with
+// its own player ID, which the game plays from the seat's settings.
+func (service *Service) AddSeat(ctx context.Context, principal domain.Principal, scope domain.Scope, request domain.AddSeatRequest) (domain.Snapshot, error) {
+	if err := validatePrincipal(principal); err != nil {
+		return domain.Snapshot{}, err
+	}
+	if err := service.policy.ValidateScope(scope); err != nil {
+		return domain.Snapshot{}, err
+	}
+	if domain.ValidateUUID(request.TeamID) != nil {
+		return domain.Snapshot{}, domain.ErrInvalidInput
+	}
+	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, request.SeatSettings)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
+		if err := requireWaitingHost(aggregate, principal); err != nil {
+			return domain.Change{}, err
+		}
+		var team *domain.Team
+		for index := range aggregate.Teams {
+			if aggregate.Teams[index].ID == request.TeamID {
+				team = &aggregate.Teams[index]
+				break
+			}
+		}
+		if team == nil {
+			return domain.Change{}, domain.ErrInvalidInput
+		}
+		members, onTeam := 0, 0
+		for _, member := range aggregate.Members {
+			if !member.Active {
+				continue
+			}
+			members++
+			if member.TeamID != nil && *member.TeamID == team.ID {
+				onTeam++
+			}
+		}
+		if members >= aggregate.Lobby.Capacity {
+			return domain.Change{}, domain.ErrLobbyFull
+		}
+		if onTeam >= team.Capacity {
+			return domain.Change{}, domain.ErrTeamFull
+		}
+		seatID, err := service.identifiers.UUID()
+		if err != nil {
+			return domain.Change{}, unavailable(err)
+		}
+		playerID, err := service.identifiers.UUID()
+		if err != nil {
+			return domain.Change{}, unavailable(err)
+		}
+		teamID := team.ID
+		aggregate.Members = append(aggregate.Members, domain.Member{
+			ID: seatID, PlayerID: playerID, DisplayName: distinctName(aggregate.Members, name), Generation: 1, Active: true,
+			TeamID: &teamID, Ready: true, JoinedAt: now, JoinSequence: aggregate.Lobby.NextJoinSequence,
+			Kind: domain.MemberSeat, SeatSettings: settings,
+		})
+		aggregate.Lobby.NextJoinSequence++
+		return domain.Change{PublicChanged: true}, nil
+	})
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	return service.snapshot(aggregate, principal.PlayerID)
+}
+
+// RemoveSeat removes a seat that the host added, while the lobby waits. Only
+// the host can remove one. Removing a seat that is already gone changes
+// nothing; an ID that names no seat of the lobby is invalid input.
+func (service *Service) RemoveSeat(ctx context.Context, principal domain.Principal, scope domain.Scope, seatID string) (domain.Snapshot, error) {
+	if err := validatePrincipal(principal); err != nil {
+		return domain.Snapshot{}, err
+	}
+	if domain.ValidateUUID(seatID) != nil {
+		return domain.Snapshot{}, domain.ErrInvalidInput
+	}
+	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
+		if err := requireWaitingHost(aggregate, principal); err != nil {
+			return domain.Change{}, err
+		}
+		for index := range aggregate.Members {
+			seat := &aggregate.Members[index]
+			if seat.ID != seatID {
+				continue
+			}
+			if !seat.IsSeat() {
+				return domain.Change{}, domain.ErrInvalidInput
+			}
+			if !seat.Active {
+				return domain.Change{}, nil
+			}
+			// Like a member who left, the seat stays in the lobby's history.
+			seat.Active = false
+			seat.TeamID = nil
+			seat.Ready = false
+			return domain.Change{PublicChanged: true}, nil
+		}
+		return domain.Change{}, domain.ErrInvalidInput
+	})
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	return service.snapshot(aggregate, principal.PlayerID)
+}
+
+// requireWaitingHost lets only the host of a waiting lobby change its seats.
+func requireWaitingHost(aggregate *domain.Aggregate, principal domain.Principal) error {
+	if _, err := activeMember(aggregate, principal.PlayerID); err != nil {
+		return err
+	}
+	if aggregate.Lobby.HostPlayerID == nil || *aggregate.Lobby.HostPlayerID != principal.PlayerID {
+		return domain.ErrNotHost
+	}
+	if aggregate.Lobby.Phase != domain.PhaseWaiting {
+		return domain.ErrPhaseConflict
+	}
+	return nil
+}
+
+// distinctName numbers a seat's name when an active member already has it,
+// so two bots of one level can be told apart: "Bot (level 2)", then
+// "Bot (level 2) #2".
+func distinctName(members []domain.Member, name string) string {
+	taken := map[string]bool{}
+	for _, member := range members {
+		if member.Active {
+			taken[member.DisplayName] = true
+		}
+	}
+	candidate := name
+	for number := 2; taken[candidate]; number++ {
+		candidate = fmt.Sprintf("%s #%d", name, number)
+	}
+	return candidate
+}

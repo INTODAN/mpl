@@ -15,7 +15,8 @@ func NormalizeExpired(aggregate *Aggregate, now time.Time, policy Policy) (Chang
 	change := Change{}
 	for memberIndex := range aggregate.Members {
 		member := &aggregate.Members[memberIndex]
-		if !member.Active {
+		// A seat holds no lease, so it never disconnects.
+		if !member.Active || member.IsSeat() {
 			continue
 		}
 		var latestExpiry time.Time

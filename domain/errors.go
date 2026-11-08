@@ -17,6 +17,7 @@ const (
 	CodeIdempotencyConflict ErrorCode = "idempotency_conflict"
 	CodeInvalidInput        ErrorCode = "invalid_input"
 	CodeInvalidGameSettings ErrorCode = "invalid_game_settings"
+	CodeInvalidSeatSettings ErrorCode = "invalid_seat_settings"
 	// CodeGameRequirement is a game's own refusal, from its ReadyGate. The
 	// error's Type names the game's problem.
 	CodeGameRequirement ErrorCode = "game_requirement"

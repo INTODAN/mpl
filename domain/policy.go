@@ -121,12 +121,13 @@ func ValidateTeamDefinitions(definitions []TeamDefinition, lobbyCapacity int) ([
 	return result, nil
 }
 
-// ElectHost returns a detached player UUID; inactive history is never eligible.
+// ElectHost returns a detached player UUID; inactive history and seats are
+// never eligible.
 func ElectHost(members []Member) *string {
 	var chosen *Member
 	for index := range members {
 		member := &members[index]
-		if !member.Active {
+		if !member.Active || member.IsSeat() {
 			continue
 		}
 		if chosen == nil || member.JoinSequence < chosen.JoinSequence || (member.JoinSequence == chosen.JoinSequence && member.ID < chosen.ID) {

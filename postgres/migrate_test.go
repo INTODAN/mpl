@@ -253,7 +253,9 @@ func TestMigrateRecordsLastConnectionOfExistingRooms(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(leases) > 0 {
-			mustCreate(t, db, &[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)})
+			if err := db.Omit("Kind", "SeatSettings").Create(&[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)}).Error; err != nil {
+				t.Fatal(err)
+			}
 		}
 		for _, lease := range leases {
 			lease.LobbyID, lease.PlayerID, lease.Generation = room.ID, player.ID, 1
@@ -283,6 +285,54 @@ func TestMigrateRecordsLastConnectionOfExistingRooms(t *testing.T) {
 	var nullable string
 	if err := db.Raw(`SELECT is_nullable FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'lobby_rooms' AND column_name = 'last_connected_at'`).Scan(&nullable).Error; err != nil || nullable != "NO" {
 		t.Fatalf("last_connected_at nullable = %q, %v", nullable, err)
+	}
+}
+
+// Memberships from before migration 0005 are people, and a seat can't exist
+// without its settings.
+func TestMigrateMakesExistingMembershipsHuman(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	before := lobbypostgres.Migrations()
+	files := fstest.MapFS{}
+	for _, name := range migrationNames(t, before.Files)[:4] {
+		data, err := fs.ReadFile(before.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: data}
+	}
+	before.Files = files
+	if err := before.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	room := seedRoom(t, db, player.ID, "island-battles", "HUMANS01")
+	member := memberFor(room.ID, player.ID)
+	if err := db.Omit("Kind", "SeatSettings").Create(&member).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate existing memberships: %v", err)
+	}
+	var loaded lobbypostgres.MembershipRecord
+	mustFind(t, db, &loaded, member.ID)
+	if loaded.Kind != "human" || loaded.SeatSettings != nil {
+		t.Fatalf("existing membership = kind %q, settings %s", loaded.Kind, loaded.SeatSettings)
+	}
+	seatPlayer := seedPlayer(t, db)
+	seat := memberFor(room.ID, seatPlayer.ID)
+	seat.Kind = "seat"
+	if err := db.Create(&seat).Error; err == nil {
+		t.Fatal("a seat without settings was stored")
+	}
+	seat.SeatSettings = []byte(`{"bot_level":2}`)
+	if err := db.Create(&seat).Error; err != nil {
+		t.Fatal(err)
+	}
+	member = memberFor(room.ID, seedPlayer(t, db).ID)
+	member.SeatSettings = []byte(`{}`)
+	if err := db.Create(&member).Error; err == nil {
+		t.Fatal("a person with seat settings was stored")
 	}
 }
 

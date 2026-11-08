@@ -87,6 +87,7 @@ type Member struct {
 	ID                string     `json:"id"`
 	PlayerID          string     `json:"player_id"`
 	DisplayName       string     `json:"display_name"`
+	Kind              string     `json:"kind" jsonschema:"human for a person who joined, seat for a seat that no person plays, such as a game's bot, which the host added; a seat holds no lease, so it never shows as connected."`
 	TeamID            *string    `json:"team_id"`
 	TeamName          *string    `json:"team_name"`
 	Ready             bool       `json:"ready"`
@@ -416,7 +417,7 @@ func (reader lobbyReader) getLobby(transaction *gorm.DB, input GetLobbyInput) (L
 	}
 	for _, member := range members {
 		detail.Members = append(detail.Members, Member{
-			ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName,
+			ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Kind: member.Kind,
 			TeamID: member.TeamID, TeamName: lookUp(teamNames, member.TeamID), Ready: member.Ready, Active: member.Active,
 			Connected:         connected[memberKey{member.LobbyID, member.PlayerID}],
 			LeaseExpiresAt:    latestLeaseExpiry(member, leases),

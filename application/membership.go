@@ -57,7 +57,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		host := principal.PlayerID
 		aggregate := domain.Aggregate{
 			Lobby:   domain.Lobby{ID: roomID, GameKey: request.GameKey, Name: request.Name, JoinCode: joinCode, Capacity: request.Capacity, Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: &host, CreatedAt: now, GameSettings: settings, NextJoinSequence: 2, LastConnectedAt: now},
-			Members: []domain.Member{{ID: memberID, PlayerID: principal.PlayerID, DisplayName: displayName, Generation: 1, Active: true, JoinedAt: now, JoinSequence: 1}},
+			Members: []domain.Member{{ID: memberID, PlayerID: principal.PlayerID, DisplayName: displayName, Generation: 1, Active: true, JoinedAt: now, JoinSequence: 1, Kind: domain.MemberHuman}},
 			Leases:  []domain.Lease{{LobbyID: roomID, PlayerID: principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: now.Add(service.policy.LeaseDuration)}},
 			Teams:   []domain.Team{}, StartRoster: domain.StartRoster{},
 		}
@@ -148,7 +148,7 @@ func (service *Service) Join(ctx context.Context, principal domain.Principal, re
 			if err != nil {
 				return domain.Change{}, unavailable(err)
 			}
-			aggregate.Members = append(aggregate.Members, domain.Member{ID: identifier, PlayerID: principal.PlayerID, DisplayName: displayName})
+			aggregate.Members = append(aggregate.Members, domain.Member{ID: identifier, PlayerID: principal.PlayerID, DisplayName: displayName, Kind: domain.MemberHuman})
 			member = &aggregate.Members[len(aggregate.Members)-1]
 		}
 		member.Generation++

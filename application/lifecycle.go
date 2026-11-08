@@ -33,11 +33,19 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 			return domain.Change{}, domain.ErrPhaseConflict
 		}
 		roster := domain.StartRoster{}
+		humans := 0
 		for _, member := range aggregate.Members {
 			if !member.Active {
 				continue
 			}
-			if !member.Ready || member.TeamID == nil || !domain.HasLiveLease(aggregate.Leases, member.PlayerID, member.Generation, now) {
+			// A seat is always ready on its team and holds no lease.
+			if !member.IsSeat() {
+				if !member.Ready || !domain.HasLiveLease(aggregate.Leases, member.PlayerID, member.Generation, now) {
+					return domain.Change{}, domain.ErrNotReady
+				}
+				humans++
+			}
+			if member.TeamID == nil {
 				return domain.Change{}, domain.ErrNotReady
 			}
 			order := 0
@@ -52,25 +60,25 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 			}
 			roster = append(roster, domain.StartRosterEntry{PlayerID: member.PlayerID, TeamID: *member.TeamID, MemberID: member.ID, TeamOrder: order})
 		}
-		if len(roster) < 2 {
+		// The host who starts is a person, so a lobby of seats alone never
+		// starts; the count keeps that rule explicit.
+		if len(roster) < 2 || humans < 1 {
 			return domain.Change{}, domain.ErrNotReady
 		}
 		if err := game.StartRules.Check(aggregate.Teams, roster); err != nil {
 			return domain.Change{}, err
 		}
-		// The game checks the whole roster again, which also covers members
-		// who got ready before the game declared its gate.
+		// The game checks the roster's people again, which also covers members
+		// who got ready before the game declared its gate. Seats never got
+		// ready through the gate: the game checked their settings instead.
 		if check != nil {
 			members := make([]domain.ReadyMember, 0, len(roster))
 			for _, entry := range roster {
-				name := ""
-				for _, member := range aggregate.Members {
-					if member.PlayerID == entry.PlayerID {
-						name = member.DisplayName
-						break
-					}
+				member := domain.FindMember(aggregate, entry.PlayerID)
+				if member == nil || member.IsSeat() {
+					continue
 				}
-				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: name})
+				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: member.DisplayName})
 			}
 			if err := check(members, true); err != nil {
 				return domain.Change{}, err

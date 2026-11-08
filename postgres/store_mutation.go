@@ -88,7 +88,21 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool) error
 		}
 	}
 	for _, member := range aggregate.Members {
-		record := MembershipRecord{ID: member.ID, LobbyID: aggregate.Lobby.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil}
+		kind := domain.MemberHuman
+		var seatSettings []byte
+		if member.IsSeat() {
+			kind, seatSettings = domain.MemberSeat, member.SeatSettings
+			if len(seatSettings) == 0 {
+				return domain.NewError(domain.CodeInvalidInput, "a seat needs settings")
+			}
+			// A seat's player has no session; it exists so the start roster
+			// and the game can name the seat's player like any other.
+			player := PlayerRecord{ID: member.PlayerID, DisplayName: member.DisplayName, CreatedAt: member.JoinedAt}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&player).Error; err != nil {
+				return err
+			}
+		}
+		record := MembershipRecord{ID: member.ID, LobbyID: aggregate.Lobby.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: string(kind), SeatSettings: seatSettings}
 		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"generation", "active", "team_id", "ready", "joined_at", "join_sequence", "disconnected_until"})}).Create(&record).Error; err != nil {
 			return err
 		}

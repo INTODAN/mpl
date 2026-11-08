@@ -6,7 +6,9 @@ wrapper. `generated/` is produced from the checked-in Huma OpenAPI document;
 heartbeats, and cleanup. Huma is the schema authority. Do not hand-edit files
 under `generated/`; update the schema/export and run the generator instead.
 
-**This is a breaking change; clients must upgrade.** The lobby API gained the error code `game_requirement` and a `type` field on error bodies: a game can refuse `PUT …/ready` with `ready: true`, or the start, until a member has done something in the game's own API (Island Battles: choosing a bot). Regenerate or upgrade the client; the SDK's error then carries the game's problem type, and a client that doesn't know the code treats it as an unrecognized error. What to do: handle `game_requirement` by showing its `detail` to the player, who must act in the game's API and then retry.
+**This is a breaking change; clients must upgrade.** Lobbies can hold seats that no person plays, such as a game's bot, which the host adds and removes with `add_seat` and `remove_seat`. Every snapshot member now has `kind` (`human` or `seat`) and `seat_settings`, and a seat is always ready, holds no lease and never hosts; the new error code `invalid_seat_settings` refuses settings the game doesn't take. An older client shows a seat as an ordinary member. What to do: regenerate or upgrade the client, and show a seat's `display_name` without treating it as a person.
+
+The lobby API also gained the error code `game_requirement` and a `type` field on error bodies: a game can refuse `PUT …/ready` with `ready: true`, or the start, until a member has done something in the game's own API (Island Battles: choosing a bot). Regenerate or upgrade the client; the SDK's error then carries the game's problem type, and a client that doesn't know the code treats it as an unrecognized error. What to do: handle `game_requirement` by showing its `detail` to the player, who must act in the game's API and then retry.
 
 ## Installing from PyPI
 
@@ -110,6 +112,16 @@ The game checks it when the lobby is created; rejected settings raise
 `LobbyError` with code `invalid_game_settings`, and its `detail` holds the
 game's message, which may name the invalid field. Every snapshot returns the
 settings as `snapshot.lobby.game_settings`, and they can't change afterwards.
+
+The host can fill a team with a seat that the game plays, such as Island Battles' default bot:
+
+```python
+snapshot = await client.add_seat(scope, team_id, {"bot_level": 2})
+seat = next(member for member in snapshot.members if member.kind.value == "seat")
+snapshot = await client.remove_seat(scope, seat.id)
+```
+
+Only the host can, while the lobby waits; otherwise `LobbyError` with `not_host` or `phase_conflict`. Settings the game rejects raise `invalid_seat_settings` with the game's message as `detail`, and a game without seats, such as `quiz-demo`, refuses every one. Each `add_seat` adds a seat, so don't retry it blindly after a transport failure: read the snapshot first.
 
 To rejoin after `quit`, reuse the same session file without `--new-session`:
 

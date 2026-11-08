@@ -12,6 +12,10 @@ type Application interface {
 	SelectTeam(context.Context, Principal, Scope, SelectTeamRequest) (Snapshot, error)
 	SetReady(context.Context, Principal, Scope, ReadyRequest) (Snapshot, error)
 	Start(context.Context, Principal, Scope) (Snapshot, error)
+	// AddSeat and RemoveSeat let the host change the seats that no person
+	// plays while the lobby waits. RemoveSeat takes the seat's member ID.
+	AddSeat(context.Context, Principal, Scope, AddSeatRequest) (Snapshot, error)
+	RemoveSeat(context.Context, Principal, Scope, string) (Snapshot, error)
 	Leave(context.Context, Principal, Scope) error
 	Heartbeat(context.Context, Principal, Scope, HeartbeatRequest) (HeartbeatResult, error)
 	ReleaseLease(context.Context, Principal, Scope, ReleaseLeaseRequest) error

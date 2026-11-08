@@ -33,6 +33,8 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/team":                        {http.MethodPut, "selectLobbyTeam", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/ready":                       {http.MethodPut, "setLobbyReady", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start":                       {http.MethodPost, "startLobby", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats":                       {http.MethodPost, "addLobbySeat", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}":             {http.MethodDelete, "removeLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  {http.MethodDelete, "leaveLobby", http.StatusNoContent},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   {http.MethodPost, "heartbeatLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": {http.MethodDelete, "releaseLobbyLease", http.StatusNoContent},
@@ -155,6 +157,40 @@ func TestCreatePassesGameSettingsThroughUnread(t *testing.T) {
 	var problem Problem
 	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != http.StatusUnprocessableEntity || problem.Code != domain.CodeInvalidGameSettings || problem.Detail != "rounds must be between 1 and 10" {
 		t.Fatalf("rejected settings = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSeatsPassSettingsThroughUnreadAndShowTheirKind(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	path := "/lobby/v1/games/island-battles/lobbies/" + testUUID + "/seats"
+	const settings = `{"bot_level": 2}`
+	response := api.Post(path, "Authorization: Bearer good", strings.NewReader(`{"team_id":"`+testUUID+`","seat_settings":`+settings+`}`))
+	if response.Code != http.StatusOK || application.seatRequest.TeamID != testUUID || string(application.seatRequest.SeatSettings) != settings {
+		t.Fatalf("add seat = %d %s; application received %#v", response.Code, response.Body.String(), application.seatRequest)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"kind":"human","seat_settings":null`) || !strings.Contains(body, `"kind":"seat","seat_settings":{"bot_level":2}`) {
+		t.Fatalf("snapshot members: %s", body)
+	}
+	application.seatRequest = domain.AddSeatRequest{}
+	response = api.Post(path, "Authorization: Bearer good", map[string]any{"team_id": testUUID})
+	if response.Code != http.StatusUnprocessableEntity || application.seatRequest.TeamID != "" {
+		t.Fatalf("missing seat settings = %d %s", response.Code, response.Body.String())
+	}
+	application.seatError = domain.NewError(domain.CodeInvalidSeatSettings, "bot_level must be 1, 2 or 3")
+	response = api.Post(path, "Authorization: Bearer good", map[string]any{"team_id": testUUID, "seat_settings": map[string]any{"bot_level": 9}})
+	var problem Problem
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != http.StatusUnprocessableEntity || problem.Code != domain.CodeInvalidSeatSettings || problem.Detail != "bot_level must be 1, 2 or 3" {
+		t.Fatalf("rejected seat settings = %d %s", response.Code, response.Body.String())
+	}
+	response = api.Delete(path+"/"+testUUID, "Authorization: Bearer good")
+	if response.Code != http.StatusOK || application.removedSeat != testUUID || !strings.Contains(response.Body.String(), `"join_code":"SECRETCODE"`) {
+		t.Fatalf("remove seat = %d %s", response.Code, response.Body.String())
+	}
+	if response = api.Delete(path+"/not-a-uuid", "Authorization: Bearer good"); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("remove invalid seat ID = %d", response.Code)
 	}
 }
 
@@ -281,6 +317,9 @@ type fakeApplication struct {
 	createPrincipal domain.Principal
 	createRequest   domain.CreateRequest
 	createError     error
+	seatRequest     domain.AddSeatRequest
+	seatError       error
+	removedSeat     string
 }
 
 func fakeSnapshot() domain.Snapshot {
@@ -311,6 +350,23 @@ func (application *fakeApplication) SetReady(_ context.Context, _ domain.Princip
 	return fakeSnapshot(), nil
 }
 func (*fakeApplication) Start(context.Context, domain.Principal, domain.Scope) (domain.Snapshot, error) {
+	return fakeSnapshot(), nil
+}
+func (application *fakeApplication) AddSeat(_ context.Context, _ domain.Principal, _ domain.Scope, request domain.AddSeatRequest) (domain.Snapshot, error) {
+	application.seatRequest = request
+	if application.seatError != nil {
+		return domain.Snapshot{}, application.seatError
+	}
+	snapshot := fakeSnapshot()
+	teamID := request.TeamID
+	snapshot.Members = []domain.Member{
+		{ID: testUUID, PlayerID: testUUID, DisplayName: "Host", Generation: 1, Active: true},
+		{ID: "33333333-3333-4333-8333-333333333333", PlayerID: "44444444-4444-4444-8444-444444444444", DisplayName: "Bot (level 2)", Generation: 1, Active: true, TeamID: &teamID, Ready: true, Kind: domain.MemberSeat, SeatSettings: request.SeatSettings},
+	}
+	return snapshot, nil
+}
+func (application *fakeApplication) RemoveSeat(_ context.Context, _ domain.Principal, _ domain.Scope, seatID string) (domain.Snapshot, error) {
+	application.removedSeat = seatID
 	return fakeSnapshot(), nil
 }
 func (*fakeApplication) Leave(context.Context, domain.Principal, domain.Scope) error { return nil }

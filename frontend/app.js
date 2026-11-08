@@ -36,6 +36,11 @@ let describedRoom = null;
 // module failed to load. roomPanelLoading is the epoch being loaded.
 let roomPanel = null;
 let roomPanelLoading = null;
+// The seats that the host can add to a team, from the room module's
+// seatOptions: {epoch, label, choices} for the room they were loaded for.
+// seatControls is the key of the controls the room shows for them.
+let seatOptions = null;
+let seatControls = "";
 // The games' settings and room modules by URL, each imported once per page.
 const gameModules = new Map();
 // Lobbies without a game settings module get these teams.
@@ -108,6 +113,10 @@ function dropRoom() {
   describedRoom = null;
   roomPanel = null;
   roomPanelLoading = null;
+  seatOptions = null;
+  seatControls = "";
+  $("seat-controls").replaceChildren();
+  $("seat-controls").hidden = true;
   $("game-room-panel").replaceChildren();
   $("game-room-panel").hidden = true;
   $("room-settings").hidden = true;
@@ -572,10 +581,11 @@ async function loadRoomPanel(game) {
   roomPanelLoading = epoch;
   let panel = null;
   try {
-    const { RoomPanel } = await gameModule(game.room_module);
+    const module = await gameModule(game.room_module);
     if (epoch !== roomEpoch) return;
     $("game-room-panel").replaceChildren();
-    panel = new RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID) });
+    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID) });
+    if (module.seatOptions) void loadSeatOptions(module.seatOptions, epoch);
   } catch {
     if (epoch === roomEpoch) $("game-room-panel").replaceChildren(element("p", "hint", "Could not load this game’s controls. Reload the page to try again."));
   } finally {
@@ -585,6 +595,51 @@ async function loadRoomPanel(game) {
       if (snapshot) panel?.update?.(snapshot);
     }
   }
+}
+
+// The room module's seatOptions lists the seats that the host can add to a
+// team, such as the game's bot levels: {label, choices: [{label, settings}]}.
+async function loadSeatOptions(load, epoch) {
+  try {
+    const options = await load();
+    if (epoch !== roomEpoch || !Array.isArray(options?.choices) || !options.choices.length) return;
+    seatOptions = { epoch, label: String(options.label || "Add"), choices: options.choices };
+    render();
+  } catch {
+    // The room works without seats; the host can still invite players.
+  }
+}
+
+// For the host of a waiting room, one control per team that adds a seat the
+// game plays, with the seat_settings of the choice the host selects.
+function showSeatControls(shown) {
+  const container = $("seat-controls");
+  const options = seatOptions?.epoch === roomEpoch ? seatOptions : null;
+  container.hidden = !shown || !options;
+  if (container.hidden) {
+    seatControls = "";
+    container.replaceChildren();
+    return;
+  }
+  const key = JSON.stringify([snapshot.lobby.id, snapshot.teams.map((team) => [team.id, team.name])]);
+  if (key !== seatControls) {
+    seatControls = key;
+    container.replaceChildren(...snapshot.teams.map((team) => {
+      const row = element("div", "seat-row", "");
+      const select = document.createElement("select");
+      select.append(...options.choices.map((choice, index) => new Option(choice.label, String(index))));
+      const label = element("label", "", team.name);
+      label.append(select);
+      const add = element("button", "secondary", `${options.label} to ${team.name}`);
+      add.type = "button";
+      add.addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/seats`, "POST", {
+        team_id: team.id, seat_settings: options.choices[Number(select.value)].settings,
+      }))));
+      row.append(label, add);
+      return row;
+    }));
+  }
+  for (const control of container.querySelectorAll("button, select")) control.disabled = busy;
 }
 
 // Before a demo player gets ready, the game's room module can make the
@@ -681,12 +736,22 @@ function render() {
     const player = element("div", "player", "");
     const details = element("div", "", "");
     const isSelf = member.player_id === state.session.player_id;
+    const isSeat = member.kind === "seat";
     details.append(element("div", "player-name", `${member.display_name}${isSelf ? " (you)" : ""}`));
     const team = teams.find((team) => team.id === member.team_id);
-    const labels = [team ? team.name : "No team yet", member.disconnected_until ? "Reconnecting" : member.ready ? "Ready" : "Not ready"];
+    // A seat that the host added is always ready, and the game plays it.
+    const labels = [team ? team.name : "No team yet", isSeat ? "Played by the game" : member.disconnected_until ? "Reconnecting" : member.ready ? "Ready" : "Not ready"];
     if (member.player_id === lobby.host_player_id) labels.push("Host");
     details.append(element("div", "player-detail", labels.join(" · ")));
     player.append(element("div", "avatar", member.display_name.slice(0, 1).toUpperCase()), details);
+    if (isSeat && host && waiting) {
+      const remove = element("button", "text-button seat-remove", "Remove");
+      remove.type = "button";
+      remove.disabled = busy;
+      remove.setAttribute("aria-label", `Remove ${member.display_name}`);
+      remove.addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/seats/${encodeURIComponent(member.id)}`, "DELETE"))));
+      player.append(remove);
+    }
     $("players").append(player);
   }
   for (let index = members.length; index < lobby.capacity; index++) {
@@ -701,6 +766,7 @@ function render() {
   $("team-select").disabled = busy || !waiting;
   $("waiting-controls").hidden = !waiting;
   ensureRoomPanel();
+  showSeatControls(host && waiting);
   $("ready-button").textContent = self?.ready ? "Not ready" : "Mark ready";
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;

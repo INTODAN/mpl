@@ -65,6 +65,11 @@ h3 { font-size: 1rem; margin: 0; }
 .controls label { flex: 1; }
 .controls button { white-space: nowrap; }
 .game-room-panel { margin-top: 28px; }
+.seat-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.seat-row { display: flex; align-items: end; gap: 10px; }
+.seat-row label { flex: 1; }
+.seat-row button { white-space: nowrap; }
+.player .seat-remove { margin-left: auto; padding: 0; font-size: .8rem; }
 .game-room-panel .hint { margin-top: 8px; }
 .room-footer { border-top: 1px solid #edf0f5; margin-top: 24px; padding-top: 12px; font-size: .8rem; color: #758195; }
 .page-footer { color: #8b94a4; text-align: center; font-size: .75rem; padding-top: 35px; }
@@ -79,7 +84,7 @@ h3 { font-size: 1rem; margin: 0; }
 @media (max-width: 650px) {
   main { padding: 24px 18px; }
   .intro { margin-top: 38px; }
-  .identity, .entry-grid, .player-grid { grid-template-columns: 1fr; gap: 16px; }
+  .identity, .entry-grid, .player-grid, .seat-controls { grid-template-columns: 1fr; gap: 16px; }
   .card { padding: 22px; }
   .invite { align-items: start; flex-direction: column; }
   .controls { flex-wrap: wrap; }

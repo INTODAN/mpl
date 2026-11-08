@@ -47,6 +47,7 @@ A game whose players must do something in the game's own API before they get rea
 
 - `class RoomPanel`, constructed with `{container, lobbyID, playerID, request}`. It renders into `container`. `request(method, path, body)` calls the game's API through the page, which adds the player's bearer credential: only `GET` or `PUT`, only for a same-origin path under the catalog's `RoomAPIPrefix` with the room's lobby ID, checked like a [relayed](#what-a-game-provides) `game.request` path (a guard that keeps an honest, host-configured module from mistakes such as a wrong method or path, not a sandbox or a security boundary against a hostile module), and only while the page shows that lobby. It resolves to `{status, body}`, with the parsed body of a JSON or problem response and `null` otherwise, and rejects with an `Error` that says why when the page refuses the request or gets no answer within 8 seconds. [`roomapi.mjs`](roomapi.mjs) holds the checks.
 - An optional `update(snapshot)` method, which the page calls with every snapshot it shows, so the panel can read the game's data again when the lobby changes, for example when a member joins or gets ready.
+- An optional `seatOptions()` function, for a game that has [seats that no person plays](../README.md#seats-that-no-person-plays), such as its bot. It returns, or resolves to, `{label, choices}`: `label` names the action, such as `"Add bot"`, and each choice has a `label` for the select and the `settings` that the page sends as `seat_settings`, such as `{label: "Default bot, level 2", settings: {bot_level: 2}}`. The host of a waiting room then gets one select and one button per team, which adds a seat to that team with `POST …/seats`, and a **Remove** button on each seat, which calls `DELETE …/seats/{seat_id}`. The page shows a seat like a member, with **Played by the game** in place of its readiness. Without `seatOptions`, or for anyone but the host, the room shows no seat controls.
 - An optional `prepareDemo({lobbyID, request})` function, which **New demo lobby** awaits for each demo player after choosing their team and before marking them ready, so the game can make the choices it requires, ones that suit its example player.
 
 The lobby page knows nothing of what the module shows. When the game refuses readiness until its choice is made, the lobby answers the ready request with `game_requirement`, and the page shows the game's message.
@@ -58,6 +59,8 @@ To set up players manually:
 1. Enter your name, choose a game, and create a lobby.
 2. Open the same page in another tab, browser, or device. Enter another name and join using the eight-character code.
 3. Each player chooses a different team, makes any choice that the game's room module shows, and marks ready. The host can then start the lobby.
+
+To play alone in a game whose room module offers seats, create a lobby, choose your team, add a seat to each other team with the controls under the players, get ready and start.
 
 New lobbies have one seat per team. Without a settings module there are two teams, Blue and Red; a game's settings module can choose others. Starting freezes the roster and the host backend launches the selected game. On another device, use the host's reachable address instead of `localhost`.
 

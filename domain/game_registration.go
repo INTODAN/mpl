@@ -29,7 +29,19 @@ type GameRegistration struct {
 	// from starting, until they meet a condition of the game's own. Nil adds
 	// no condition.
 	ReadyGate ReadyGate
+	// ValidateSeat checks the seat settings of a seat that the host adds to a
+	// team, such as the level of the game's bot that plays it, and names the
+	// seat. Nil means the game has no seats and refuses every one.
+	ValidateSeat SeatValidator
 }
+
+// SeatValidator receives the settings of a seat that the host adds, as a
+// canonical JSON object, and returns the display name that the lobby shows
+// for the seat, such as "Bot (level 2)". To reject the settings, return an
+// error whose message is safe to show the client. To report that the check
+// itself failed, return the context's error or an error wrapping
+// ErrUnavailable.
+type SeatValidator func(ctx context.Context, settings json.RawMessage) (displayName string, err error)
 
 // ReadyGate loads what a game needs to decide which members of a lobby may get
 // ready, such as a choice each player makes in the game's own API. The lobby
@@ -147,28 +159,46 @@ func NormalizeGameSettings(settings json.RawMessage) (json.RawMessage, error) {
 	if len(settings) == 0 {
 		return json.RawMessage(EmptyGameSettings), nil
 	}
+	return normalizeObject(settings, CodeInvalidGameSettings, "game settings", MaxGameSettingsBytes)
+}
+
+// MaxSeatSettingsBytes bounds the canonical settings stored with each seat.
+const MaxSeatSettingsBytes = 4 * 1024
+
+// NormalizeSeatSettings returns a seat's settings as one compact JSON object
+// with sorted keys. A seat needs settings, so omitted ones are refused.
+func NormalizeSeatSettings(settings json.RawMessage) (json.RawMessage, error) {
+	if len(settings) == 0 {
+		return nil, NewError(CodeInvalidSeatSettings, "seat settings must be a JSON object")
+	}
+	return normalizeObject(settings, CodeInvalidSeatSettings, "seat settings", MaxSeatSettingsBytes)
+}
+
+// normalizeObject canonicalizes one JSON object of at most maximum bytes, or
+// fails with code and a message that names what the object is.
+func normalizeObject(settings json.RawMessage, code ErrorCode, what string, maximum int) (json.RawMessage, error) {
 	decoder := json.NewDecoder(bytes.NewReader(settings))
 	decoder.UseNumber()
 	var object map[string]any
 	if err := decoder.Decode(&object); err != nil || object == nil {
-		return nil, NewError(CodeInvalidGameSettings, "game settings must be a JSON object")
+		return nil, NewError(code, what+" must be a JSON object")
 	}
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		return nil, NewError(CodeInvalidGameSettings, "game settings must be a single JSON object")
+		return nil, NewError(code, what+" must be a single JSON object")
 	}
 	if containsNUL(object) {
 		// PostgreSQL text and jsonb can't hold NUL, and snapshots are stored as jsonb.
-		return nil, NewError(CodeInvalidGameSettings, "game settings must not contain NUL characters")
+		return nil, NewError(code, what+" must not contain NUL characters")
 	}
 	var canonical bytes.Buffer
 	encoder := json.NewEncoder(&canonical)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(object); err != nil {
-		return nil, NewError(CodeInvalidGameSettings, "game settings must be a JSON object")
+		return nil, NewError(code, what+" must be a JSON object")
 	}
 	result := bytes.TrimSuffix(canonical.Bytes(), []byte("\n"))
-	if len(result) > MaxGameSettingsBytes {
-		return nil, NewError(CodeInvalidGameSettings, "game settings are too large")
+	if len(result) > maximum {
+		return nil, NewError(code, what+" are too large")
 	}
 	return result, nil
 }
@@ -221,4 +251,35 @@ func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, s
 	default:
 		return nil, &Error{Code: CodeInvalidGameSettings, Message: err.Error(), Cause: err}
 	}
+}
+
+// ValidateSeatSettings normalizes a seat's settings and checks them with the
+// game's seat validator. It returns the canonical settings to store with the
+// seat and the seat's display name. A game without a seat validator has no
+// seats and refuses every one with CodeInvalidSeatSettings.
+func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey string, settings json.RawMessage) (json.RawMessage, string, error) {
+	game, err := policy.Game(gameKey)
+	if err != nil {
+		return nil, "", err
+	}
+	canonical, err := NormalizeSeatSettings(settings)
+	if err != nil {
+		return nil, "", err
+	}
+	if game.ValidateSeat == nil {
+		return nil, "", NewError(CodeInvalidSeatSettings, "this game has no seats that the host can add")
+	}
+	name, err := game.ValidateSeat(ctx, bytes.Clone(canonical))
+	switch {
+	case err == nil:
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrUnavailable):
+		return nil, "", err
+	default:
+		return nil, "", &Error{Code: CodeInvalidSeatSettings, Message: err.Error(), Cause: err}
+	}
+	name, err = NormalizeName(name, 40)
+	if err != nil {
+		return nil, "", &Error{Code: CodeUnavailable, Message: ErrUnavailable.Message, Cause: errors.New("the game named a seat with an invalid display name")}
+	}
+	return canonical, name, nil
 }

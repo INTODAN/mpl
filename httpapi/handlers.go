@@ -81,6 +81,20 @@ func (handler handlers) start(ctx context.Context, input *StartInput) (*Snapshot
 	}
 	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
 }
+func (handler handlers) addSeat(ctx context.Context, input *AddSeatInput) (*SnapshotOutput, error) {
+	result, err := handler.app.AddSeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), domain.AddSeatRequest{TeamID: input.Body.TeamID, SeatSettings: json.RawMessage(input.Body.SeatSettings)})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
+func (handler handlers) removeSeat(ctx context.Context, input *RemoveSeatInput) (*SnapshotOutput, error) {
+	result, err := handler.app.RemoveSeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), input.SeatID)
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
 func (handler handlers) leave(ctx context.Context, input *LeaveInput) (*EmptyOutput, error) {
 	if err := handler.app.Leave(ctx, principalFromContext(ctx), scope(input.ScopeInput)); err != nil {
 		return nil, problemFor(err)
