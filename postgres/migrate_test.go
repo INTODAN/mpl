@@ -253,7 +253,7 @@ func TestMigrateRecordsLastConnectionOfExistingRooms(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(leases) > 0 {
-			if err := db.Omit("Kind", "SeatSettings").Create(&[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)}).Error; err != nil {
+			if err := db.Omit("Kind", "SeatSettings", "SeatRequestID").Create(&[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)}).Error; err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -308,7 +308,7 @@ func TestMigrateMakesExistingMembershipsHuman(t *testing.T) {
 	player := seedPlayer(t, db)
 	room := seedRoom(t, db, player.ID, "island-battles", "HUMANS01")
 	member := memberFor(room.ID, player.ID)
-	if err := db.Omit("Kind", "SeatSettings").Create(&member).Error; err != nil {
+	if err := db.Omit("Kind", "SeatSettings", "SeatRequestID").Create(&member).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
@@ -328,6 +328,16 @@ func TestMigrateMakesExistingMembershipsHuman(t *testing.T) {
 	seat.SeatSettings = []byte(`{"bot_level":2}`)
 	if err := db.Create(&seat).Error; err != nil {
 		t.Fatal(err)
+	}
+	// A request ID names one seat of a lobby.
+	requestID := uuid.NewString()
+	seat.ID, seat.PlayerID, seat.SeatRequestID = uuid.NewString(), seedPlayer(t, db).ID, &requestID
+	if err := db.Create(&seat).Error; err != nil {
+		t.Fatal(err)
+	}
+	seat.ID, seat.PlayerID = uuid.NewString(), seedPlayer(t, db).ID
+	if err := db.Create(&seat).Error; err == nil {
+		t.Fatal("two seats of one lobby shared a request ID")
 	}
 	member = memberFor(room.ID, seedPlayer(t, db).ID)
 	member.SeatSettings = []byte(`{}`)

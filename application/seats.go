@@ -1,9 +1,12 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"islandBattles/lobby/domain"
 )
@@ -13,7 +16,10 @@ import (
 // settings and names the seat before the transaction, so it never runs while
 // the room is locked. The seat counts toward the lobby's and the team's
 // capacity, is always ready, holds no lease, and joins the start roster with
-// its own player ID, which the game plays from the seat's settings.
+// its own player ID, which the game plays from the seat's settings. A request
+// ID makes a retry safe: the same ID with the same team and settings returns
+// the current snapshot without a second seat, and with others fails with
+// idempotency_conflict.
 func (service *Service) AddSeat(ctx context.Context, principal domain.Principal, scope domain.Scope, request domain.AddSeatRequest) (domain.Snapshot, error) {
 	if err := validatePrincipal(principal); err != nil {
 		return domain.Snapshot{}, err
@@ -21,7 +27,7 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 	if err := service.policy.ValidateScope(scope); err != nil {
 		return domain.Snapshot{}, err
 	}
-	if domain.ValidateUUID(request.TeamID) != nil {
+	if domain.ValidateUUID(request.TeamID) != nil || (request.RequestID != "" && domain.ValidateUUID(request.RequestID) != nil) {
 		return domain.Snapshot{}, domain.ErrInvalidInput
 	}
 	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, request.SeatSettings)
@@ -31,6 +37,18 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 	aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
 		if err := requireWaitingHost(aggregate, principal); err != nil {
 			return domain.Change{}, err
+		}
+		if request.RequestID != "" {
+			for _, seat := range aggregate.Members {
+				if seat.SeatRequestID != request.RequestID {
+					continue
+				}
+				// A seat the host removed since keeps no team to compare.
+				if !bytes.Equal(seat.SeatSettings, settings) || (seat.Active && (seat.TeamID == nil || *seat.TeamID != request.TeamID)) {
+					return domain.Change{}, domain.ErrIdempotencyConflict
+				}
+				return domain.Change{}, nil
+			}
 		}
 		var team *domain.Team
 		for index := range aggregate.Teams {
@@ -70,7 +88,7 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 		aggregate.Members = append(aggregate.Members, domain.Member{
 			ID: seatID, PlayerID: playerID, DisplayName: distinctName(aggregate.Members, name), Generation: 1, Active: true,
 			TeamID: &teamID, Ready: true, JoinedAt: now, JoinSequence: aggregate.Lobby.NextJoinSequence,
-			Kind: domain.MemberSeat, SeatSettings: settings,
+			Kind: domain.MemberSeat, SeatSettings: settings, SeatRequestID: request.RequestID,
 		})
 		aggregate.Lobby.NextJoinSequence++
 		return domain.Change{PublicChanged: true}, nil
@@ -134,6 +152,10 @@ func requireWaitingHost(aggregate *domain.Aggregate, principal domain.Principal)
 	return nil
 }
 
+// maxSeatNameRunes is the longest display name a seat can have, the game's
+// name and the number that tells two seats apart included.
+const maxSeatNameRunes = 40
+
 // distinctName numbers a seat's name when an active member already has it,
 // so two bots of one level can be told apart: "Bot (level 2)", then
 // "Bot (level 2) #2".
@@ -146,7 +168,12 @@ func distinctName(members []domain.Member, name string) string {
 	}
 	candidate := name
 	for number := 2; taken[candidate]; number++ {
-		candidate = fmt.Sprintf("%s #%d", name, number)
+		suffix := fmt.Sprintf(" #%d", number)
+		base := []rune(name)
+		if limit := maxSeatNameRunes - utf8.RuneCountInString(suffix); len(base) > limit {
+			base = base[:limit]
+		}
+		candidate = strings.TrimSpace(string(base)) + suffix
 	}
 	return candidate
 }

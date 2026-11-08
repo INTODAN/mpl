@@ -121,7 +121,7 @@ seat = next(member for member in snapshot.members if member.kind.value == "seat"
 snapshot = await client.remove_seat(scope, seat.id)
 ```
 
-Only the host can, while the lobby waits; otherwise `LobbyError` with `not_host` or `phase_conflict`. Settings the game rejects raise `invalid_seat_settings` with the game's message as `detail`, and a game without seats, such as `quiz-demo`, refuses every one. Each `add_seat` adds a seat, so don't retry it blindly after a transport failure: read the snapshot first.
+Only the host can, while the lobby waits; otherwise `LobbyError` with `not_host` or `phase_conflict`. Settings the game rejects raise `invalid_seat_settings` with the game's message as `detail`, and a game without seats, such as `quiz-demo`, refuses every one. `add_seat` sends a `request_id` (yours, or a fresh one), so after a transport failure you can call it again with the same `request_id`, team and settings: the lobby returns the snapshot without a second seat, and fails with `idempotency_conflict` if the team or settings differ. The client doesn't retry by itself.
 
 To rejoin after `quit`, reuse the same session file without `--new-session`:
 

@@ -13,6 +13,11 @@
             "readOnly": true,
             "type": "string"
           },
+          "request_id": {
+            "description": "Optional. Repeating a request ID with the same team and settings returns the current snapshot without a second seat; with another team or settings it fails with idempotency_conflict.",
+            "format": "uuid",
+            "type": "string"
+          },
           "seat_settings": {
             "additionalProperties": true,
             "description": "Settings for a seat that no person plays, as a JSON object that only the game reads, such as the level of the game's bot that plays the seat. The game checks them when the host adds the seat; invalid settings fail with invalid_seat_settings.",
@@ -1549,7 +1554,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats": {
       "post": {
-        "description": "Adds a seat that no person plays, such as the game's bot, to a team, and returns the snapshot, where the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat; settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and toward the members a start needs, is always ready, never disconnects, and joins the start roster with its own player_id. A start still needs the host, a person. A team_id that isn't one of the lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a second one; the host removes it.",
+        "description": "Adds a seat that no person plays, such as the game's bot, to a team, and returns the snapshot, where the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat; settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and toward the members a start needs, is always ready, never disconnects, and joins the start roster with its own player_id. A start still needs the host, a person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe: repeating it with the same team_id and seat_settings returns the current snapshot without a second seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds a seat.",
         "operationId": "addLobbySeat",
         "parameters": [
           {

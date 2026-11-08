@@ -68,7 +68,7 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		return domain.Aggregate{}, err
 	}
 	for _, member := range members {
-		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings})
+		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings, SeatRequestID: deref(member.SeatRequestID)})
 	}
 	var leases []LeaseRecord
 	if err := tx.Where(&LeaseRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "player_id"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "generation"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "client_instance_id"}}).Find(&leases).Error; err != nil {
@@ -85,4 +85,12 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		aggregate.StartRoster = append(aggregate.StartRoster, domain.StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder})
 	}
 	return aggregate, nil
+}
+
+// deref returns the string a nullable column holds, or "" for null.
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

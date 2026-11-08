@@ -122,7 +122,7 @@ func (service *Service) Leave(ctx context.Context, principal domain.Principal, s
 			aggregate.Lobby.HostPlayerID = domain.ElectHost(aggregate.Members)
 		}
 		if aggregate.Lobby.HostPlayerID == nil && aggregate.Lobby.Phase == domain.PhaseWaiting {
-			aggregate.Lobby.Phase = domain.PhaseClosed
+			domain.CloseAbandoned(aggregate)
 		}
 		return domain.Change{PublicChanged: true, Revocations: []domain.RevocationIntent{{PlayerID: principal.PlayerID, Scope: scope, Generation: member.Generation}}}, nil
 	})

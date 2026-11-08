@@ -87,9 +87,24 @@ func NormalizeExpired(aggregate *Aggregate, now time.Time, policy Policy) (Chang
 			change.PublicChanged = true
 		}
 		if nextHost == nil && aggregate.Lobby.Phase == PhaseWaiting {
-			aggregate.Lobby.Phase = PhaseClosed
+			CloseAbandoned(aggregate)
 			change.PublicChanged = true
 		}
 	}
 	return change, nil
+}
+
+// CloseAbandoned closes a waiting lobby whose last person left. Its seats
+// leave with them, like members who left, so a closed lobby holds no active
+// member.
+func CloseAbandoned(aggregate *Aggregate) {
+	aggregate.Lobby.Phase = PhaseClosed
+	for index := range aggregate.Members {
+		member := &aggregate.Members[index]
+		if member.IsSeat() {
+			member.Active = false
+			member.TeamID = nil
+			member.Ready = false
+		}
+	}
 }

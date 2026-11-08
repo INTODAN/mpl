@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/postgres"
@@ -17,12 +19,16 @@ import (
 // from 1 to 3 and nothing else.
 func botSeat(_ context.Context, settings json.RawMessage) (string, error) {
 	var decoded struct {
-		Level int `json:"level"`
+		Level int    `json:"level"`
+		Name  string `json:"name"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(settings))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&decoded); err != nil || decoded.Level < 1 || decoded.Level > 3 {
 		return "", errors.New("level must be 1, 2 or 3")
+	}
+	if decoded.Name != "" {
+		return decoded.Name, nil
 	}
 	return fmt.Sprintf("Bot (level %d)", decoded.Level), nil
 }
@@ -193,6 +199,73 @@ func TestSeatsAloneNeitherHostNorStart(t *testing.T) {
 	if after.Lobby.HostPlayerID != nil || after.Lobby.Phase != domain.PhaseClosed {
 		t.Fatalf("a lobby of seats alone = host %v, phase %s", after.Lobby.HostPlayerID, after.Lobby.Phase)
 	}
+	// A closed lobby holds no active member, seats included.
+	for _, member := range after.Members {
+		if member.Active || member.TeamID != nil || member.Ready {
+			t.Fatalf("a member of the closed lobby is still active: %#v", member)
+		}
+	}
+}
+
+func TestSeatNamesStayWithinTheLimitWhenNumbered(t *testing.T) {
+	fixture := newServiceFixture(t, 4, seatLobby)
+	long := strings.Repeat("é", 40)
+	fixture.addSeat(t, 1, fmt.Sprintf(`{"level":1,"name":%q}`, long))
+	snapshot := fixture.addSeat(t, 1, fmt.Sprintf(`{"level":1,"name":%q}`, long))
+	names := []string{seats(snapshot)[0].DisplayName, seats(snapshot)[1].DisplayName}
+	if names[0] != long || names[1] != strings.Repeat("é", 37)+" #2" || utf8.RuneCountInString(names[1]) != 40 {
+		t.Fatalf("seat names = %q", names)
+	}
+}
+
+func TestAddingASeatTwiceWithOneRequestIDAddsOne(t *testing.T) {
+	fixture := newServiceFixture(t, 4, seatLobby)
+	add := func(requestID string, teamIndex int, settings string) (domain.Snapshot, error) {
+		return fixture.service.AddSeat(context.Background(), fixture.host, fixture.scope, domain.AddSeatRequest{RequestID: requestID, TeamID: fixture.initial.Teams[teamIndex].ID, SeatSettings: json.RawMessage(settings)})
+	}
+	requestID := integrationID(t)
+	first, err := add(requestID, 1, `{"level":2}`)
+	if err != nil || len(seats(first)) != 1 {
+		t.Fatal("first request", err)
+	}
+	invalidations := fixture.pushed(invalidationPushes)
+	// Reordered keys and spaces are the same settings.
+	again, err := add(requestID, 1, `{ "level": 2 }`)
+	if err != nil || len(seats(again)) != 1 || seats(again)[0].ID != seats(first)[0].ID || again.Lobby.Version != first.Lobby.Version {
+		t.Fatal("repeated request", err, again.Members)
+	}
+	if fixture.pushed(invalidationPushes) != invalidations {
+		t.Fatal("a repeated request published a change")
+	}
+	_, err = add(requestID, 0, `{"level":2}`)
+	requireDomainError(t, err, domain.ErrIdempotencyConflict)
+	_, err = add(requestID, 1, `{"level":3}`)
+	requireDomainError(t, err, domain.ErrIdempotencyConflict)
+	activeSeats := 0
+	for _, member := range fixture.read(t).Members {
+		if member.IsSeat() && member.Active {
+			activeSeats++
+		}
+	}
+	if activeSeats != 1 {
+		t.Fatal("a conflicting repeat added a seat")
+	}
+	// Without a request ID, or with another, each call adds a seat.
+	if _, err := add("", 1, `{"level":2}`); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := add(integrationID(t), 1, `{"level":2}`); err != nil || len(seats(snapshot)) != 3 {
+		t.Fatal("other requests", err)
+	}
+	// A repeat after the host removed the seat doesn't bring it back.
+	if _, err := fixture.service.RemoveSeat(context.Background(), fixture.host, fixture.scope, seats(first)[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := add(requestID, 1, `{"level":2}`); err != nil || len(seats(snapshot)) != 2 {
+		t.Fatal("a repeat after removal", err)
+	}
+	_, err = fixture.service.AddSeat(context.Background(), fixture.host, fixture.scope, domain.AddSeatRequest{RequestID: "not-a-uuid", TeamID: fixture.initial.Teams[1].ID, SeatSettings: json.RawMessage(`{"level":2}`)})
+	requireDomainError(t, err, domain.ErrInvalidInput)
 }
 
 func TestGamesWithoutSeatsRefuseEverySeat(t *testing.T) {

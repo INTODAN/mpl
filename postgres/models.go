@@ -61,7 +61,8 @@ func (TeamRecord) TableName() string { return "lobby_teams" }
 
 // MembershipRecord.Kind and SeatSettings are migration 0005's: a seat that no
 // person plays is kind "seat" with the game's settings, and a person is
-// "human" with null settings. Both are written once, when the row is created.
+// "human" with null settings. SeatRequestID is the request ID that added the
+// seat, unique within its lobby, or null. All are written once, when the row is created.
 type MembershipRecord struct {
 	ID                string     `gorm:"column:id;type:uuid;primaryKey"`
 	LobbyID           string     `gorm:"column:lobby_id;type:uuid;not null"`
@@ -76,6 +77,7 @@ type MembershipRecord struct {
 	DisconnectedUntil *time.Time `gorm:"column:disconnected_until"`
 	Kind              string     `gorm:"column:kind;not null;default:human"`
 	SeatSettings      []byte     `gorm:"column:seat_settings;type:json"`
+	SeatRequestID     *string    `gorm:"column:seat_request_id;type:uuid"`
 }
 
 func (MembershipRecord) TableName() string { return "lobby_memberships" }

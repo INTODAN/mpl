@@ -152,6 +152,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _member_text(member: Any) -> str:
+    kind = getattr(member, "kind", None)
+    if getattr(kind, "value", kind) == "seat":
+        return f"{getattr(member, 'display_name', 'bot')} (bot)"
     status = "ready" if getattr(member, "ready", False) else "not ready"
     if not getattr(member, "active", True):
         status += ", inactive"

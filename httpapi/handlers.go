@@ -82,7 +82,7 @@ func (handler handlers) start(ctx context.Context, input *StartInput) (*Snapshot
 	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
 }
 func (handler handlers) addSeat(ctx context.Context, input *AddSeatInput) (*SnapshotOutput, error) {
-	result, err := handler.app.AddSeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), domain.AddSeatRequest{TeamID: input.Body.TeamID, SeatSettings: json.RawMessage(input.Body.SeatSettings)})
+	result, err := handler.app.AddSeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), domain.AddSeatRequest{RequestID: input.Body.RequestID, TeamID: input.Body.TeamID, SeatSettings: json.RawMessage(input.Body.SeatSettings)})
 	if err != nil {
 		return nil, problemFor(err)
 	}

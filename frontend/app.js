@@ -633,7 +633,7 @@ function showSeatControls(shown) {
       const add = element("button", "secondary", `${options.label} to ${team.name}`);
       add.type = "button";
       add.addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/seats`, "POST", {
-        team_id: team.id, seat_settings: options.choices[Number(select.value)].settings,
+        request_id: uuid(), team_id: team.id, seat_settings: options.choices[Number(select.value)].settings,
       }))));
       row.append(label, add);
       return row;

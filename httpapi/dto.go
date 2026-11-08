@@ -140,6 +140,7 @@ type AddSeatInput struct {
 	Body AddSeatBody `json:"-"`
 }
 type AddSeatBody struct {
+	RequestID    string       `json:"request_id,omitempty" format:"uuid" doc:"Optional. Repeating a request ID with the same team and settings returns the current snapshot without a second seat; with another team or settings it fails with idempotency_conflict."`
 	TeamID       string       `json:"team_id" format:"uuid" doc:"The team the seat joins."`
 	SeatSettings SeatSettings `json:"seat_settings" required:"true"`
 }

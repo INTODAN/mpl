@@ -471,16 +471,23 @@ class LobbyClient:
     async def start(self, scope: Scope) -> Snapshot:
         return await self._command(scope, start_lobby, body=StartInputBody())
 
-    async def add_seat(self, scope: Scope, team_id: str, seat_settings: dict[str, Any]) -> Snapshot:
+    async def add_seat(self, scope: Scope, team_id: str, seat_settings: dict[str, Any],
+                       request_id: UUID | str | None = None) -> Snapshot:
         """Add a seat that no person plays, such as the game's bot, to a team.
 
         Only the host can, while the lobby waits. seat_settings is the game's
         own JSON object for the seat; settings the game rejects raise
         LobbyError with code invalid_seat_settings and the game's message. The
-        seat is a member of kind seat in the returned snapshot. Each call adds
-        a seat, so retrying after a lost response can add a second one.
+        seat is a member of kind seat in the returned snapshot.
+
+        request_id makes a retry safe: after a transport failure, call again
+        with the same request_id, team and settings and the lobby returns the
+        snapshot without a second seat; other settings or another team with
+        the same request_id raise LobbyError with code idempotency_conflict.
+        The client generates one when omitted, and doesn't retry by itself.
         """
-        body = AddSeatBody(team_id=UUID(team_id), seat_settings=AddSeatBodySeatSettings.from_dict(seat_settings))
+        body = AddSeatBody(request_id=UUID(str(request_id)) if request_id else uuid4(), team_id=UUID(team_id),
+                           seat_settings=AddSeatBodySeatSettings.from_dict(seat_settings))
         return await self._command(scope, add_lobby_seat, body=body)
 
     async def remove_seat(self, scope: Scope, seat_id: str) -> Snapshot:

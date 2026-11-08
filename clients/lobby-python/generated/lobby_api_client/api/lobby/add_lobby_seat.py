@@ -109,8 +109,10 @@ def sync_detailed(
     every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
     toward the members a start needs, is always ready, never disconnects, and joins the start roster
     with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a
-    second one; the host removes it.
+    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
+    repeating it with the same team_id and seat_settings returns the current snapshot without a second
+    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
+    a seat.
 
     Args:
         game_key (str):
@@ -154,8 +156,10 @@ def sync(
     every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
     toward the members a start needs, is always ready, never disconnects, and joins the start roster
     with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a
-    second one; the host removes it.
+    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
+    repeating it with the same team_id and seat_settings returns the current snapshot without a second
+    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
+    a seat.
 
     Args:
         game_key (str):
@@ -194,8 +198,10 @@ async def asyncio_detailed(
     every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
     toward the members a start needs, is always ready, never disconnects, and joins the start roster
     with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a
-    second one; the host removes it.
+    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
+    repeating it with the same team_id and seat_settings returns the current snapshot without a second
+    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
+    a seat.
 
     Args:
         game_key (str):
@@ -237,8 +243,10 @@ async def asyncio(
     every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
     toward the members a start needs, is always ready, never disconnects, and joins the start roster
     with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. Each call adds a seat, so a retry after a lost response can add a
-    second one; the host removes it.
+    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
+    repeating it with the same team_id and seat_settings returns the current snapshot without a second
+    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
+    a seat.
 
     Args:
         game_key (str):

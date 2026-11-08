@@ -152,13 +152,14 @@ func TestSeatsNeverExpireOrHost(t *testing.T) {
 	if _, err := domain.NormalizeExpired(&aggregate, now, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"})); err != nil {
 		t.Fatal(err)
 	}
-	seat := domain.FindMember(&aggregate, "seat-player")
-	if !seat.Active || !seat.Ready || seat.DisconnectedUntil != nil {
-		t.Fatalf("seat after expiry = %#v", seat)
-	}
 	// The host's grace ran out; the seat, which joined earlier, doesn't host,
-	// so the waiting lobby closes.
+	// so the waiting lobby closes, and its seat leaves with it. The seat held
+	// no lease, so it never disconnected.
 	if aggregate.Lobby.HostPlayerID != nil || aggregate.Lobby.Phase != domain.PhaseClosed {
 		t.Fatalf("host %v, phase %s", aggregate.Lobby.HostPlayerID, aggregate.Lobby.Phase)
+	}
+	seat := domain.FindMember(&aggregate, "seat-player")
+	if seat.Active || seat.Ready || seat.TeamID != nil || seat.DisconnectedUntil != nil {
+		t.Fatalf("seat after the lobby closed = %#v", seat)
 	}
 }

@@ -93,6 +93,9 @@ type Member struct {
 	// the host added the seat, and nil for a human. The lobby stores it
 	// without reading it.
 	SeatSettings json.RawMessage `json:"seat_settings"`
+	// SeatRequestID is the request ID that added the seat, or empty when it
+	// had none. It never leaves the lobby.
+	SeatRequestID string `json:"-"`
 }
 
 // IsSeat reports whether no person plays the member.

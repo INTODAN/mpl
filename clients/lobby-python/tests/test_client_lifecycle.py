@@ -1,6 +1,6 @@
 import asyncio
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import centrifuge
 import httpx
@@ -241,8 +241,17 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
     await h.join()
     added = await h.client.add_seat(SCOPE, team, {"bot_level": 2})
     assert (added.members[0].kind.value, added.members[0].seat_settings.to_dict()) == ("seat", {"bot_level": 2})
+    generated = seen[0][2].pop("request_id")
+    assert UUID(generated).version == 4
     assert seen[0] == ("POST", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/seats",
                        {"team_id": team, "seat_settings": {"bot_level": 2}})
+    # A caller's retry after a transport failure resends the same request ID.
+    mine = str(uuid4())
+    await h.client.add_seat(SCOPE, team, {"bot_level": 2}, request_id=mine)
+    await h.client.add_seat(SCOPE, team, {"bot_level": 2}, request_id=mine)
+    assert [call[2]["request_id"] for call in seen[1:3]] == [mine, mine]
+    assert generated != mine
+    seen.clear()
     with pytest.raises(LobbyError) as invalid:
         await h.client.add_seat(SCOPE, team, {"bot_level": 9})
     assert (invalid.value.code, invalid.value.status, invalid.value.detail) == (

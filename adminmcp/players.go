@@ -33,6 +33,7 @@ type PlayerLobby struct {
 	GameKey     string  `json:"game_key"`
 	Phase       string  `json:"phase"`
 	DisplayName string  `json:"display_name" jsonschema:"The player's name in this lobby."`
+	Kind        string  `json:"kind" jsonschema:"human for a person, seat for a seat that no person plays, such as a game's bot."`
 	TeamID      *string `json:"team_id"`
 	Ready       bool    `json:"ready"`
 	Active      bool    `json:"active"`
@@ -158,7 +159,7 @@ func (reader lobbyReader) findPlayers(transaction *gorm.DB, input FindPlayersInp
 			room := roomsByID[membership.LobbyID]
 			player.Lobbies = append(player.Lobbies, PlayerLobby{
 				LobbyID: membership.LobbyID, LobbyName: room.Name, GameKey: room.GameKey, Phase: room.Phase,
-				DisplayName: membership.DisplayName, TeamID: membership.TeamID, Ready: membership.Ready, Active: membership.Active,
+				DisplayName: membership.DisplayName, Kind: membership.Kind, TeamID: membership.TeamID, Ready: membership.Ready, Active: membership.Active,
 				Connected: connected[memberKey{membership.LobbyID, membership.PlayerID}],
 			})
 		}

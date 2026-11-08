@@ -358,7 +358,7 @@ func TestLobbyTools(t *testing.T) {
 		}
 		alice := byID.Players[0]
 		if alice.DisplayName != "Alice" || len(alice.LiveSessions) != 1 || !alice.LiveSessions[0].ExpiresAt.Equal(now.Add(23*time.Hour)) ||
-			len(alice.Lobbies) != 1 || alice.Lobbies[0].LobbyID != ids.waiting || !alice.Lobbies[0].Connected || len(alice.RosterPlaces) != 0 {
+			len(alice.Lobbies) != 1 || alice.Lobbies[0].LobbyID != ids.waiting || alice.Lobbies[0].Kind != "human" || !alice.Lobbies[0].Connected || len(alice.RosterPlaces) != 0 {
 			t.Errorf("Alice = %+v", alice)
 		}
 		bob := call[adminmcp.PlayerList](t, session, collected, "find_players", map[string]any{"player_id": ids.bob}).Players[0]
