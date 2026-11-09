@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "clients" / "lobby-python" / "scripts" / "generate.py"
 TOOLS = ROOT / "clients" / "lobby-python" / "tools"
-GENERATED = ROOT / "clients" / "lobby-python" / "generated"
+GENERATED = ROOT / "clients" / "lobby-python" / "lobby_api_client"
 
 
 def run_generation(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -57,7 +57,7 @@ def test_generation_repeatable() -> None:
 
 
 @pytest.mark.parametrize(
-    "relative", [Path("README.md"), Path("lobby_api_client/models/lobby.py")]
+    "relative", [Path("__init__.py"), Path("py.typed"), Path("models/lobby.py")]
 )
 def test_generation_output_contains_metadata(relative: Path) -> None:
     assert (GENERATED / relative).is_file()

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate and verify the lobby HTTP SDK from the checked-in OpenAPI file."""
+"""Generate and verify the lobby HTTP SDK from the checked-in OpenAPI file.
+
+The generator writes a whole uv project; only its ``lobby_api_client`` package is
+kept, next to ``lobby_client``, because both ship in the ``mpl-lobby-client``
+distribution. The generated project's own metadata files are discarded.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PROJECT = ROOT / "clients" / "lobby-python"
 ARTIFACT = ROOT / "api" / "openapi.json"
 CONFIG = PROJECT / "generator-config.yaml"
-GENERATED = PROJECT / "generated"
+GENERATED = PROJECT / "lobby_api_client"
 EXPECTED_OPERATIONS = {
     "create_lobby_session",
     "create_lobby_connection_token",
@@ -55,9 +60,9 @@ def main(argv: list[str] | None = None) -> int:
             remove_caches(generated_path)
             validate_generated(generated_path)
             if args.check:
-                compare_tree(generated_path, GENERATED)
+                compare_tree(generated_path / "lobby_api_client", GENERATED)
             else:
-                replace_generated(generated_path)
+                replace_generated(generated_path / "lobby_api_client")
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"generation failed: {error}", file=sys.stderr)
         return 1

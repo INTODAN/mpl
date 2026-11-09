@@ -1,10 +1,11 @@
 # Generic lobby Python client
 
 This directory contains the generated HTTP SDK and the handwritten asyncio
-wrapper. `generated/` is produced from the checked-in Huma OpenAPI document;
+wrapper, and both ship in the one `mpl-lobby-client` distribution.
+`lobby_api_client/` is produced from the checked-in Huma OpenAPI document;
 `lobby_client/` owns credentials, the Centrifugo connection, reconciliation,
 heartbeats, and cleanup. Huma is the schema authority. Do not hand-edit files
-under `generated/`; update the schema/export and run the generator instead.
+under `lobby_api_client/`; update the schema/export and run the generator instead.
 
 **This is a breaking change; clients must upgrade.** Lobbies can hold seats that no person plays, such as a game's bot, which the host adds and removes with `add_seat` and `remove_seat`. Every snapshot member now has `kind` (`human` or `seat`) and `seat_settings`, and a seat is always ready, holds no lease and never hosts; the new error code `invalid_seat_settings` refuses settings the game doesn't take. An older client shows a seat as an ordinary member. What to do: regenerate or upgrade the client, and show a seat's `display_name` without treating it as a person.
 
@@ -20,7 +21,7 @@ Each release publishes this client to PyPI as `mpl-lobby-client`, at the release
 pip install mpl-lobby-client==X.Y.Z   # or: uv add mpl-lobby-client==X.Y.Z
 ```
 
-It needs Python 3.14 or newer. The HTTP SDK it depends on, `mpl-lobby-api-client`, installs with it. The rest of this README describes the repository checkout.
+It needs Python 3.14 or newer. The wheel contains both import packages: `lobby_client` and the generated HTTP SDK `lobby_api_client` (there is no separate SDK distribution). The rest of this README describes the repository checkout.
 
 The client requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/).
 A running host application exposing the lobby API, PostgreSQL, and Centrifugo are required for the live example. The host configures its database and transport credentials; clients need only the public API URL. See the [component guide](../../README.md) and [live acceptance setup](../../integration/README.md).

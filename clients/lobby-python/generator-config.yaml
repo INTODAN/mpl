@@ -1,3 +1,2 @@
-project_name_override: mpl-lobby-api-client
 package_name_override: lobby_api_client
 package_version_override: 1.0.0
