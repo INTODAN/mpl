@@ -14,9 +14,10 @@ import (
 // AddSeat adds a seat that no person plays, such as a game's bot, to a team of
 // a waiting lobby. Only the host can add one. The game checks the seat's
 // settings and names the seat before the transaction, so it never runs while
-// the room is locked. The seat counts toward the lobby's and the team's
-// capacity, is always ready, holds no lease, and joins the start roster with
-// its own player ID, which the game plays from the seat's settings. A request
+// the room is locked. The seat takes its team, which holds no other member,
+// and counts toward the lobby's capacity. It is always ready, holds no lease,
+// and joins the start roster with its own player ID, which the game plays
+// from the seat's settings. A request
 // ID makes a retry safe: the same ID with the same team and settings returns
 // the current snapshot without a second seat, and with others fails with
 // idempotency_conflict.
@@ -60,20 +61,10 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 		if team == nil {
 			return domain.Change{}, domain.ErrInvalidInput
 		}
-		members, onTeam := 0, 0
-		for _, member := range aggregate.Members {
-			if !member.Active {
-				continue
-			}
-			members++
-			if member.TeamID != nil && *member.TeamID == team.ID {
-				onTeam++
-			}
-		}
-		if members >= aggregate.Lobby.Capacity {
+		if domain.LobbyFull(aggregate) {
 			return domain.Change{}, domain.ErrLobbyFull
 		}
-		if onTeam >= team.Capacity {
+		if domain.TeamTaken(aggregate, team.ID) {
 			return domain.Change{}, domain.ErrTeamFull
 		}
 		seatID, err := service.identifiers.UUID()

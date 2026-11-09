@@ -49,7 +49,7 @@ type LobbySummary struct {
 	JoinCode             string    `json:"join_code"`
 	GameKey              string    `json:"game_key"`
 	Phase                string    `json:"phase"`
-	Capacity             int       `json:"capacity"`
+	Capacity             int       `json:"capacity" jsonschema:"The members the lobby holds: its number of teams, since a team holds one member."`
 	MemberCount          int       `json:"member_count" jsonschema:"Active members, who hold a seat, connected or not."`
 	ConnectedMemberCount int       `json:"connected_member_count" jsonschema:"Active members with a lease that has not expired or been released."`
 	HostDisplayName      *string   `json:"host_display_name"`
@@ -73,11 +73,10 @@ type GetLobbyInput struct {
 	GameKey  string `json:"game_key,omitempty" jsonschema:"The lobby's game, when a join code is used by several games."`
 }
 
-// Team is one of a lobby's teams.
+// Team is one of a lobby's teams. It holds at most one member.
 type Team struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Capacity    int    `json:"capacity"`
 	Order       int    `json:"order" jsonschema:"The team's position, from 1."`
 	MemberCount int    `json:"member_count" jsonschema:"Active members on the team."`
 }
@@ -413,7 +412,7 @@ func (reader lobbyReader) getLobby(transaction *gorm.DB, input GetLobbyInput) (L
 	}
 	for _, team := range teams {
 		teamNames[team.ID] = team.Name
-		detail.Teams = append(detail.Teams, Team{ID: team.ID, Name: team.Name, Capacity: team.Capacity, Order: team.TeamOrder, MemberCount: teamMembers[team.ID]})
+		detail.Teams = append(detail.Teams, Team{ID: team.ID, Name: team.Name, Order: team.TeamOrder, MemberCount: teamMembers[team.ID]})
 	}
 	for _, member := range members {
 		detail.Members = append(detail.Members, Member{

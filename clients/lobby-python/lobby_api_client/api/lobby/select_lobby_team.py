@@ -102,7 +102,8 @@ def sync_detailed(
 ) -> Response[Problem | Snapshot]:
     """Select a team
 
-     team_id is required and may be null to clear the selection.
+     team_id is required and may be null to clear the selection. A team holds one member: a team that
+    already has a person or a seat is team_full.
 
     Args:
         game_key (str):
@@ -139,7 +140,8 @@ def sync(
 ) -> Problem | Snapshot | None:
     """Select a team
 
-     team_id is required and may be null to clear the selection.
+     team_id is required and may be null to clear the selection. A team holds one member: a team that
+    already has a person or a seat is team_full.
 
     Args:
         game_key (str):
@@ -171,7 +173,8 @@ async def asyncio_detailed(
 ) -> Response[Problem | Snapshot]:
     """Select a team
 
-     team_id is required and may be null to clear the selection.
+     team_id is required and may be null to clear the selection. A team holds one member: a team that
+    already has a person or a seat is team_full.
 
     Args:
         game_key (str):
@@ -206,7 +209,8 @@ async def asyncio(
 ) -> Problem | Snapshot | None:
     """Select a team
 
-     team_id is required and may be null to clear the selection.
+     team_id is required and may be null to clear the selection. A team holds one member: a team that
+    already has a person or a seat is team_full.
 
     Args:
         game_key (str):

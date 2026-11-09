@@ -18,8 +18,8 @@ from examples import lobby_cli
 
 def snapshot(*, version: int = 1):
     teams = [
-        SimpleNamespace(id="blue-id", order=2, name="Blue", capacity=4),
-        SimpleNamespace(id="red-id", order=1, name="Red", capacity=4),
+        SimpleNamespace(id="blue-id", order=2, name="Blue"),
+        SimpleNamespace(id="red-id", order=1, name="Red"),
     ]
     members = [
         SimpleNamespace(display_name="Alice", team_id="red-id", ready=False, active=True, join_sequence=1),
@@ -27,7 +27,7 @@ def snapshot(*, version: int = 1):
     ]
     lobby = SimpleNamespace(
         game_key="island-battles", id="lobby-id", join_code="ABCD", phase="waiting",
-        host_player_id="host-id", version=version, name="Demo", capacity=4,
+        host_player_id="host-id", version=version, name="Demo", capacity=2,
     )
     return SimpleNamespace(lobby=lobby, teams=teams, members=members)
 

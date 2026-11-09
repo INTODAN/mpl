@@ -96,7 +96,7 @@ func AddTools(server *mcp.Server, database *gorm.DB, options Options) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_lobby",
 		Description: "Describes one lobby, found by lobby_id or join_code, such as \"How many players are in lobby X?\" (member_count, or connected_member_count for those connected now). " +
-			"Returns everything list_lobbies does, plus its game settings, its teams with capacity and order, every member with display name, player ID, team, ready, " +
+			"Returns everything list_lobbies does, plus its game settings, its teams with order and member count (a team holds one member), every member with display name, player ID, team, ready, " +
 			"active, connected, lease expiry and grace deadline (disconnected_until), the start roster, and when retention deletes the lobby unless a member connects first.",
 		Annotations: ReadOnlyAnnotations("Get lobby"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input GetLobbyInput) (*mcp.CallToolResult, LobbyDetail, error) {

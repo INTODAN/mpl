@@ -34,9 +34,9 @@ func (handler handlers) create(ctx context.Context, input *CreateLobbyInput) (*C
 	body := input.Body
 	teams := make([]domain.TeamDefinition, len(body.Teams))
 	for i, team := range body.Teams {
-		teams[i] = domain.TeamDefinition{Name: team.Name, Capacity: team.Capacity}
+		teams[i] = domain.TeamDefinition{Name: team.Name}
 	}
-	result, err := handler.app.Create(ctx, principalFromContext(ctx), domain.CreateRequest{RequestID: body.RequestID, GameKey: body.GameKey, Name: body.Name, Capacity: body.Capacity, Teams: teams, ClientInstanceID: body.ClientInstanceID, GameSettings: json.RawMessage(body.GameSettings)})
+	result, err := handler.app.Create(ctx, principalFromContext(ctx), domain.CreateRequest{RequestID: body.RequestID, GameKey: body.GameKey, Name: body.Name, Teams: teams, ClientInstanceID: body.ClientInstanceID, GameSettings: json.RawMessage(body.GameSettings)})
 	if err != nil {
 		return nil, problemFor(err)
 	}

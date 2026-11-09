@@ -25,10 +25,12 @@ type Principal struct {
 	DisplayName string `json:"display_name"`
 }
 type Lobby struct {
-	ID           string    `json:"id"`
-	GameKey      string    `json:"game_key"`
-	Name         string    `json:"name"`
-	JoinCode     string    `json:"join_code"`
+	ID       string `json:"id"`
+	GameKey  string `json:"game_key"`
+	Name     string `json:"name"`
+	JoinCode string `json:"join_code"`
+	// Capacity is the number of teams, which is the number of members the
+	// lobby holds, since a team holds at most one member.
 	Capacity     int       `json:"capacity"`
 	Phase        Phase     `json:"phase"`
 	Version      int64     `json:"version"`
@@ -55,12 +57,13 @@ func (room *Lobby) MarkConnected(now time.Time) {
 	}
 }
 
+// Team is one side of a lobby. It holds at most one active member: one
+// person or one seat.
 type Team struct {
-	ID       string `json:"id"`
-	LobbyID  string `json:"lobby_id"`
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
-	Order    int    `json:"order"`
+	ID      string `json:"id"`
+	LobbyID string `json:"lobby_id"`
+	Name    string `json:"name"`
+	Order   int    `json:"order"`
 }
 
 // MemberKind says who takes a member's place in the lobby.

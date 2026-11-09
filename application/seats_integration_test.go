@@ -101,7 +101,7 @@ func TestHostPlaysAloneAgainstASeat(t *testing.T) {
 }
 
 func TestOnlyTheHostChangesSeatsWhileTheLobbyWaits(t *testing.T) {
-	fixture := newServiceFixture(t, 4, seatLobby)
+	fixture := newServiceFixture(t, 3, seatLobby)
 	guest := fixture.player(t, "Guest")
 	fixture.join(t, guest)
 	outsider := fixture.player(t, "Outsider")
@@ -135,7 +135,7 @@ func TestOnlyTheHostChangesSeatsWhileTheLobbyWaits(t *testing.T) {
 	gatedGame.choose(fixture.scope.LobbyID, fixture.host.PlayerID, true)
 	gatedGame.choose(fixture.scope.LobbyID, guest.PlayerID, true)
 	fixture.assign(t, fixture.host, 0, true)
-	fixture.assign(t, guest, 1, true)
+	fixture.assign(t, guest, 2, true)
 	if _, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope); err != nil {
 		t.Fatal(err)
 	}
@@ -174,10 +174,81 @@ func TestSeatsCountTowardCapacityAndTheGameChecksTheirSettings(t *testing.T) {
 	}
 }
 
+// A team holds one member, a person or a seat, and a lobby of N teams holds
+// N members.
+func TestATeamHoldsOneMember(t *testing.T) {
+	fixture := newServiceFixture(t, 3, seatLobby)
+	red, blue, green := fixture.initial.Teams[0].ID, fixture.initial.Teams[1].ID, fixture.initial.Teams[2].ID
+	if fixture.initial.Lobby.Capacity != 3 {
+		t.Fatalf("lobby capacity = %d, want its 3 teams", fixture.initial.Lobby.Capacity)
+	}
+	selectTeam := func(principal domain.Principal, teamID string) error {
+		_, err := fixture.service.SelectTeam(context.Background(), principal, fixture.scope, domain.SelectTeamRequest{TeamID: &teamID})
+		return err
+	}
+	addSeat := func(teamID string) error {
+		_, err := fixture.service.AddSeat(context.Background(), fixture.host, fixture.scope, domain.AddSeatRequest{TeamID: teamID, SeatSettings: json.RawMessage(`{"level":1}`)})
+		return err
+	}
+	if err := selectTeam(fixture.host, red); err != nil {
+		t.Fatal(err)
+	}
+	// A person's team takes neither a seat nor another person.
+	requireDomainError(t, addSeat(red), domain.ErrTeamFull)
+	guest := fixture.player(t, "Guest")
+	fixture.join(t, guest)
+	requireDomainError(t, selectTeam(guest, red), domain.ErrTeamFull)
+	// A seat's team takes no person.
+	if err := addSeat(blue); err != nil {
+		t.Fatal(err)
+	}
+	requireDomainError(t, selectTeam(guest, blue), domain.ErrTeamFull)
+	if err := selectTeam(guest, green); err != nil {
+		t.Fatal(err)
+	}
+	// Three members fill the three teams, and the lobby.
+	_, err := fixture.service.Join(context.Background(), fixture.player(t, "Late"), domain.JoinRequest{GameKey: fixture.scope.GameKey, JoinCode: fixture.initial.Lobby.JoinCode, ClientInstanceID: integrationID(t)})
+	requireDomainError(t, err, domain.ErrLobbyFull)
+	requireDomainError(t, addSeat(green), domain.ErrLobbyFull)
+	// A team its member left is free again.
+	if _, err := fixture.service.SelectTeam(context.Background(), fixture.host, fixture.scope, domain.SelectTeamRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := selectTeam(guest, red); err != nil {
+		t.Fatal("a team without a member refused the guest", err)
+	}
+	aggregate := fixture.read(t)
+	if activeCount(aggregate) != 3 {
+		t.Fatalf("active members = %d, want 3", activeCount(aggregate))
+	}
+}
+
+// Only a lobby created before a team held one member can have two members on
+// one team. It doesn't start until one of them moves.
+func TestStartRefusesTwoMembersOnOneTeam(t *testing.T) {
+	fixture := newServiceFixture(t, 3)
+	guest, _ := fixture.readyPair(t)
+	guestMember := memberFor(t, fixture.read(t), guest.PlayerID)
+	hostTeam := fixture.initial.Teams[0].ID
+	if err := fixture.db.Model(&postgres.MembershipRecord{}).Where(&postgres.MembershipRecord{ID: guestMember.ID}).Update("team_id", hostTeam).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := fixture.read(t)
+	_, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
+	requireDomainError(t, err, domain.ErrNotReady)
+	if after := fixture.read(t); after.Lobby.Phase != domain.PhaseWaiting || after.Lobby.Version != before.Lobby.Version {
+		t.Fatal("a refused start changed the lobby")
+	}
+	fixture.assign(t, guest, 2, true)
+	if snapshot, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope); err != nil || snapshot.Lobby.Phase != domain.PhaseStarted {
+		t.Fatal("the lobby did not start once each team held one member", err)
+	}
+}
+
 func TestSeatsOfOneSettingGetDistinctNames(t *testing.T) {
 	fixture := newServiceFixture(t, 4, seatLobby)
 	fixture.addSeat(t, 1, `{"level":2}`)
-	snapshot := fixture.addSeat(t, 1, `{"level":2}`)
+	snapshot := fixture.addSeat(t, 2, `{"level":2}`)
 	if names := []string{seats(snapshot)[0].DisplayName, seats(snapshot)[1].DisplayName}; names[0] != "Bot (level 2)" || names[1] != "Bot (level 2) #2" {
 		t.Fatalf("seat names = %v", names)
 	}
@@ -211,7 +282,7 @@ func TestSeatNamesStayWithinTheLimitWhenNumbered(t *testing.T) {
 	fixture := newServiceFixture(t, 4, seatLobby)
 	long := strings.Repeat("é", 40)
 	fixture.addSeat(t, 1, fmt.Sprintf(`{"level":1,"name":%q}`, long))
-	snapshot := fixture.addSeat(t, 1, fmt.Sprintf(`{"level":1,"name":%q}`, long))
+	snapshot := fixture.addSeat(t, 2, fmt.Sprintf(`{"level":1,"name":%q}`, long))
 	names := []string{seats(snapshot)[0].DisplayName, seats(snapshot)[1].DisplayName}
 	if names[0] != long || names[1] != strings.Repeat("é", 37)+" #2" || utf8.RuneCountInString(names[1]) != 40 {
 		t.Fatalf("seat names = %q", names)
@@ -251,10 +322,10 @@ func TestAddingASeatTwiceWithOneRequestIDAddsOne(t *testing.T) {
 		t.Fatal("a conflicting repeat added a seat")
 	}
 	// Without a request ID, or with another, each call adds a seat.
-	if _, err := add("", 1, `{"level":2}`); err != nil {
+	if _, err := add("", 2, `{"level":2}`); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot, err := add(integrationID(t), 1, `{"level":2}`); err != nil || len(seats(snapshot)) != 3 {
+	if snapshot, err := add(integrationID(t), 3, `{"level":2}`); err != nil || len(seats(snapshot)) != 3 {
 		t.Fatal("other requests", err)
 	}
 	// A repeat after the host removed the seat doesn't bring it back.

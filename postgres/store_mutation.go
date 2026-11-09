@@ -96,7 +96,7 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool, originalWatchers []domain.Watcher) error {
 	if create {
 		for _, team := range aggregate.Teams {
-			record := TeamRecord{ID: team.ID, LobbyID: aggregate.Lobby.ID, Name: team.Name, NormalizedName: domain.TeamNameKey(team.Name), Capacity: team.Capacity, TeamOrder: team.Order}
+			record := TeamRecord{ID: team.ID, LobbyID: aggregate.Lobby.ID, Name: team.Name, NormalizedName: domain.TeamNameKey(team.Name), TeamOrder: team.Order}
 			if err := tx.Create(&record).Error; err != nil {
 				return err
 			}

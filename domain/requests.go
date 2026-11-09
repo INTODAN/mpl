@@ -5,15 +5,15 @@ import (
 	"time"
 )
 
+// TeamDefinition names one team of a new lobby. A team holds at most one
+// member: one person or one seat.
 type TeamDefinition struct {
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
+	Name string `json:"name"`
 }
 type CreateRequest struct {
 	RequestID        string           `json:"request_id"`
 	GameKey          string           `json:"game_key"`
 	Name             string           `json:"name"`
-	Capacity         int              `json:"capacity"`
 	Teams            []TeamDefinition `json:"teams"`
 	ClientInstanceID string           `json:"client_instance_id"`
 	// GameSettings is an optional JSON object that only the game reads.

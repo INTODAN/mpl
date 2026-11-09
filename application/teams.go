@@ -37,13 +37,7 @@ func (service *Service) SelectTeam(ctx context.Context, principal domain.Princip
 			if selected == nil {
 				return domain.Change{}, domain.ErrInvalidInput
 			}
-			count := 0
-			for _, candidate := range aggregate.Members {
-				if candidate.Active && candidate.TeamID != nil && *candidate.TeamID == selected.ID {
-					count++
-				}
-			}
-			if count >= selected.Capacity {
+			if domain.TeamTaken(aggregate, selected.ID) {
 				return domain.Change{}, domain.ErrTeamFull
 			}
 		}

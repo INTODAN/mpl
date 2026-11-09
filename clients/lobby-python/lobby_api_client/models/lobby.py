@@ -17,7 +17,8 @@ T = TypeVar("T", bound="Lobby")
 class Lobby:
     """
     Attributes:
-        capacity (int):
+        capacity (int): The number of members the lobby holds, which is its number of teams, since each team holds one
+            member.
         created_at (datetime.datetime):
         game_key (str):
         game_settings (LobbyGameSettings): Settings for the game, as a JSON object that only the game reads. The game

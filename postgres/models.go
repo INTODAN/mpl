@@ -31,6 +31,8 @@ func (SessionRecord) TableName() string { return "lobby_sessions" }
 // RoomRecord.GameSettings is written once at creation into the json column
 // that migration 0003 adds; rooms created before it hold an empty object.
 // LastConnectedAt is migration 0004's; it decides when an idle room is deleted.
+// Capacity is the room's number of teams, which migration 0007 set for rooms
+// created before a team held one member.
 type RoomRecord struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
 	GameKey          string    `gorm:"column:game_key;not null"`
@@ -53,7 +55,6 @@ type TeamRecord struct {
 	LobbyID        string `gorm:"column:lobby_id;type:uuid;not null"`
 	Name           string `gorm:"column:name;not null"`
 	NormalizedName string `gorm:"column:normalized_name;not null"`
-	Capacity       int    `gorm:"column:capacity;not null"`
 	TeamOrder      int    `gorm:"column:team_order;not null"`
 }
 

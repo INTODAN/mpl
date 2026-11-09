@@ -95,28 +95,27 @@ const (
 // TeamNameKey is Unicode default case folding after trimming. Persist this key
 // for the database uniqueness constraint; preserve the original normalized label.
 func TeamNameKey(name string) string { return cases.Fold().String(strings.TrimSpace(name)) }
-func ValidateTeamDefinitions(definitions []TeamDefinition, lobbyCapacity int) ([]TeamDefinition, error) {
-	if lobbyCapacity < 2 || lobbyCapacity > 64 || len(definitions) < MinTeams || len(definitions) > MaxTeams {
-		return nil, NewError(CodeInvalidInput, "invalid lobby capacity or team count")
+
+// ValidateTeamDefinitions checks a new lobby's teams: from MinTeams to
+// MaxTeams, with unique names. A team holds at most one member, so the number
+// of teams is also the number of members the lobby holds.
+func ValidateTeamDefinitions(definitions []TeamDefinition) ([]TeamDefinition, error) {
+	if len(definitions) < MinTeams || len(definitions) > MaxTeams {
+		return nil, NewError(CodeInvalidInput, "invalid team count")
 	}
 	result := make([]TeamDefinition, len(definitions))
 	seen := map[string]bool{}
-	total := 0
 	for index, definition := range definitions {
 		name, err := NormalizeName(definition.Name, 40)
 		if err != nil {
 			return nil, err
 		}
 		key := TeamNameKey(name)
-		if definition.Capacity < 1 || definition.Capacity > 64 || seen[key] {
-			return nil, NewError(CodeInvalidInput, "invalid team capacity or duplicate team name")
+		if seen[key] {
+			return nil, NewError(CodeInvalidInput, "duplicate team name")
 		}
 		seen[key] = true
-		total += definition.Capacity
-		result[index] = TeamDefinition{Name: name, Capacity: definition.Capacity}
-	}
-	if total < lobbyCapacity {
-		return nil, NewError(CodeInvalidInput, "team capacities do not cover lobby capacity")
+		result[index] = TeamDefinition{Name: name}
 	}
 	return result, nil
 }
@@ -186,6 +185,31 @@ func FindMember(aggregate *Aggregate, playerID string) *Member {
 	}
 	return nil
 }
+
+// LobbyFull reports whether the lobby has as many active members, people and
+// seats, as teams. A team holds at most one member, so a full lobby has no
+// room for another.
+func LobbyFull(aggregate *Aggregate) bool {
+	activeMembers := 0
+	for _, member := range aggregate.Members {
+		if member.Active {
+			activeMembers++
+		}
+	}
+	return activeMembers >= len(aggregate.Teams)
+}
+
+// TeamTaken reports whether an active member, a person or a seat, is on the
+// team. A taken team has no room for another member.
+func TeamTaken(aggregate *Aggregate, teamID string) bool {
+	for _, member := range aggregate.Members {
+		if member.Active && member.TeamID != nil && *member.TeamID == teamID {
+			return true
+		}
+	}
+	return false
+}
+
 func FindLease(aggregate *Aggregate, playerID string, generation int64, clientID string) *Lease {
 	if aggregate == nil {
 		return nil

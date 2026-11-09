@@ -22,7 +22,7 @@ func canonicalCreate(request domain.CreateRequest) (domain.CreateRequest, error)
 	if err != nil {
 		return request, err
 	}
-	request.Teams, err = domain.ValidateTeamDefinitions(request.Teams, request.Capacity)
+	request.Teams, err = domain.ValidateTeamDefinitions(request.Teams)
 	if err != nil {
 		return request, err
 	}

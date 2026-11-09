@@ -82,7 +82,7 @@ func seedLobby(t *testing.T, db *gorm.DB, hostID, gameKey string, age, idle time
 	room.CreatedAt = retentionNow.Add(-age)
 	room.LastConnectedAt = retentionNow.Add(-idle)
 	mustCreate(t, db, &room)
-	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: "Red", NormalizedName: "red", Capacity: 2, TeamOrder: 1}
+	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: "Red", NormalizedName: "red", TeamOrder: 1}
 	mustCreate(t, db, &team)
 	member := memberFor(room.ID, hostID)
 	member.TeamID = &team.ID
@@ -181,7 +181,7 @@ func TestRetentionDeletesExpiredSessionsAndUnreferencedPlayers(t *testing.T) {
 	room.LastConnectedAt = retentionNow
 	room.CreatedAt = retentionNow
 	mustCreate(t, db, &room)
-	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: "Red", NormalizedName: "red", Capacity: 2, TeamOrder: 1}
+	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: "Red", NormalizedName: "red", TeamOrder: 1}
 	mustCreate(t, db, &team)
 	membership := memberFor(room.ID, member)
 	mustCreate(t, db, &membership)

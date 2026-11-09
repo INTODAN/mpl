@@ -59,8 +59,8 @@ async def guests():
 async def create(client, game_key=None, game_settings=None):
     game_key = game_key or GAME_KEY
     return await client.create_lobby(
-        game_key=game_key, name="Acceptance", capacity=4,
-        teams=[TeamDefinition(name="Red", capacity=4), TeamDefinition(name="Blue", capacity=4)],
+        game_key=game_key, name="Acceptance",
+        teams=[TeamDefinition(name="Red"), TeamDefinition(name="Blue")],
         request_id=uuid4(), game_settings=game_settings,
     )
 

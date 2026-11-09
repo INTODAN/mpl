@@ -61,7 +61,7 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		return domain.Aggregate{}, err
 	}
 	for _, team := range teams {
-		aggregate.Teams = append(aggregate.Teams, domain.Team{ID: team.ID, LobbyID: team.LobbyID, Name: team.Name, Capacity: team.Capacity, Order: team.TeamOrder})
+		aggregate.Teams = append(aggregate.Teams, domain.Team{ID: team.ID, LobbyID: team.LobbyID, Name: team.Name, Order: team.TeamOrder})
 	}
 	var members []MembershipRecord
 	if err := tx.Where(&MembershipRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "join_sequence"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}}).Find(&members).Error; err != nil {

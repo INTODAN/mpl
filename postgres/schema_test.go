@@ -96,7 +96,7 @@ func TestSchemaRejectsCrossLobbyTeam(t *testing.T) {
 	player := seedPlayer(t, db)
 	roomA := seedRoom(t, db, player.ID, "island-battles", "CROSS001")
 	roomB := seedRoom(t, db, player.ID, "quiz-demo", "CROSS001")
-	teamB := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: roomB.ID, Name: "Blue", NormalizedName: "blue", Capacity: 4, TeamOrder: 1}
+	teamB := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: roomB.ID, Name: "Blue", NormalizedName: "blue", TeamOrder: 1}
 	mustCreate(t, db, &teamB)
 	member := memberFor(roomA.ID, player.ID)
 	member.TeamID = &teamB.ID
@@ -145,9 +145,9 @@ func TestSchemaEnforcesLocalBounds(t *testing.T) {
 			room.Capacity = 1
 			return db.Create(&room).Error
 		}},
-		{"capacity sixty-five", func() error {
+		{"capacity seventeen", func() error {
 			room := roomFor(player.ID, "quiz-demo", "BOUND003")
-			room.Capacity = 65
+			room.Capacity = 17
 			return db.Create(&room).Error
 		}},
 		{"invalid phase", func() error {
@@ -199,7 +199,7 @@ func TestSchemaScopesTeamUniqueness(t *testing.T) {
 	player := seedPlayer(t, db)
 	roomA := seedRoom(t, db, player.ID, "island-battles", "TEAM0001")
 	roomB := seedRoom(t, db, player.ID, "quiz-demo", "TEAM0001")
-	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: roomA.ID, Name: "Blue", NormalizedName: "blue", Capacity: 4, TeamOrder: 1}
+	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: roomA.ID, Name: "Blue", NormalizedName: "blue", TeamOrder: 1}
 	mustCreate(t, db, &team)
 	duplicateOrder := team
 	duplicateOrder.ID = uuid.NewString()

@@ -158,7 +158,7 @@ func TestRetentionDeletesALobbyInUseAtItsMaximumAge(t *testing.T) {
 
 func TestRetentionFollowsAGamesOverrides(t *testing.T) {
 	fixture := newServiceFixture(t, 4)
-	quiz, err := fixture.service.Create(context.Background(), fixture.host, domain.CreateRequest{RequestID: integrationID(t), GameKey: "quiz-demo", Name: "Quiz", Capacity: 2, Teams: []domain.TeamDefinition{{Name: "A", Capacity: 1}, {Name: "B", Capacity: 1}}, ClientInstanceID: integrationID(t)})
+	quiz, err := fixture.service.Create(context.Background(), fixture.host, domain.CreateRequest{RequestID: integrationID(t), GameKey: "quiz-demo", Name: "Quiz", Teams: []domain.TeamDefinition{{Name: "A"}, {Name: "B"}}, ClientInstanceID: integrationID(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

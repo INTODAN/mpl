@@ -12,20 +12,16 @@ T = TypeVar("T", bound="Team")
 class Team:
     """
     Attributes:
-        capacity (int):
         id (str):
         name (str):
         order (int):
     """
 
-    capacity: int
     id: str
     name: str
     order: int
 
     def to_dict(self) -> dict[str, Any]:
-        capacity = self.capacity
-
         id = self.id
 
         name = self.name
@@ -36,7 +32,6 @@ class Team:
 
         field_dict.update(
             {
-                "capacity": capacity,
                 "id": id,
                 "name": name,
                 "order": order,
@@ -48,8 +43,6 @@ class Team:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        capacity = d.pop("capacity")
-
         id = d.pop("id")
 
         name = d.pop("name")
@@ -57,7 +50,6 @@ class Team:
         order = d.pop("order")
 
         team = cls(
-            capacity=capacity,
             id=id,
             name=name,
             order=order,

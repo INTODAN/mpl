@@ -62,8 +62,8 @@ func main() {
 		requestID, uuidError := newUUID()
 		fatalIf(uuidError)
 		snapshot, err = postJSON[lobbySnapshot](rootContext, client, baseURL+"/lobbies", guest.AccessToken, map[string]any{
-			"request_id": requestID, "game_key": *gameKey, "name": *displayName + "'s lobby", "capacity": 2,
-			"teams": []map[string]any{{"name": "Team 1", "capacity": 1}, {"name": "Team 2", "capacity": 1}}, "client_instance_id": instanceID,
+			"request_id": requestID, "game_key": *gameKey, "name": *displayName + "'s lobby",
+			"teams": []map[string]any{{"name": "Team 1"}, {"name": "Team 2"}}, "client_instance_id": instanceID,
 		})
 	}
 	fatalIf(err)

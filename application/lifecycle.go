@@ -34,6 +34,7 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 		}
 		roster := domain.StartRoster{}
 		humans := 0
+		takenTeams := map[string]bool{}
 		for _, member := range aggregate.Members {
 			if !member.Active {
 				continue
@@ -48,6 +49,12 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 			if member.TeamID == nil {
 				return domain.Change{}, domain.ErrNotReady
 			}
+			// A team holds one member. Only a lobby created before that
+			// rule can have two members on a team, and it can't start.
+			if takenTeams[*member.TeamID] {
+				return domain.Change{}, domain.ErrNotReady
+			}
+			takenTeams[*member.TeamID] = true
 			order := 0
 			for _, team := range aggregate.Teams {
 				if team.ID == *member.TeamID {

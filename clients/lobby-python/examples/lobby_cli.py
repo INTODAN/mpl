@@ -137,15 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--join", metavar="CODE", help="join the printed lobby code")
     parser.add_argument("--session-file", required=True, type=Path)
     parser.add_argument("--new-session", metavar="DISPLAY_NAME", help="explicitly create a guest identity")
-    parser.add_argument("--capacity", type=int, default=4)
     return parser
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.capacity < 1:
-        parser.error("--capacity must be positive")
     if args.create and args.new_session is not None and not args.new_session.strip():
         parser.error("--new-session must not be empty")
     return args
@@ -379,8 +376,7 @@ async def run_cli(args: argparse.Namespace, *, client_factory: Callable[..., Lob
             snapshot = await client.create_lobby(
                 game_key=args.game_key,
                 name=args.create,
-                capacity=args.capacity,
-                teams=[TeamDefinition(name="Red", capacity=args.capacity), TeamDefinition(name="Blue", capacity=args.capacity)],
+                teams=[TeamDefinition(name="Red"), TeamDefinition(name="Blue")],
                 request_id=request_id,
             )
         else:

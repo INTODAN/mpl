@@ -26,7 +26,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		return domain.Snapshot{}, err
 	}
 	request.Name = name
-	teams, err := domain.ValidateTeamDefinitions(request.Teams, request.Capacity)
+	teams, err := domain.ValidateTeamDefinitions(request.Teams)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
@@ -56,7 +56,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		now := service.clock.Now().UTC()
 		host := principal.PlayerID
 		aggregate := domain.Aggregate{
-			Lobby:   domain.Lobby{ID: roomID, GameKey: request.GameKey, Name: request.Name, JoinCode: joinCode, Capacity: request.Capacity, Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: &host, CreatedAt: now, GameSettings: settings, NextJoinSequence: 2, LastConnectedAt: now},
+			Lobby:   domain.Lobby{ID: roomID, GameKey: request.GameKey, Name: request.Name, JoinCode: joinCode, Capacity: len(request.Teams), Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: &host, CreatedAt: now, GameSettings: settings, NextJoinSequence: 2, LastConnectedAt: now},
 			Members: []domain.Member{{ID: memberID, PlayerID: principal.PlayerID, DisplayName: displayName, Generation: 1, Active: true, JoinedAt: now, JoinSequence: 1, Kind: domain.MemberHuman}},
 			Leases:  []domain.Lease{{LobbyID: roomID, PlayerID: principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: now.Add(service.policy.LeaseDuration)}},
 			Teams:   []domain.Team{}, StartRoster: domain.StartRoster{},
@@ -66,7 +66,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 			if err != nil {
 				return domain.Snapshot{}, unavailable(err)
 			}
-			aggregate.Teams = append(aggregate.Teams, domain.Team{ID: teamID, LobbyID: roomID, Name: definition.Name, Capacity: definition.Capacity, Order: order + 1})
+			aggregate.Teams = append(aggregate.Teams, domain.Team{ID: teamID, LobbyID: roomID, Name: definition.Name, Order: order + 1})
 		}
 		snapshot, err := service.store.Create(ctx, principal, request, aggregate)
 		if errors.Is(err, domain.ErrJoinCodeCollision) {
@@ -134,13 +134,7 @@ func (service *Service) Join(ctx context.Context, principal domain.Principal, re
 				return domain.Change{}, domain.ErrNotFound
 			}
 		}
-		count := 0
-		for _, candidate := range aggregate.Members {
-			if candidate.Active {
-				count++
-			}
-		}
-		if count >= aggregate.Lobby.Capacity {
+		if domain.LobbyFull(aggregate) {
 			return domain.Change{}, domain.ErrLobbyFull
 		}
 		if member == nil {

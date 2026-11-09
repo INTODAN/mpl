@@ -228,14 +228,17 @@ class LobbyClient:
             self._spawn(self._ticker())
             await self._sdk.connect()
 
-    async def create_lobby(self, *, game_key: str, name: str, capacity: int,
+    async def create_lobby(self, *, game_key: str, name: str,
                            teams: list[TeamDefinition], request_id: UUID | str,
                            game_settings: dict[str, Any] | None = None) -> Snapshot:
-        """game_settings is the game's own JSON object, fixed for the lobby's lifetime."""
+        """Each team holds one member, so the lobby holds len(teams) members.
+
+        game_settings is the game's own JSON object, fixed for the lobby's lifetime.
+        """
         self._require_auth()
         request_id = UUID(str(request_id))
         settings = UNSET if game_settings is None else CreateLobbyBodyGameSettings.from_dict(game_settings)
-        body = CreateLobbyBody(game_key=game_key, name=name, capacity=capacity, teams=teams,
+        body = CreateLobbyBody(game_key=game_key, name=name, teams=teams,
                                request_id=request_id, client_instance_id=self.client_instance_id,
                                game_settings=settings)
         fingerprint = body.to_dict()

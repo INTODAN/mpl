@@ -93,12 +93,14 @@ def sync_detailed(
 ) -> Response[Problem | Snapshot]:
     """Create a lobby
 
-     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
-    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
-    every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload within the idempotency window, 24 hours by default, returns the committed
-    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
-    in any case a day after creation, unless its game sets other times.
+     Creates a lobby with its teams, from 2 to 16 with unique names. A team holds one member, a person or
+    a seat, so the lobby holds as many members as it has teams; its capacity in the snapshot is that
+    number. The optional game_settings object is checked by the game now; invalid settings fail with
+    invalid_game_settings. The lobby stores the settings without reading them and returns them in every
+    snapshot, including the started one. They can't change after creation. Repeating the same request_id
+    and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The
+    lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a
+    day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -129,12 +131,14 @@ def sync(
 ) -> Problem | Snapshot | None:
     """Create a lobby
 
-     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
-    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
-    every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload within the idempotency window, 24 hours by default, returns the committed
-    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
-    in any case a day after creation, unless its game sets other times.
+     Creates a lobby with its teams, from 2 to 16 with unique names. A team holds one member, a person or
+    a seat, so the lobby holds as many members as it has teams; its capacity in the snapshot is that
+    number. The optional game_settings object is checked by the game now; invalid settings fail with
+    invalid_game_settings. The lobby stores the settings without reading them and returns them in every
+    snapshot, including the started one. They can't change after creation. Repeating the same request_id
+    and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The
+    lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a
+    day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -160,12 +164,14 @@ async def asyncio_detailed(
 ) -> Response[Problem | Snapshot]:
     """Create a lobby
 
-     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
-    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
-    every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload within the idempotency window, 24 hours by default, returns the committed
-    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
-    in any case a day after creation, unless its game sets other times.
+     Creates a lobby with its teams, from 2 to 16 with unique names. A team holds one member, a person or
+    a seat, so the lobby holds as many members as it has teams; its capacity in the snapshot is that
+    number. The optional game_settings object is checked by the game now; invalid settings fail with
+    invalid_game_settings. The lobby stores the settings without reading them and returns them in every
+    snapshot, including the started one. They can't change after creation. Repeating the same request_id
+    and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The
+    lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a
+    day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):
@@ -194,12 +200,14 @@ async def asyncio(
 ) -> Problem | Snapshot | None:
     """Create a lobby
 
-     Creates a lobby. The optional game_settings object is checked by the game now; invalid settings fail
-    with invalid_game_settings. The lobby stores the settings without reading them and returns them in
-    every snapshot, including the started one. They can't change after creation. Repeating the same
-    request_id and payload within the idempotency window, 24 hours by default, returns the committed
-    snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and
-    in any case a day after creation, unless its game sets other times.
+     Creates a lobby with its teams, from 2 to 16 with unique names. A team holds one member, a person or
+    a seat, so the lobby holds as many members as it has teams; its capacity in the snapshot is that
+    number. The optional game_settings object is checked by the game now; invalid settings fail with
+    invalid_game_settings. The lobby stores the settings without reading them and returns them in every
+    snapshot, including the started one. They can't change after creation. Repeating the same request_id
+    and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The
+    lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a
+    day after creation, unless its game sets other times.
 
     Args:
         body (CreateLobbyBody):

@@ -20,19 +20,18 @@ T = TypeVar("T", bound="CreateLobbyBody")
 class CreateLobbyBody:
     """
     Attributes:
-        capacity (int):
         client_instance_id (UUID):
         game_key (str):
         name (str):
         request_id (UUID):
-        teams (list[TeamDefinition] | None):
+        teams (list[TeamDefinition] | None): The lobby's teams, in order. Each holds one member, a person or a seat, so
+            the lobby holds as many members as it has teams.
         schema (str | Unset): A URL to the JSON Schema for this object.
         game_settings (CreateLobbyBodyGameSettings | Unset): Settings for the game, as a JSON object that only the game
             reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them
             compacted with sorted keys, and omitted settings as an empty object.
     """
 
-    capacity: int
     client_instance_id: UUID
     game_key: str
     name: str
@@ -42,8 +41,6 @@ class CreateLobbyBody:
     game_settings: CreateLobbyBodyGameSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        capacity = self.capacity
-
         client_instance_id = str(self.client_instance_id)
 
         game_key = self.game_key
@@ -72,7 +69,6 @@ class CreateLobbyBody:
 
         field_dict.update(
             {
-                "capacity": capacity,
                 "client_instance_id": client_instance_id,
                 "game_key": game_key,
                 "name": name,
@@ -93,8 +89,6 @@ class CreateLobbyBody:
         from ..models.team_definition import TeamDefinition
 
         d = dict(src_dict)
-        capacity = d.pop("capacity")
-
         client_instance_id = UUID(d.pop("client_instance_id"))
 
         game_key = d.pop("game_key")
@@ -133,7 +127,6 @@ class CreateLobbyBody:
             game_settings = CreateLobbyBodyGameSettings.from_dict(_game_settings)
 
         create_lobby_body = cls(
-            capacity=capacity,
             client_instance_id=client_instance_id,
             game_key=game_key,
             name=name,

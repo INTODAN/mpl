@@ -110,8 +110,8 @@ func TestClaimedPlayerCannotOverrideBearer(t *testing.T) {
 	application := &fakeApplication{}
 	_, api := newTestAPIWithApp(t, application)
 	response := api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", map[string]any{
-		"request_id": testUUID, "game_key": "island-battles", "name": "Lobby", "capacity": 2,
-		"teams":              []map[string]any{{"name": "One", "capacity": 1}, {"name": "Two", "capacity": 1}},
+		"request_id": testUUID, "game_key": "island-battles", "name": "Lobby",
+		"teams":              []map[string]any{{"name": "One"}, {"name": "Two"}},
 		"client_instance_id": testUUID, "player_id": "22222222-2222-4222-8222-222222222222",
 	})
 	if response.Code != http.StatusUnprocessableEntity {
@@ -122,13 +122,30 @@ func TestClaimedPlayerCannotOverrideBearer(t *testing.T) {
 	}
 }
 
+// A team holds one member, so a create request has no capacity to choose,
+// for the lobby or for a team.
+func TestCreateRefusesCapacities(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	for _, body := range []string{
+		`{"request_id":"` + testUUID + `","game_key":"quiz-demo","name":"Lobby","capacity":2,"teams":[{"name":"One"},{"name":"Two"}],"client_instance_id":"` + testUUID + `"}`,
+		`{"request_id":"` + testUUID + `","game_key":"quiz-demo","name":"Lobby","teams":[{"name":"One","capacity":1},{"name":"Two"}],"client_instance_id":"` + testUUID + `"}`,
+	} {
+		response := api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", strings.NewReader(body))
+		if response.Code != http.StatusUnprocessableEntity || application.createRequest.RequestID != "" {
+			t.Fatalf("create with a capacity = %d %s", response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestCreatePassesGameSettingsThroughUnread(t *testing.T) {
 	t.Parallel()
 	application := &fakeApplication{}
 	_, api := newTestAPIWithApp(t, application)
 	body := func(settings string) io.Reader {
-		return strings.NewReader(`{"request_id":"` + testUUID + `","game_key":"quiz-demo","name":"Lobby","capacity":2,` +
-			`"teams":[{"name":"One","capacity":1},{"name":"Two","capacity":1}],"client_instance_id":"` + testUUID + `"` + settings + `}`)
+		return strings.NewReader(`{"request_id":"` + testUUID + `","game_key":"quiz-demo","name":"Lobby",` +
+			`"teams":[{"name":"One"},{"name":"Two"}],"client_instance_id":"` + testUUID + `"` + settings + `}`)
 	}
 	const settings = `{"rounds": 3, "seed": 12345678901234567890123}`
 	response := api.Post("/lobby/v1/lobbies", "Authorization: Bearer good", body(`,"game_settings":`+settings))

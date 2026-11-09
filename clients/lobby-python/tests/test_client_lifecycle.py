@@ -155,7 +155,7 @@ async def test_explicit_retry_policy(h):
         if request.url.path.endswith("/lobbies"):
             return problem(503, "unavailable")
     h.hook = unavailable
-    kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=request_id)
+    kwargs = dict(game_key="quiz-demo", name="Room", teams=[], request_id=request_id)
     with pytest.raises(TransientError):
         await h.client.create_lobby(**kwargs)
     assert len(h.calls) == 1
@@ -174,7 +174,7 @@ async def test_create_sends_game_settings_in_the_fingerprint(h):
         if request.url.path.endswith("/lobbies"):
             seen.append(json.loads(request.content))
     h.hook = created
-    kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=uuid4())
+    kwargs = dict(game_key="quiz-demo", name="Room", teams=[], request_id=uuid4())
     await h.client.create_lobby(**kwargs, game_settings={"rounds": 3})
     assert seen[0]["game_settings"] == {"rounds": 3}
     with pytest.raises(LobbyError, match="idempotency_conflict"):
@@ -199,7 +199,7 @@ async def test_rejected_game_settings_carry_the_game_message(h):
             return httpx.Response(409, json={"code": "game_requirement", "status": 409, "title": "Conflict",
                                              "detail": "Choose your bot first.", "type": "urn:example:problem:bot-not-chosen"})
     h.hook = rejected
-    kwargs = dict(game_key="quiz-demo", name="Room", capacity=4, teams=[], request_id=uuid4())
+    kwargs = dict(game_key="quiz-demo", name="Room", teams=[], request_id=uuid4())
     with pytest.raises(LobbyError) as invalid:
         await h.client.create_lobby(**kwargs, game_settings={"rounds": 0})
     assert (invalid.value.code, invalid.value.status) == ("invalid_game_settings", 422)

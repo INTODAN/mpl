@@ -106,13 +106,14 @@ def sync_detailed(
     the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while
     the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat;
     settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses
-    every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
-    toward the members a start needs, is always ready, never disconnects, and joins the start roster
-    with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
-    repeating it with the same team_id and seat_settings returns the current snapshot without a second
-    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
-    a seat.
+    every one. The seat takes its team, which then holds no other member, and counts toward the lobby's
+    capacity: a team that already has a person or a seat is team_full, and a lobby with as many members
+    as teams is lobby_full. It counts toward the members a start needs, is always ready, never
+    disconnects, and joins the start roster with its own player_id. A start still needs the host, a
+    person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id
+    makes a retry after a lost response safe: repeating it with the same team_id and seat_settings
+    returns the current snapshot without a second seat, and with another team or settings fails with
+    idempotency_conflict. Without one, each call adds a seat.
 
     Args:
         game_key (str):
@@ -153,13 +154,14 @@ def sync(
     the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while
     the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat;
     settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses
-    every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
-    toward the members a start needs, is always ready, never disconnects, and joins the start roster
-    with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
-    repeating it with the same team_id and seat_settings returns the current snapshot without a second
-    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
-    a seat.
+    every one. The seat takes its team, which then holds no other member, and counts toward the lobby's
+    capacity: a team that already has a person or a seat is team_full, and a lobby with as many members
+    as teams is lobby_full. It counts toward the members a start needs, is always ready, never
+    disconnects, and joins the start roster with its own player_id. A start still needs the host, a
+    person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id
+    makes a retry after a lost response safe: repeating it with the same team_id and seat_settings
+    returns the current snapshot without a second seat, and with another team or settings fails with
+    idempotency_conflict. Without one, each call adds a seat.
 
     Args:
         game_key (str):
@@ -195,13 +197,14 @@ async def asyncio_detailed(
     the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while
     the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat;
     settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses
-    every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
-    toward the members a start needs, is always ready, never disconnects, and joins the start roster
-    with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
-    repeating it with the same team_id and seat_settings returns the current snapshot without a second
-    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
-    a seat.
+    every one. The seat takes its team, which then holds no other member, and counts toward the lobby's
+    capacity: a team that already has a person or a seat is team_full, and a lobby with as many members
+    as teams is lobby_full. It counts toward the members a start needs, is always ready, never
+    disconnects, and joins the start roster with its own player_id. A start still needs the host, a
+    person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id
+    makes a retry after a lost response safe: repeating it with the same team_id and seat_settings
+    returns the current snapshot without a second seat, and with another team or settings fails with
+    idempotency_conflict. Without one, each call adds a seat.
 
     Args:
         game_key (str):
@@ -240,13 +243,14 @@ async def asyncio(
     the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while
     the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat;
     settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses
-    every one. The seat counts toward the lobby's and the team's capacity (lobby_full, team_full) and
-    toward the members a start needs, is always ready, never disconnects, and joins the start roster
-    with its own player_id. A start still needs the host, a person. A team_id that isn't one of the
-    lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe:
-    repeating it with the same team_id and seat_settings returns the current snapshot without a second
-    seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds
-    a seat.
+    every one. The seat takes its team, which then holds no other member, and counts toward the lobby's
+    capacity: a team that already has a person or a seat is team_full, and a lobby with as many members
+    as teams is lobby_full. It counts toward the members a start needs, is always ready, never
+    disconnects, and joins the start roster with its own player_id. A start still needs the host, a
+    person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id
+    makes a retry after a lost response safe: repeating it with the same team_id and seat_settings
+    returns the current snapshot without a second seat, and with another team or settings fails with
+    idempotency_conflict. Without one, each call adds a seat.
 
     Args:
         game_key (str):

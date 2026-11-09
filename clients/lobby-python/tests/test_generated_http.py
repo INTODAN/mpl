@@ -63,14 +63,13 @@ def test_models_serialize_nullable_and_false_values() -> None:
     assert SelectTeamBody(team_id=None).to_dict() == {"team_id": None}
     assert ReadyBody(ready=False).to_dict() == {"ready": False}
     body = CreateLobbyBody(
-        capacity=2,
         client_instance_id=UUID("11111111-1111-4111-8111-111111111111"),
         game_key="island-battles",
         name="Lobby",
         request_id=UUID("22222222-2222-4222-8222-222222222222"),
         teams=[
-            TeamDefinition(name="One", capacity=1),
-            TeamDefinition(name="Two", capacity=1),
+            TeamDefinition(name="One"),
+            TeamDefinition(name="Two"),
         ],
     )
     assert (

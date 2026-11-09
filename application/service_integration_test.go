@@ -179,9 +179,13 @@ func (game *choiceGame) gate(_ context.Context, lobbyID string) (domain.ReadyChe
 	}, nil
 }
 
-// newServiceFixture creates an island-battles lobby; configure can change the
-// create request, for example to another game or with game settings.
-func newServiceFixture(t *testing.T, capacity int, configure ...func(*domain.CreateRequest)) *serviceFixture {
+// fixtureTeamNames names the teams of a fixture's lobby, in order.
+var fixtureTeamNames = []string{"Red", "Blue", "Green", "Yellow", "Purple", "Orange"}
+
+// newServiceFixture creates an island-battles lobby of teamCount teams, which
+// holds teamCount members; configure can change the create request, for
+// example to another game or with game settings.
+func newServiceFixture(t *testing.T, teamCount int, configure ...func(*domain.CreateRequest)) *serviceFixture {
 	t.Helper()
 	fixture := &serviceFixture{db: testutil.NewPostgresFixture(t), origin: time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), policy: domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}, domain.GameRegistration{Key: "quiz-demo", ValidateSettings: quizSettings}, domain.GameRegistration{Key: "team-game", StartRules: domain.StartRules{EveryTeamNeedsMember: true}}, domain.GameRegistration{Key: "gated-game", ReadyGate: gatedGame.gate}, domain.GameRegistration{Key: "seat-game", ReadyGate: gatedGame.gate, ValidateSeat: botSeat, StartRules: domain.StartRules{EveryTeamNeedsMember: true}})}
 	fixture.clock = &integrationClock{now: fixture.origin}
@@ -194,7 +198,10 @@ func newServiceFixture(t *testing.T, capacity int, configure ...func(*domain.Cre
 	}
 	fixture.host = fixture.player(t, "Host")
 	fixture.clientID = integrationID(t)
-	fixture.request = domain.CreateRequest{RequestID: integrationID(t), GameKey: "island-battles", Name: "Room", Capacity: capacity, Teams: []domain.TeamDefinition{{Name: "Red", Capacity: 1}, {Name: "Blue", Capacity: capacity}}, ClientInstanceID: fixture.clientID}
+	fixture.request = domain.CreateRequest{RequestID: integrationID(t), GameKey: "island-battles", Name: "Room", ClientInstanceID: fixture.clientID}
+	for _, name := range fixtureTeamNames[:teamCount] {
+		fixture.request.Teams = append(fixture.request.Teams, domain.TeamDefinition{Name: name})
+	}
 	for _, change := range configure {
 		change(&fixture.request)
 	}
@@ -411,7 +418,7 @@ func TestCreateRejectsInvalidGameSettings(t *testing.T) {
 	}{
 		{"island-battles", `{"rounds":3}`, "this game takes no settings"},
 		{"quiz-demo", `{"rounds":0}`, "rounds must be between 1 and 10"},
-		{"quiz-demo", `{"teams":3}`, "teams must be 2, the lobby's team count"},
+		{"quiz-demo", `{"teams":3}`, "teams must be 4, the lobby's team count"},
 		{"quiz-demo", `{"theme":"space"}`, `json: unknown field "theme"`},
 		{"quiz-demo", `[1]`, "game settings must be a JSON object"},
 		{"quiz-demo", `{"note":"a\u0000b"}`, "game settings must not contain NUL characters"},

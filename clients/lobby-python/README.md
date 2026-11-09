@@ -7,6 +7,8 @@ wrapper, and both ship in the one `mpl-lobby-client` distribution.
 heartbeats, and cleanup. Huma is the schema authority. Do not hand-edit files
 under `lobby_api_client/`; update the schema/export and run the generator instead.
 
+**One player per team is a breaking change; clients must upgrade.** A team holds one member, a person or a seat, so a lobby holds as many members as it has teams. The create request lost `capacity`, both the lobby's and each team's: `create_lobby` takes only `teams`, each `TeamDefinition` only a `name`, and the server refuses a request that still sends a `capacity` with 422. Snapshot teams lost `capacity` too; the lobby's `capacity` stays, read-only, as the number of teams. Selecting, or adding a seat to, a team that already has a member fails with `team_full`. What to do: regenerate or upgrade the client, drop `capacity=` from `create_lobby` and `TeamDefinition`, and treat a team as taken when an active member is on it.
+
 **This is a breaking change; clients must upgrade.** Lobbies can hold seats that no person plays, such as a game's bot, which the host adds and removes with `add_seat` and `remove_seat`. Every snapshot member now has `kind` (`human` or `seat`) and `seat_settings`, and a seat is always ready, holds no lease and never hosts; the new error code `invalid_seat_settings` refuses settings the game doesn't take. An older client shows a seat as an ordinary member. What to do: regenerate or upgrade the client, and show a seat's `display_name` without treating it as a person.
 
 The lobby API also gained the error code `game_requirement` and a `type` field on error bodies: a game can refuse `PUT …/ready` with `ready: true`, or the start, until a member has done something in the game's own API (Island Battles: choosing a bot). Regenerate or upgrade the client; the SDK's error then carries the game's problem type, and a client that doesn't know the code treats it as an unrecognized error. What to do: handle `game_requirement` by showing its `detail` to the player, who must act in the game's API and then retry.
@@ -57,7 +59,8 @@ an explicitly created new session. There is no automatic identity recovery
 after the 24-hour guest credential expires.
 
 The lobby starts with two generic teams named Red and Blue, displayed in
-immutable order as `team 1` and `team 2`; those labels carry no Island Battles
+immutable order as `team 1` and `team 2`. Each team holds one member, so the
+lobby holds two; those labels carry no Island Battles
 color semantics. `team 1` or `team 2` selects that team's UUID;
 `team none` clears it. `ready` and `unready` send `True` and `False` exactly.
 The host can use `start` after at least two members are present and every

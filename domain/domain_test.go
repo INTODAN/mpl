@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -128,7 +129,7 @@ func TestValidateGameSettingsUsesTheGameValidator(t *testing.T) {
 		}},
 	)
 	ctx := context.Background()
-	teams := []domain.TeamDefinition{{Name: "Red", Capacity: 1}, {Name: "Blue", Capacity: 1}}
+	teams := []domain.TeamDefinition{{Name: "Red"}, {Name: "Blue"}}
 	if settings, err := policy.ValidateGameSettings(ctx, "no-settings", nil, teams); err != nil || string(settings) != "{}" {
 		t.Fatalf("empty settings = %q, %v", settings, err)
 	}
@@ -184,22 +185,29 @@ func TestValidateSeatSettingsUsesTheGamesSeatValidator(t *testing.T) {
 	}
 }
 func TestTeamDefinitionValidation(t *testing.T) {
-	valid := []domain.TeamDefinition{{Name: "  אדום ", Capacity: 2}, {Name: "青", Capacity: 2}}
-	normalized, err := domain.ValidateTeamDefinitions(valid, 4)
+	valid := []domain.TeamDefinition{{Name: "  אדום "}, {Name: "青"}}
+	normalized, err := domain.ValidateTeamDefinitions(valid)
 	if err != nil || normalized[0].Name != "אדום" || valid[0].Name != "  אדום " {
 		t.Fatalf("labels mutated/lost: %#v %v", normalized, err)
 	}
+	namedTeams := func(count int) []domain.TeamDefinition {
+		definitions := make([]domain.TeamDefinition, count)
+		for index := range definitions {
+			definitions[index] = domain.TeamDefinition{Name: fmt.Sprintf("Team %d", index+1)}
+		}
+		return definitions
+	}
+	if _, err := domain.ValidateTeamDefinitions(namedTeams(domain.MaxTeams)); err != nil {
+		t.Fatalf("refused %d teams: %v", domain.MaxTeams, err)
+	}
 	for _, definitions := range [][]domain.TeamDefinition{
-		{}, {{Name: "a", Capacity: 2}}, make([]domain.TeamDefinition, 17),
-		{{Name: " red ", Capacity: 2}, {Name: "RED", Capacity: 2}},
-		{{Name: "Straße", Capacity: 2}, {Name: "STRASSE", Capacity: 2}},
-		{{Name: "a", Capacity: 0}, {Name: "b", Capacity: 4}},
-		{{Name: "a", Capacity: 65}, {Name: "b", Capacity: 4}},
-		{{Name: "a", Capacity: 1}, {Name: "b", Capacity: 1}},
-		{{Name: " ", Capacity: 4}, {Name: "b", Capacity: 4}},
-		{{Name: strings.Repeat("界", 41), Capacity: 4}, {Name: "b", Capacity: 4}},
+		{}, {{Name: "a"}}, namedTeams(domain.MaxTeams + 1),
+		{{Name: " red "}, {Name: "RED"}},
+		{{Name: "Straße"}, {Name: "STRASSE"}},
+		{{Name: " "}, {Name: "b"}},
+		{{Name: strings.Repeat("界", 41)}, {Name: "b"}},
 	} {
-		if _, err := domain.ValidateTeamDefinitions(definitions, 4); err == nil {
+		if _, err := domain.ValidateTeamDefinitions(definitions); err == nil {
 			t.Fatalf("accepted %#v", definitions)
 		}
 	}

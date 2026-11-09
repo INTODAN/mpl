@@ -67,8 +67,8 @@ func storeCandidate(t *testing.T, fixture *storeFixture) (domain.CreateRequest, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := domain.CreateRequest{RequestID: storeUUID(t), GameKey: "quiz-demo", Name: "A room", Capacity: 4, Teams: []domain.TeamDefinition{{Name: "Red", Capacity: 2}, {Name: "Blue", Capacity: 2}}, ClientInstanceID: storeUUID(t)}
-	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: id, GameKey: request.GameKey, Name: request.Name, JoinCode: code, Capacity: request.Capacity, Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: storePointer(fixture.principal.PlayerID), CreatedAt: fixture.clock.now, GameSettings: json.RawMessage(domain.EmptyGameSettings), NextJoinSequence: 2}, Teams: []domain.Team{{ID: storeUUID(t), LobbyID: id, Name: "Red", Capacity: 2, Order: 1}, {ID: storeUUID(t), LobbyID: id, Name: "Blue", Capacity: 2, Order: 2}}, Members: []domain.Member{{ID: storeUUID(t), PlayerID: fixture.principal.PlayerID, DisplayName: fixture.principal.DisplayName, Generation: 1, Active: true, JoinedAt: fixture.clock.now, JoinSequence: 1}}, Leases: []domain.Lease{{LobbyID: id, PlayerID: fixture.principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: fixture.clock.now.Add(45 * time.Second)}}, StartRoster: domain.StartRoster{}}
+	request := domain.CreateRequest{RequestID: storeUUID(t), GameKey: "quiz-demo", Name: "A room", Teams: []domain.TeamDefinition{{Name: "Red"}, {Name: "Blue"}}, ClientInstanceID: storeUUID(t)}
+	aggregate := domain.Aggregate{Lobby: domain.Lobby{ID: id, GameKey: request.GameKey, Name: request.Name, JoinCode: code, Capacity: len(request.Teams), Phase: domain.PhaseWaiting, Version: 1, HostPlayerID: storePointer(fixture.principal.PlayerID), CreatedAt: fixture.clock.now, GameSettings: json.RawMessage(domain.EmptyGameSettings), NextJoinSequence: 2}, Teams: []domain.Team{{ID: storeUUID(t), LobbyID: id, Name: "Red", Order: 1}, {ID: storeUUID(t), LobbyID: id, Name: "Blue", Order: 2}}, Members: []domain.Member{{ID: storeUUID(t), PlayerID: fixture.principal.PlayerID, DisplayName: fixture.principal.DisplayName, Generation: 1, Active: true, JoinedAt: fixture.clock.now, JoinSequence: 1}}, Leases: []domain.Lease{{LobbyID: id, PlayerID: fixture.principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: fixture.clock.now.Add(45 * time.Second)}}, StartRoster: domain.StartRoster{}}
 	return request, aggregate
 }
 func storeCount(t *testing.T, db *gorm.DB, model any) int64 {
@@ -387,10 +387,9 @@ func TestCreateReplaysRequestsStoredBeforeGameSettings(t *testing.T) {
 		RequestID        string                  `json:"request_id"`
 		GameKey          string                  `json:"game_key"`
 		Name             string                  `json:"name"`
-		Capacity         int                     `json:"capacity"`
 		Teams            []domain.TeamDefinition `json:"teams"`
 		ClientInstanceID string                  `json:"client_instance_id"`
-	}{request.RequestID, request.GameKey, request.Name, request.Capacity, request.Teams, request.ClientInstanceID})
+	}{request.RequestID, request.GameKey, request.Name, request.Teams, request.ClientInstanceID})
 	if err != nil {
 		t.Fatal(err)
 	}

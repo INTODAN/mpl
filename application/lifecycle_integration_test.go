@@ -17,7 +17,8 @@ func TestSelectLastTeamSeatConcurrent(t *testing.T) {
 	guest := fixture.player(t, "Guest")
 	fixture.join(t, guest)
 	fixture.assign(t, fixture.host, 1, true)
-	fixture.assign(t, guest, 1, true)
+	fixture.assign(t, guest, 2, true)
+	previous := map[string]string{fixture.host.PlayerID: fixture.initial.Teams[1].ID, guest.PlayerID: fixture.initial.Teams[2].ID}
 	before := fixture.read(t)
 	barrier := make(chan struct{})
 	type outcome struct {
@@ -47,13 +48,13 @@ func TestSelectLastTeamSeatConcurrent(t *testing.T) {
 		} else {
 			requireDomainError(t, result.err, domain.ErrTeamFull)
 			losers++
-			if member.TeamID == nil || *member.TeamID != fixture.initial.Teams[1].ID || !member.Ready {
+			if member.TeamID == nil || *member.TeamID != previous[result.player] || !member.Ready {
 				t.Fatal("loser lost previous selection/readiness")
 			}
 		}
 	}
 	if winners != 1 || losers != 1 || aggregate.Lobby.Version != before.Lobby.Version+1 {
-		t.Fatal("team capacity race", aggregate)
+		t.Fatal("last free team race", aggregate)
 	}
 }
 func TestTeamSelectionRejectsOtherRoomTeam(t *testing.T) {
@@ -134,7 +135,7 @@ func TestStartRequiresHostAndLiveReadyRoster(t *testing.T) {
 	fixture.assign(t, fixture.host, 1, true)
 	_, err = fixture.service.Start(context.Background(), fixture.host, fixture.scope)
 	requireDomainError(t, err, domain.ErrNotReady)
-	fixture.assign(t, guest, 1, false)
+	fixture.assign(t, guest, 2, false)
 	_, err = fixture.service.Start(context.Background(), fixture.host, fixture.scope)
 	requireDomainError(t, err, domain.ErrNotReady)
 	if _, err := fixture.service.SetReady(context.Background(), guest, fixture.scope, domain.ReadyRequest{Ready: true}); err != nil {
@@ -155,8 +156,9 @@ func TestStartRequiresHostAndLiveReadyRoster(t *testing.T) {
 	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 2 {
 		t.Fatal("ready roster failed", err)
 	}
+	wantOrder := map[string]int{fixture.host.PlayerID: 2, guest.PlayerID: 3}
 	for _, entry := range snapshot.StartRoster {
-		if entry.TeamOrder != 2 {
+		if entry.TeamOrder != wantOrder[entry.PlayerID] {
 			t.Fatal("empty configured team changed stable order")
 		}
 	}
@@ -182,7 +184,7 @@ func TestDefaultStartRuleAllowsEmptyTeam(t *testing.T) {
 	guest := fixture.player(t, "Guest")
 	fixture.join(t, guest)
 	fixture.assign(t, fixture.host, 1, true)
-	fixture.assign(t, guest, 1, true)
+	fixture.assign(t, guest, 2, true)
 	snapshot, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
 	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 2 {
 		t.Fatal("quiz-demo with an empty team did not start", err)
@@ -253,9 +255,8 @@ func TestReadyGateThatCannotReadIsUnavailable(t *testing.T) {
 }
 
 func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
-	fixture := newServiceFixture(t, 3, func(request *domain.CreateRequest) {
+	fixture := newServiceFixture(t, 4, func(request *domain.CreateRequest) {
 		request.GameKey = "team-game"
-		request.Teams = append(request.Teams, domain.TeamDefinition{Name: "Green", Capacity: 1})
 	})
 	if !fixture.initial.StartRules.EveryTeamNeedsMember {
 		t.Fatal("snapshot lacks the game's start rule")
@@ -263,7 +264,7 @@ func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
 	guest := fixture.player(t, "Guest")
 	fixture.join(t, guest)
 	fixture.assign(t, fixture.host, 1, true)
-	fixture.assign(t, guest, 1, true)
+	fixture.assign(t, guest, 3, true)
 	before := fixture.read(t)
 	_, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
 	requireDomainError(t, err, domain.NewError(domain.CodeEmptyTeams, ""))
@@ -274,12 +275,13 @@ func TestStartRuleRequiresEveryTeamFilled(t *testing.T) {
 	if after := fixture.read(t); after.Lobby.Phase != domain.PhaseWaiting || after.Lobby.Version != before.Lobby.Version {
 		t.Fatal("refused start changed the lobby")
 	}
-	third := fixture.player(t, "Third")
+	third, fourth := fixture.player(t, "Third"), fixture.player(t, "Fourth")
 	fixture.join(t, third)
-	fixture.assign(t, guest, 0, true)
-	fixture.assign(t, third, 2, true)
+	fixture.join(t, fourth)
+	fixture.assign(t, third, 0, true)
+	fixture.assign(t, fourth, 2, true)
 	snapshot, err := fixture.service.Start(context.Background(), fixture.host, fixture.scope)
-	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 3 || !snapshot.StartRules.EveryTeamNeedsMember {
+	if err != nil || snapshot.Lobby.Phase != domain.PhaseStarted || len(snapshot.StartRoster) != 4 || !snapshot.StartRules.EveryTeamNeedsMember {
 		t.Fatal("filled teams did not start", err)
 	}
 }

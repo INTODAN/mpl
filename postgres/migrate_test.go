@@ -346,6 +346,93 @@ func TestMigrateMakesExistingMembershipsHuman(t *testing.T) {
 	}
 }
 
+// legacyTeamRecord is a team row from before migration 0007, which dropped
+// its capacity.
+type legacyTeamRecord struct {
+	ID             string `gorm:"column:id;type:uuid;primaryKey"`
+	LobbyID        string `gorm:"column:lobby_id;type:uuid;not null"`
+	Name           string `gorm:"column:name;not null"`
+	NormalizedName string `gorm:"column:normalized_name;not null"`
+	Capacity       int    `gorm:"column:capacity;not null"`
+	TeamOrder      int    `gorm:"column:team_order;not null"`
+}
+
+func (legacyTeamRecord) TableName() string { return "lobby_teams" }
+
+// Rooms from before migration 0007 chose their own capacity and their teams'.
+// Each keeps its teams and members, and its capacity becomes its team count.
+func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	before := lobbypostgres.Migrations()
+	files := fstest.MapFS{}
+	for _, name := range migrationNames(t, before.Files)[:6] {
+		data, err := fs.ReadFile(before.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: data}
+	}
+	before.Files = files
+	if err := before.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	seed := func(code string, roomCapacity int, teamNames ...string) (lobbypostgres.RoomRecord, []legacyTeamRecord) {
+		room := roomFor(player.ID, "island-battles", code)
+		room.Capacity = roomCapacity
+		mustCreate(t, db, &room)
+		teams := make([]legacyTeamRecord, len(teamNames))
+		for index, name := range teamNames {
+			teams[index] = legacyTeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: name, NormalizedName: strings.ToLower(name), Capacity: 8, TeamOrder: index + 1}
+			mustCreate(t, db, &teams[index])
+		}
+		return room, teams
+	}
+	wide, _ := seed("WIDEROOM", 64, "Red", "Blue", "Green")
+	shared, sharedTeams := seed("SHARED01", 4, "Red", "Blue")
+	// Two people on one team, which a team's capacity allowed before.
+	for sequence := range 2 {
+		member := memberFor(shared.ID, seedPlayer(t, db).ID)
+		member.TeamID, member.JoinSequence = &sharedTeams[0].ID, int64(sequence+1)
+		mustCreate(t, db, &member)
+	}
+
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate rooms with team capacities: %v", err)
+	}
+	if db.Migrator().HasColumn(&lobbypostgres.TeamRecord{}, "capacity") {
+		t.Fatal("lobby_teams.capacity survived the migration")
+	}
+	for id, want := range map[string]int{wide.ID: 3, shared.ID: 2} {
+		var room lobbypostgres.RoomRecord
+		mustFind(t, db, &room, id)
+		if room.Capacity != want {
+			t.Errorf("room %s capacity = %d, want its %d teams", room.JoinCode, room.Capacity, want)
+		}
+	}
+	store, err := lobbypostgres.NewStore(db, domain.SystemClock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregate, err := store.Read(context.Background(), domain.Scope{GameKey: shared.GameKey, LobbyID: shared.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregate.Lobby.Capacity != 2 || len(aggregate.Teams) != 2 || len(aggregate.Members) != 2 {
+		t.Fatalf("room after migration = capacity %d, %d teams, %d members", aggregate.Lobby.Capacity, len(aggregate.Teams), len(aggregate.Members))
+	}
+	for _, member := range aggregate.Members {
+		if member.TeamID == nil || *member.TeamID != sharedTeams[0].ID {
+			t.Fatalf("member %s moved to team %v, want %s", member.ID, member.TeamID, sharedTeams[0].ID)
+		}
+	}
+	tooWide := roomFor(player.ID, "island-battles", "TOOWIDE1")
+	tooWide.Capacity = 17
+	if err := db.Create(&tooWide).Error; err == nil {
+		t.Fatal("a room with more than 16 teams' capacity was stored")
+	}
+}
+
 func TestConcurrentMigrationsOfEmptyDatabaseAllSucceed(t *testing.T) {
 	t.Run("server default isolation", func(t *testing.T) {
 		assertConcurrentMigrationsSucceed(t, testutil.NewEmptyPostgres(t))

@@ -78,7 +78,7 @@ func seedLobbies(t *testing.T, database *gorm.DB) seed {
 	alice := ids.alice
 	dave := ids.dave
 	create(t, database, &lobbypostgres.RoomRecord{
-		ID: ids.waiting, GameKey: "island-battles", Name: "Waiting room", JoinCode: "ABCD2345", Capacity: 4, Phase: "waiting", Version: 1,
+		ID: ids.waiting, GameKey: "island-battles", Name: "Waiting room", JoinCode: "ABCD2345", Capacity: 2, Phase: "waiting", Version: 1,
 		HostPlayerID: &alice, CreatedAt: now.Add(-2 * time.Hour), NextJoinSequence: 5, GameSettings: []byte(`{"map_template_id":3}`), LastConnectedAt: now.Add(-time.Minute),
 	})
 	create(t, database, &lobbypostgres.RoomRecord{
@@ -89,9 +89,9 @@ func seedLobbies(t *testing.T, database *gorm.DB) seed {
 		ID: ids.closed, GameKey: "island-battles", Name: "Closed room", JoinCode: "JKMN2345", Capacity: 2, Phase: "closed", Version: 2,
 		CreatedAt: now.Add(-3 * time.Hour), NextJoinSequence: 1, GameSettings: []byte(`{}`), LastConnectedAt: now.Add(-3 * time.Hour),
 	})
-	create(t, database, &lobbypostgres.TeamRecord{ID: ids.blue, LobbyID: ids.waiting, Name: "Blue", NormalizedName: "blue", Capacity: 2, TeamOrder: 1})
-	create(t, database, &lobbypostgres.TeamRecord{ID: ids.red, LobbyID: ids.waiting, Name: "Red", NormalizedName: "red", Capacity: 2, TeamOrder: 2})
-	create(t, database, &lobbypostgres.TeamRecord{ID: ids.green, LobbyID: ids.started, Name: "Green", NormalizedName: "green", Capacity: 2, TeamOrder: 1})
+	create(t, database, &lobbypostgres.TeamRecord{ID: ids.blue, LobbyID: ids.waiting, Name: "Blue", NormalizedName: "blue", TeamOrder: 1})
+	create(t, database, &lobbypostgres.TeamRecord{ID: ids.red, LobbyID: ids.waiting, Name: "Red", NormalizedName: "red", TeamOrder: 2})
+	create(t, database, &lobbypostgres.TeamRecord{ID: ids.green, LobbyID: ids.started, Name: "Green", NormalizedName: "green", TeamOrder: 1})
 	blue, red, green := ids.blue, ids.red, ids.green
 	graceEnds := now.Add(30 * time.Second)
 	memberships := []lobbypostgres.MembershipRecord{
@@ -265,7 +265,7 @@ func TestLobbyTools(t *testing.T) {
 		}
 		waiting := all.Lobbies[1]
 		if waiting.MemberCount != 3 || waiting.ConnectedMemberCount != 1 || waiting.HostDisplayName == nil || *waiting.HostDisplayName != "Alice" ||
-			waiting.GameID != float64(7) || waiting.JoinCode != "ABCD2345" || waiting.Capacity != 4 || !waiting.LastConnectedAt.Equal(now.Add(-time.Minute)) {
+			waiting.GameID != float64(7) || waiting.JoinCode != "ABCD2345" || waiting.Capacity != 2 || !waiting.LastConnectedAt.Equal(now.Add(-time.Minute)) {
 			t.Errorf("waiting lobby = %+v", waiting)
 		}
 		if closed := all.Lobbies[2]; closed.HostDisplayName != nil || closed.GameID != nil || closed.MemberCount != 0 {
@@ -304,7 +304,7 @@ func TestLobbyTools(t *testing.T) {
 		if settings, ok := lobby.GameSettings.(map[string]any); !ok || settings["map_template_id"] != float64(3) {
 			t.Errorf("game settings = %#v", lobby.GameSettings)
 		}
-		wantTeams := []adminmcp.Team{{ID: ids.blue, Name: "Blue", Capacity: 2, Order: 1, MemberCount: 1}, {ID: ids.red, Name: "Red", Capacity: 2, Order: 2, MemberCount: 1}}
+		wantTeams := []adminmcp.Team{{ID: ids.blue, Name: "Blue", Order: 1, MemberCount: 1}, {ID: ids.red, Name: "Red", Order: 2, MemberCount: 1}}
 		if !slices.Equal(lobby.Teams, wantTeams) {
 			t.Errorf("teams = %+v, want %+v", lobby.Teams, wantTeams)
 		}

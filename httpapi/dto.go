@@ -37,9 +37,9 @@ type ConnectionToken struct {
 	WebsocketURL string    `json:"websocket_url" format:"uri"`
 }
 
+// TeamDefinition names a team of a new lobby. A team holds one member.
 type TeamDefinition struct {
-	Name     string `json:"name" minLength:"1" maxLength:"40"`
-	Capacity int    `json:"capacity" minimum:"1" maximum:"64"`
+	Name string `json:"name" minLength:"1" maxLength:"40"`
 }
 type CreateLobbyInput struct {
 	Body CreateLobbyBody `json:"-"`
@@ -48,8 +48,7 @@ type CreateLobbyBody struct {
 	RequestID        string           `json:"request_id" format:"uuid"`
 	GameKey          string           `json:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$"`
 	Name             string           `json:"name" minLength:"1" maxLength:"80"`
-	Capacity         int              `json:"capacity" minimum:"2" maximum:"64"`
-	Teams            []TeamDefinition `json:"teams" minItems:"2" maxItems:"16"`
+	Teams            []TeamDefinition `json:"teams" minItems:"2" maxItems:"16" doc:"The lobby's teams, in order. Each holds one member, a person or a seat, so the lobby holds as many members as it has teams."`
 	ClientInstanceID string           `json:"client_instance_id" format:"uuid"`
 	GameSettings     GameSettings     `json:"game_settings,omitempty"`
 }
@@ -265,18 +264,19 @@ type Lobby struct {
 	GameKey      string       `json:"game_key"`
 	Name         string       `json:"name"`
 	JoinCode     string       `json:"join_code"`
-	Capacity     int          `json:"capacity"`
+	Capacity     int          `json:"capacity" doc:"The number of members the lobby holds, which is its number of teams, since each team holds one member."`
 	Phase        domain.Phase `json:"phase"`
 	Version      int64        `json:"version"`
 	HostPlayerID *string      `json:"host_player_id"`
 	CreatedAt    time.Time    `json:"created_at"`
 	GameSettings GameSettings `json:"game_settings"`
 }
+
+// Team is one of a lobby's teams. It holds at most one member.
 type Team struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
-	Order    int    `json:"order"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Order int    `json:"order"`
 }
 type Member struct {
 	ID                string             `json:"id"`
@@ -310,7 +310,7 @@ type LobbyInvalidation struct {
 func snapshotFromDomain(source domain.Snapshot) Snapshot {
 	teams := make([]Team, len(source.Teams))
 	for index, team := range source.Teams {
-		teams[index] = Team{ID: team.ID, Name: team.Name, Capacity: team.Capacity, Order: team.Order}
+		teams[index] = Team{ID: team.ID, Name: team.Name, Order: team.Order}
 	}
 	members := make([]Member, len(source.Members))
 	for index, member := range source.Members {

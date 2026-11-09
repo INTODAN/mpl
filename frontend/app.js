@@ -222,6 +222,13 @@ function acceptSnapshot(next) {
   if (!heartbeatTimer) heartbeatTimer = setTimeout(heartbeat, 15000);
 }
 
+// occupiedTeams lists the IDs of the teams that a member other than
+// exceptPlayerID, a person or a seat, is on. A team holds one member, so
+// nobody else can join an occupied team.
+function occupiedTeams(room, exceptPlayerID = null) {
+  return new Set(room.members.filter((member) => member.team_id && member.player_id !== exceptPlayerID).map((member) => member.team_id));
+}
+
 // emptyTeams lists the teams that block the start under the game's declared
 // start rules: with every_team_needs_member, the teams that have no member.
 function emptyTeams(room) {
@@ -654,6 +661,7 @@ function showSeatControls(shown) {
     seatControls = key;
     container.replaceChildren(...snapshot.teams.map((team) => {
       const row = element("div", "seat-row", "");
+      row.dataset.teamId = team.id;
       const select = document.createElement("select");
       select.append(...options.choices.map((choice, index) => new Option(choice.label, String(index))));
       const label = element("label", "", team.name);
@@ -667,6 +675,10 @@ function showSeatControls(shown) {
       return row;
     }));
   }
+  // A seat takes a whole team, so only an empty team offers one.
+  const occupied = occupiedTeams(snapshot);
+  for (const row of container.children) row.hidden = occupied.has(row.dataset.teamId);
+  container.hidden = [...container.children].every((row) => row.hidden);
   for (const control of container.querySelectorAll("button, select")) control.disabled = busy;
 }
 
@@ -793,6 +805,13 @@ function render() {
     teamOptions = optionsKey;
     $("team-select").replaceChildren(new Option("Choose a team", ""), ...teams.map((team) => new Option(team.name, team.id)));
   }
+  // A team holds one member: one that someone else is on can't be chosen.
+  const takenByOthers = occupiedTeams(snapshot, state.session.player_id);
+  teams.forEach((team, index) => {
+    const option = $("team-select").options[index + 1];
+    option.disabled = takenByOthers.has(team.id);
+    option.textContent = option.disabled ? `${team.name} (taken)` : team.name;
+  });
   $("team-select").value = self?.team_id || "";
   $("team-select").disabled = busy || !waiting;
   $("waiting-controls").hidden = !waiting;
@@ -815,13 +834,13 @@ function render() {
   if (!waiting) { loadResult(); ensureGamePlayer(); }
 }
 
-// A playground lobby has one seat per team. The teams come from the game's
-// settings form when it has one.
+// A lobby holds one member per team. The teams come from the game's settings
+// form when it has one.
 async function createLobby(name, choice) {
   await ensureSession();
   const payload = {
     game_key: $("game").value, name: name || `${state.session.display_name}’s lobby`,
-    capacity: choice.teams.length, teams: choice.teams.map((team) => ({ name: team, capacity: 1 })),
+    teams: choice.teams.map((team) => ({ name: team })),
     client_instance_id: state.clientInstanceID,
   };
   if (Object.keys(choice.settings).length) payload.game_settings = choice.settings;
