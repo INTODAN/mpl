@@ -22,6 +22,11 @@ var assets embed.FS
 // the host's games as JSON.
 const catalogPath = "games.json"
 
+// StaticAssetCacheControl is the Cache-Control value of the scripts and styles
+// that hosts serve beside the lobby page. A deploy reaches players within five
+// minutes, so file names don't need a fingerprint.
+const StaticAssetCacheControl = "public, max-age=300"
+
 // LobbyIDPlaceholder marks where a game's result URL takes the lobby ID.
 const LobbyIDPlaceholder = "{lobby_id}"
 
@@ -101,8 +106,17 @@ func Handler(games []Game) (http.Handler, error) {
 	}
 	files := http.FileServer(http.FS(assets))
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		response.Header().Set("Cache-Control", "no-store")
-		if strings.TrimPrefix(request.URL.Path, "/") == catalogPath {
+		name := strings.TrimPrefix(request.URL.Path, "/")
+		// The catalog and the page change with a deploy and name the other
+		// files, so they are never cached. The rest may sit at the CDN and in
+		// browsers for a few minutes, so one page load doesn't run the host
+		// once per file.
+		if name == "" || name == catalogPath || name == "index.html" {
+			response.Header().Set("Cache-Control", "no-store")
+		} else {
+			response.Header().Set("Cache-Control", StaticAssetCacheControl)
+		}
+		if name == catalogPath {
 			http.ServeContent(response, request, catalogPath, time.Time{}, bytes.NewReader(catalog))
 			return
 		}

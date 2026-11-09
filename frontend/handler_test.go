@@ -167,3 +167,19 @@ func TestAssetsNameNoGame(t *testing.T) {
 		}
 	}
 }
+
+// The page and the catalog name the other files and change with a deploy;
+// everything else may be cached for a few minutes.
+func TestHandlerCachesOnlyTheStaticAssets(t *testing.T) {
+	handler := mounted(t, []frontend.Game{quizGame()})
+	for file, want := range map[string]string{
+		"": "no-store", "games.json": "no-store", "index.html": "no-store",
+		"app.js": "public, max-age=300", "relay.mjs": "public, max-age=300", "style.css": "public, max-age=300",
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/lobby/ui/"+file, nil))
+		if got := recorder.Header().Get("Cache-Control"); got != want {
+			t.Errorf("%q: Cache-Control %q, want %q", file, got, want)
+		}
+	}
+}
