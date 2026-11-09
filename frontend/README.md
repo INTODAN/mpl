@@ -108,6 +108,8 @@ const { status, body } = await request(`/quiz/${lobbyID}/data/scores?round=2`);
 
 Run the relay's path checks from the repository root with `node lobby/frontend/relay.test.mjs`.
 
+When the server throttles a request with 429, the page sends it again up to 3 times, after about 0.5, 1 and 2 seconds (each with up to 25% random jitter, at least the `Retry-After` header, at most 5 seconds). It retries every GET, a room module's PUT, and the lobby's team, ready and heartbeat requests; it never retries creating a lobby, joining, starting, adding or removing a seat, or removing a watcher. A request that stays throttled shows "The server is busy. Try again in a moment."; a relayed or room request then answers with `status: 429` and a body `{status, detail}` carrying that message. [`throttle.mjs`](throttle.mjs) holds the retry; run its tests with `node lobby/frontend/throttle.test.mjs`.
+
 If the page can't load the result document, for example because the host binds the game just after the lobby starts, it retries with backoff of 1, 2 and 4 seconds, then every 10 seconds, while the lobby is started and the document isn't loaded. [`resultretry.mjs`](resultretry.mjs) decides the delay; run its tests with `node lobby/frontend/resultretry.test.mjs`.
 
 An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, playerID, credential, subscription, enabled, demo, pending, savePending, onState, onStatus}`:

@@ -71,16 +71,34 @@ function roomPath(room = state.room) {
   return `/games/${encodeURIComponent(room.game_key)}/lobbies/${encodeURIComponent(room.lobby_id)}`;
 }
 
+let throttleModule = null;
+function loadThrottle() {
+  throttleModule ??= import("./throttle.mjs").catch((error) => {
+    throttleModule = null;
+    throw error;
+  });
+  return throttleModule;
+}
+
 async function api(path, method = "GET", body) {
   const headers = { Accept: "application/json" };
   if (state.session) headers.Authorization = `Bearer ${state.session.access_token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  let timeout;
   try {
-    const response = await fetch(`/lobby/v1${path}`, {
+    const { fetchRetrying, isRepeatableLobbyRequest, retryWaitBudgetMs, serverBusyMessage } = await loadThrottle();
+    const repeatable = isRepeatableLobbyRequest(method, path);
+    // The waits between retries come on top of the 8 seconds for the answer.
+    timeout = setTimeout(() => controller.abort(), 8000 + (repeatable ? retryWaitBudgetMs : 0));
+    const response = await fetchRetrying(fetch, `/lobby/v1${path}`, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal,
-    });
+    }, { repeatable });
+    if (response.status === 429) {
+      const error = new Error(serverBusyMessage);
+      error.status = 429;
+      throw error;
+    }
     if (response.status === 204) return null;
     const data = await response.json();
     if (!response.ok) {

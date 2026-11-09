@@ -1,3 +1,5 @@
+import { fetchRetrying, serverBusyMessage } from "./throttle.mjs";
+
 // The relay fetches a game's data for its result document. The document runs
 // in a sandboxed frame with an opaque origin and no credential, so it asks the
 // page with a game.request message. The page fetches only same-origin paths
@@ -98,11 +100,13 @@ async function readText(response, maxBytes) {
 
 // relayRequest answers one game.request message with a lobby.response
 // message: the HTTP status and the body, parsed when it is JSON and as text
-// otherwise. A refused or failed request, one that takes longer than its
+// otherwise. A response of 429 is retried first (see throttle.mjs); one that
+// stays throttled has status 429 and a body {status, detail} whose detail is
+// the plain "server is busy" message. A refused or failed request, one that takes longer than its
 // timeout_seconds, or one whose body is larger than maxBytes, has status 0, a
 // null body and an error. A message without a usable ID is ignored and
 // returns null.
-export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, maxBytes = maxResponseBytes }) {
+export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, maxBytes = maxResponseBytes, sleep, random }) {
   const id = requestID(data);
   if (data?.type !== "game.request" || id === undefined) return null;
   if (data.method !== undefined && data.method !== "GET") return refused(id, "only GET requests are relayed");
@@ -119,10 +123,13 @@ export async function relayRequest(data, { prefix, lobbyID, origin, credential, 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
   try {
-    const response = await fetch(url, {
+    // Only GET requests are relayed, so a throttled one is sent again within
+    // the request's own timeout.
+    const response = await fetchRetrying(fetch, url, {
       method: "GET", headers: { Authorization: `Bearer ${credential}`, Accept: "application/json" },
       redirect: "error", cache: "no-store", signal: controller.signal,
-    });
+    }, { repeatable: true, sleep, random });
+    if (response.status === 429) return { type: "lobby.response", id, status: 429, body: { status: 429, detail: serverBusyMessage } };
     const text = await readText(response, maxBytes);
     let body = text;
     if (/\bjson\b/i.test(response.headers.get("Content-Type") || "")) {

@@ -5,6 +5,7 @@
 // only with GET or PUT.
 
 import { relayURL } from "./relay.mjs";
+import { fetchRetrying, retryWaitBudgetMs, serverBusyMessage } from "./throttle.mjs";
 
 export const roomMethods = ["GET", "PUT"];
 // How long the page waits for a whole response.
@@ -13,7 +14,7 @@ export const roomTimeoutMilliseconds = 8000;
 // roomRequest fetches a room module's request and resolves to its status and
 // body: the parsed value for a JSON response, and null otherwise. It throws an
 // Error that says why when it refuses the request, or can't get an answer.
-export async function roomRequest({ method = "GET", path, body }, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch }) {
+export async function roomRequest({ method = "GET", path, body }, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, sleep, random }) {
   if (!roomMethods.includes(method)) throw new Error(`method must be one of ${roomMethods.join(", ")}`);
   if (method === "GET" && body !== undefined) throw new Error("a GET request has no body");
   if (typeof credential !== "string" || !credential) throw new Error("the page has no player session");
@@ -26,11 +27,13 @@ export async function roomRequest({ method = "GET", path, body }, { prefix, lobb
   const headers = { Accept: "application/json", Authorization: `Bearer ${credential}` };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), roomTimeoutMilliseconds);
+  const timeout = setTimeout(() => controller.abort(), roomTimeoutMilliseconds + retryWaitBudgetMs);
   try {
-    const response = await fetch(url, {
+    // GET and PUT only read or set a value, so a throttled one is sent again.
+    const response = await fetchRetrying(fetch, url, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: controller.signal,
-    });
+    }, { repeatable: true, sleep, random });
+    if (response.status === 429) return { status: 429, body: { status: 429, detail: serverBusyMessage } };
     const type = response.headers.get("Content-Type") || "";
     const json = /^application\/(problem\+)?json\b/.test(type);
     return { status: response.status, body: json ? await response.json() : null };
