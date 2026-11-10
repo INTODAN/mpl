@@ -15,7 +15,7 @@ import (
 	"islandBattles/lobby/domain"
 )
 
-//go:embed index.html app.js relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor
+//go:embed index.html app.js links.mjs relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor watch.mjs
 var assets embed.FS
 
 // catalogPath is the file, relative to the frontend's mount point, that lists
@@ -47,6 +47,19 @@ type Game struct {
 	// plays one game per round, and the page loads each round's document
 	// anew. The document is fetched with the guest bearer credential.
 	ResultURL string `json:"result_url"`
+	// WatchResultURL optionally lets people outside the roster watch a
+	// lobby of this game, which the page then offers ("Watch a lobby"). It is
+	// the same-origin path of the HTML document a watcher sees, with
+	// LobbyIDPlaceholder as in ResultURL, fetched with the guest bearer
+	// credential. It answers 404 while the game has not started, and 403 to a
+	// watcher whom the host removed. A watcher's lobby has no round to ask
+	// for, so the document is of the lobby's newest game; it tells the page
+	// with a game.reload message when a later round's game starts.
+	WatchResultURL string `json:"watch_result_url,omitempty"`
+	// WatchDataURLPrefix is DataURLPrefix for a watcher's document: the only
+	// paths it may read. The page never falls back to DataURLPrefix for a
+	// watcher, who may not read what a player does.
+	WatchDataURLPrefix string `json:"watch_data_url_prefix,omitempty"`
 	// StartedHint optionally tells the players of a started lobby how they take
 	// part, for example which client submits their turns.
 	StartedHint string `json:"started_hint,omitempty"`
@@ -151,6 +164,12 @@ func validateCatalog(games []Game) error {
 		}
 		if game.DataURLPrefix != "" && !validLobbyPrefix(game.DataURLPrefix) {
 			return fmt.Errorf("frontend: game %q needs a same-origin data URL prefix containing %s and ending with /", game.Key, LobbyIDPlaceholder)
+		}
+		if game.WatchResultURL != "" && (!sameOriginPath(game.WatchResultURL) || !strings.Contains(game.WatchResultURL, LobbyIDPlaceholder)) {
+			return fmt.Errorf("frontend: game %q needs a same-origin watch result URL containing %s", game.Key, LobbyIDPlaceholder)
+		}
+		if game.WatchDataURLPrefix != "" && (game.WatchResultURL == "" || !validLobbyPrefix(game.WatchDataURLPrefix)) {
+			return fmt.Errorf("frontend: game %q needs a watch result URL and a same-origin watch data URL prefix containing %s and ending with /", game.Key, LobbyIDPlaceholder)
 		}
 		if game.SettingsModule != "" && !sameOriginPath(game.SettingsModule) {
 			return fmt.Errorf("frontend: game %q needs a same-origin settings module", game.Key)

@@ -78,6 +78,11 @@ test("lobby requests that create, join, start, change seats or remove watchers a
   assert.equal(isRepeatableLobbyRequest("DELETE", `${path}/seats/s`), false);
   assert.equal(isRepeatableLobbyRequest("DELETE", `${path}/watchers/p`), false);
   assert.equal(isRepeatableLobbyRequest("DELETE", `${path}/membership`), false);
+  // Watching creates the watcher, and leaving it removes the watcher: neither is sent again.
+  assert.equal(isRepeatableLobbyRequest("POST", "/watches"), false);
+  assert.equal(isRepeatableLobbyRequest("DELETE", `${path}/watch`), false);
+  // Reading the watchers is a GET like any other.
+  assert.equal(isRepeatableLobbyRequest("GET", `${path}/watchers`), true);
 });
 
 const lobbyID = "6f1c2c9e-7d0a-4a43-9c55-6e3f0a1b2c3d";

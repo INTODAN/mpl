@@ -46,7 +46,7 @@ A host can version its own tables with `postgres.MigrationSet`, which takes its 
 
 ## Temporary browser frontend
 
-The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The host application lists its games when it mounts the frontend, so the frontend names none of its own. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose a game, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed.
+The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The host application lists its games when it mounts the frontend, so the frontend names none of its own. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose a game, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed. The page can also: copy an invite link (`?join=CODE`) that joins the lobby after the name step; watch a lobby by code or `?watch=CODE` link without a seat, for a game whose catalog entry names a watcher document (`POST /lobby/v1/watches`, the watch channel, `DELETE …/watch`); list a lobby's [watchers](#watchers) for its members, with a **Remove** button for the host (`GET …/watchers`, `DELETE …/watchers/{player_id}`), whose kicked watcher is told so and returned to the start screen; and let the game's settings form choose the teams. See the [frontend README](frontend/README.md#watching-a-lobby).
 
 ## Domain and application services
 

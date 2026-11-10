@@ -116,3 +116,20 @@ h3 { font-size: 1rem; margin: 0; }
 .bot-health::before { content: "●"; margin-right: 6px; color: #9aa3b5; }
 .bot-health[data-state="connected"]::before { color: #1f9d55; }
 .bot-health[data-state="stopped"]::before { color: #d64545; }
+/* An invite or watch link that is waiting for the player's name. */
+.link-invite { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin-bottom: 20px; }
+.link-invite p { margin: 0; }
+.link-invite[hidden] { display: none; }
+.entry-grid .watch-form { grid-column: 1 / -1; }
+.entry-grid .watch-form[hidden] { display: none; }
+.invite-code { flex-wrap: wrap; justify-content: flex-end; }
+/* The people who watch the lobby, outside its seats. */
+.watchers { margin-top: 24px; }
+.watchers[hidden] { display: none; }
+#watcher-count { font-weight: 400; color: #8290a4; margin-left: 6px; }
+.watchers .hint { margin: 0 0 8px; }
+.watchers .problem { color: #a04425; }
+.watchers-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.watchers-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid #e0e5ee; border-radius: 10px; font-size: .9rem; }
+.watchers-list .watcher-name { overflow-wrap: anywhere; font-weight: 600; }
+.watchers-list .text-button { padding: 0; font-size: .8rem; }

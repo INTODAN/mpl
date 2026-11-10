@@ -30,6 +30,10 @@
     </section>
 
     <section id="entry-panel" aria-label="Connect to a lobby">
+      <div id="link-invite" class="card link-invite" role="status" hidden>
+        <p id="link-invite-text"></p>
+        <button id="link-invite-button" class="primary" type="button">Continue</button>
+      </div>
       <div class="identity card">
         <label>Your name
           <input id="display-name" maxlength="40" autocomplete="nickname" placeholder="e.g. Alex" required>
@@ -61,6 +65,15 @@
           </label>
           <button id="join-button" class="secondary" type="submit">Join lobby <span aria-hidden="true">→</span></button>
         </form>
+        <form id="watch-form" class="card watch-form" hidden>
+          <span class="step">03 / WATCH</span>
+          <h2>Watch a lobby</h2>
+          <p>Follow its game without taking a seat. Enter the code a player shared.</p>
+          <label>Join code
+            <input id="watch-code" class="code-input" minlength="8" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCDEFGH" required>
+          </label>
+          <button id="watch-button" class="secondary" type="submit">Watch lobby <span aria-hidden="true">→</span></button>
+        </form>
       </div>
       <p class="hint">Trying it yourself? Open this page in two separate tabs and use a different name in each.</p>
       <nav id="game-links" class="game-links" aria-label="Pages of the selected game" hidden></nav>
@@ -73,7 +86,7 @@
       </div>
       <div class="invite">
         <div><label for="room-code">Invite your friend</label><p>Share this code to join the same lobby.</p></div>
-        <div class="invite-code"><input id="room-code" readonly aria-label="Lobby join code"><button id="copy-code" class="secondary" type="button">Copy code</button></div>
+        <div class="invite-code"><input id="room-code" readonly aria-label="Lobby join code"><button id="copy-code" class="secondary" type="button">Copy code</button><button id="copy-invite" class="secondary" type="button">Copy invite link</button></div>
       </div>
       <form id="room-settings-form" class="room-settings-form" aria-label="Change the lobby’s settings" hidden>
         <div id="room-settings-fields" class="game-settings"></div>
@@ -85,6 +98,12 @@
       </form>
       <div class="section-heading"><h3>Players <span id="player-count"></span></h3><span id="phase" class="tag">Waiting</span></div>
       <div id="players" class="player-grid" aria-live="polite"></div>
+      <section id="watchers-panel" class="watchers" aria-label="Watchers" hidden>
+        <div class="section-heading"><h3>Watchers <span id="watcher-count"></span></h3></div>
+        <p id="watchers-empty" class="hint">Nobody is watching. Anyone with the join code can watch without taking a seat.</p>
+        <ul id="watchers-list" class="watchers-list" aria-live="polite"></ul>
+        <p id="watchers-error" class="hint problem" role="alert" hidden></p>
+      </section>
       <div id="seat-controls" class="seat-controls" aria-label="Seats the game plays" hidden></div>
       <div id="game-room-panel" class="game-room-panel" hidden></div>
       <div id="waiting-controls" class="controls">
@@ -95,12 +114,20 @@
       <p id="room-hint" class="hint" role="status"></p>
       <footer class="room-footer"><span id="playing-as"></span><button id="leave-button" class="text-button" type="button">Leave lobby</button></footer>
     </section>
+    <section id="watch-panel" class="card room" aria-label="Watching a lobby" hidden>
+      <div class="room-heading">
+        <div><p id="watch-game" class="eyebrow"></p><h2>Watching a lobby</h2><p id="watch-status" class="room-settings" role="status"></p></div>
+        <span id="watch-connection" class="connection" role="status">Connecting…</span>
+      </div>
+      <p class="hint">You watch without a seat: you can’t play, choose a team or get ready, and the lobby’s players, teams and map are shown to its members only. The host can remove you.</p>
+      <footer class="room-footer"><span id="watching-as"></span><button id="stop-watching" class="text-button" type="button">Stop watching</button></footer>
+    </section>
     <section id="result-panel" class="card game-result" aria-label="Game result" hidden>
       <div id="example-controls" class="example-controls" hidden>
         <div><span class="eyebrow"><span id="example-label">Example strategy · </span><span id="example-strategy"></span></span><strong id="example-status">Starting example player…</strong><p id="example-detail"></p></div>
         <button id="example-toggle" class="secondary" type="button">Pause this player</button>
       </div>
-      <div class="result-actions">
+      <div id="result-actions" class="result-actions">
         <button id="back-to-lobby" class="secondary" type="button">Back to lobby</button>
         <span class="hint">Once the game has ended, this opens the lobby again for the next game, with the same players, teams and bots.</span>
       </div>

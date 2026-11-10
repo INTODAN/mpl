@@ -152,7 +152,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})
 	// The file server answers index.html at the mount point itself.
-	for _, file := range []string{"", "app.js", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "rounds.mjs", "style.css"} {
+	for _, file := range []string{"", "app.js", "links.mjs", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "rounds.mjs", "style.css", "throttle.mjs", "watch.mjs"} {
 		path := "/lobby/ui/" + file
 		body, err := io.ReadAll(get(t, handler, path).Body)
 		if err != nil {
@@ -164,6 +164,50 @@ func TestAssetsNameNoGame(t *testing.T) {
 			if strings.Contains(text, word) {
 				t.Errorf("%s mentions %q", path, word)
 			}
+		}
+	}
+}
+
+// A game opts into watching by naming the document a watcher sees, and the
+// only data that document may read.
+func TestHandlerCatalogCarriesTheWatcherURLs(t *testing.T) {
+	game := quizGame()
+	game.WatchResultURL = "/quiz/{lobby_id}/watch/result"
+	game.WatchDataURLPrefix = "/quiz/{lobby_id}/watch/"
+	handler := mounted(t, []frontend.Game{game, {Key: "chess", Name: "Chess", ResultURL: "/chess/{lobby_id}"}})
+	var catalog []map[string]any
+	if err := json.Unmarshal(get(t, handler, "/lobby/ui/games.json").Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if catalog[0]["watch_result_url"] != "/quiz/{lobby_id}/watch/result" || catalog[0]["watch_data_url_prefix"] != "/quiz/{lobby_id}/watch/" {
+		t.Fatalf("catalog entry %v", catalog[0])
+	}
+	// A game that doesn't opt in lists neither, so the page offers no watching.
+	if _, listed := catalog[1]["watch_result_url"]; listed {
+		t.Fatalf("catalog entry %v", catalog[1])
+	}
+}
+
+func TestHandlerRejectsInvalidWatcherURLs(t *testing.T) {
+	cases := map[string]func(*frontend.Game){
+		"result without lobby":     func(game *frontend.Game) { game.WatchResultURL = "/quiz/watch/result" },
+		"result cross-origin":      func(game *frontend.Game) { game.WatchResultURL = "https://example.com/{lobby_id}" },
+		"result protocol-relative": func(game *frontend.Game) { game.WatchResultURL = "//evil.com/{lobby_id}" },
+		"prefix without result":    func(game *frontend.Game) { game.WatchResultURL = "" },
+		"prefix without lobby":     func(game *frontend.Game) { game.WatchDataURLPrefix = "/quiz/watch/" },
+		"prefix without slash":     func(game *frontend.Game) { game.WatchDataURLPrefix = "/quiz/{lobby_id}/watch" },
+		"prefix with dots":         func(game *frontend.Game) { game.WatchDataURLPrefix = "/quiz/../{lobby_id}/" },
+		"prefix with escape":       func(game *frontend.Game) { game.WatchDataURLPrefix = "/quiz/%2e%2e/{lobby_id}/" },
+		"prefix with backslash":    func(game *frontend.Game) { game.WatchDataURLPrefix = `/quiz\{lobby_id}/` },
+		"prefix protocol-relative": func(game *frontend.Game) { game.WatchDataURLPrefix = "//evil.com/{lobby_id}/" },
+	}
+	for name, mutate := range cases {
+		game := quizGame()
+		game.WatchResultURL = "/quiz/{lobby_id}/watch/result"
+		game.WatchDataURLPrefix = "/quiz/{lobby_id}/watch/"
+		mutate(&game)
+		if _, err := frontend.Handler([]frontend.Game{game}); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

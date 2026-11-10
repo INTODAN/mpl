@@ -18,7 +18,8 @@ export const retryWaitBudgetMs = maxRetryWaitMs;
 // Lobby requests that set a value, so sending them again changes nothing.
 // Reopening a lobby after its game is one: a lobby that already waits comes
 // back unchanged. A request to create a lobby, join, start, add or remove a
-// seat, or remove a watcher is not here and is never retried; GET always is.
+// seat, start or stop watching, or remove a watcher is not here and is never
+// retried; GET always is, such as the list of watchers.
 const repeatableLobbyRequests = [
   { method: "PUT", path: /\/lobbies\/[^/]+\/team$/ },
   { method: "PUT", path: /\/lobbies\/[^/]+\/ready$/ },

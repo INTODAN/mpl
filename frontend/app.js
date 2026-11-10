@@ -58,6 +58,27 @@ let seatOptions = null;
 let seatControls = "";
 // The games' settings and room modules by URL, each imported once per page.
 const gameModules = new Map();
+// The page's link and watcher rules, loaded at startup. Without them the page
+// still plays; it offers no invite links and no watching.
+let linksLibrary = null;
+let watchLibrary = null;
+// What a watcher outside the roster has open, in this tab: {game_key, lobby_id,
+// channel, join_code}, kept in state so a reload watches again. watchEpoch
+// counts the watches, like roomEpoch counts rooms.
+let watchEpoch = 0;
+let watchClient = null;
+// The failed reads of the watcher's document in a row, and the pending retry.
+let watchFailures = 0;
+let watchRetryTimer = null;
+let watchRequest = null;
+// What the lobby's watch channel published while no document was shown to
+// take it, so that the document, loaded a moment later, gets it too.
+let watchEvents = [];
+// The members' list of watchers: {lobbyID, version, list, reading, dirty,
+// error, kicking}. It is read again when the lobby changes.
+let watchers = { lobbyID: null, version: -1, list: [], reading: false, dirty: false, error: "", kicking: new Set() };
+// The invite or watch link that waits for the player's name: {action, code, game}.
+let pendingLink = null;
 // Lobbies without a game settings module get these teams.
 const defaultTeams = ["Blue", "Red"];
 
@@ -174,12 +195,38 @@ function dropRoom() {
   seatOptions = null;
   seatControls = "";
   $("seat-controls").replaceChildren();
+  $("watchers-panel").hidden = true;
   $("seat-controls").hidden = true;
   $("game-room-panel").replaceChildren();
   $("game-room-panel").hidden = true;
   $("room-settings").hidden = true;
   snapshot = null;
+  watchers = { lobbyID: null, version: -1, list: [], reading: false, dirty: false, error: "", kicking: new Set() };
   $("demo-player-link").hidden = true;
+  save();
+}
+
+// The lobby page's start screen shows the watcher's own panel instead.
+function selectedGameWatchable() {
+  return Boolean(watchLibrary?.canWatch(selectedGame()));
+}
+
+// dropWatch ends this tab's watch: the realtime connection, the document and
+// the saved watch. It makes no request.
+function dropWatch() {
+  watchEpoch++;
+  clearTimeout(watchRetryTimer);
+  watchRetryTimer = null;
+  watchRequest?.abort();
+  watchRequest = null;
+  watchFailures = 0;
+  watchEvents = [];
+  watchClient?.disconnect();
+  watchClient = null;
+  if (state.watch) {
+    state.watch = null;
+    dropGame();
+  }
   save();
 }
 
@@ -195,6 +242,7 @@ function reportError(error) {
   };
   if (error.status === 401) {
     dropRoom();
+    dropWatch();
     state.session = null;
     state.pendingCreate = null;
     save();
@@ -203,7 +251,7 @@ function reportError(error) {
     dropRoom();
     notice("You’re no longer connected to that lobby. Use its code to join again.");
   } else {
-    notice(messages[error.code] || (error.code === "not_found" ? "No lobby found for that code and game." : error.message));
+    notice(messages[error.code] || watchLibrary?.watchMessage(error) || (error.code === "not_found" ? "No lobby found for that code and game." : error.message));
   }
 }
 
@@ -245,7 +293,105 @@ function acceptSnapshot(next) {
   save();
   render();
   void ensureRealtime();
+  void updateWatchers(next);
   if (!heartbeatTimer) heartbeatTimer = setTimeout(heartbeat, 15000);
+}
+
+// The members' list of watchers is read again when the lobby changes, since a
+// watcher arriving, leaving or removed is a lobby change. Reads never overlap:
+// a change that comes during one asks for another once it ends.
+async function updateWatchers(next) {
+  if (!watchLibrary || !watchLibrary.canWatch(games.get(next.lobby.game_key))) return;
+  if (watchers.lobbyID !== next.lobby.id) {
+    watchers = { lobbyID: next.lobby.id, version: -1, list: [], reading: false, dirty: false, error: "", kicking: new Set() };
+  }
+  const changed = watchLibrary.watchersChanged({
+    lastVersion: watchers.version, version: next.lobby.version, watcherCount: next.watcher_count, shownCount: watchers.list.length,
+  });
+  watchers.version = next.lobby.version;
+  if (changed) await readWatchers();
+}
+
+async function readWatchers() {
+  const current = watchers;
+  if (current.reading) {
+    current.dirty = true;
+    return;
+  }
+  const room = state.room;
+  current.reading = true;
+  try {
+    current.list = (await api(`${roomPath(room)}/watchers`)).watchers;
+    current.error = "";
+  } catch (error) {
+    if (watchers !== current) return;
+    if (error.status === 401) {
+      reportError(error);
+      return;
+    }
+    current.error = error.message;
+  } finally {
+    current.reading = false;
+  }
+  if (watchers !== current) return;
+  render();
+  if (current.dirty) {
+    current.dirty = false;
+    void readWatchers();
+  }
+}
+
+// The host removes a watcher, who stops receiving the game at once and can't
+// watch again with the code. A watcher who left meanwhile is gone either way.
+async function kickWatcher(watcher) {
+  const current = watchers;
+  current.kicking.add(watcher.player_id);
+  render();
+  try {
+    await api(`${roomPath()}/watchers/${encodeURIComponent(watcher.player_id)}`, "DELETE");
+    current.list = current.list.filter((item) => item.player_id !== watcher.player_id);
+    current.error = "";
+  } catch (error) {
+    if (error.status === 401) {
+      reportError(error);
+      return;
+    }
+    if (error.status !== 404) current.error = error.message;
+  } finally {
+    current.kicking.delete(watcher.player_id);
+  }
+  if (watchers !== current) return;
+  render();
+  void readWatchers();
+}
+
+// showWatchers draws the members' list of watchers in the room, with a Remove
+// button for the host.
+function showWatchers(host) {
+  const game = games.get(snapshot.lobby.game_key);
+  const shown = Boolean(watchLibrary?.canWatch(game));
+  $("watchers-panel").hidden = !shown;
+  if (!shown) return;
+  const own = watchers.lobbyID === snapshot.lobby.id ? watchers : null;
+  const list = own?.list || [];
+  $("watcher-count").textContent = String(snapshot.watcher_count);
+  $("watchers-empty").hidden = snapshot.watcher_count > 0;
+  $("watchers-error").textContent = own?.error || "";
+  $("watchers-error").hidden = !own?.error;
+  $("watchers-list").replaceChildren(...list.map((watcher) => {
+    const item = document.createElement("li");
+    item.dataset.playerId = watcher.player_id;
+    item.append(element("span", "watcher-name", watcher.display_name));
+    if (host) {
+      const remove = element("button", "text-button", "Remove");
+      remove.type = "button";
+      remove.disabled = busy || own.kicking.has(watcher.player_id);
+      remove.setAttribute("aria-label", `Remove ${watcher.display_name}`);
+      remove.addEventListener("click", () => void kickWatcher(watcher));
+      item.append(remove);
+    }
+    return item;
+  }));
 }
 
 // occupiedTeams lists the IDs of the teams that a member other than
@@ -406,6 +552,7 @@ $("game-result").addEventListener("load", () => {
   if (!resultDocument) return;
   resultDocument.loads++;
   displayGameState();
+  flushWatchEvents();
 });
 window.addEventListener("message", (event) => {
   const frame = $("game-result");
@@ -414,6 +561,12 @@ window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow || !resultDocumentShown()) return;
   if (event.data?.type === "game.request") {
     void relayGameRequest(event.data);
+    return;
+  }
+  // A watcher's document asks to be loaded anew when the lobby's next game
+  // starts, since the page learns nothing of the lobby's rounds as a watcher.
+  if (event.data?.type === "game.reload") {
+    if (state.watch) reloadWatchResult();
     return;
   }
   if (event.data?.type !== "game.result-size") return;
@@ -440,11 +593,16 @@ async function relayGameRequest(data) {
   const shown = resultDocument;
   const lobbyID = resultRoom;
   const epoch = roomEpoch;
+  const watch = watchEpoch;
   const round = gameEpoch;
+  // The lobby whose document is shown: a watcher's, or the room's.
+  const target = state.watch
+    ? { lobbyID: state.watch.lobby_id, game: games.get(state.watch.game_key), watching: true }
+    : state.room ? { lobbyID: state.room.lobby_id, game: games.get(state.room.game_key), watching: false } : null;
   let response;
   try {
     const { maxRelayedRequests, refuseRequest, relayRequest } = await loadRelay();
-    if (!state.session || !state.room || lobbyID !== state.room.lobby_id) {
+    if (!state.session || !target || lobbyID !== target.lobbyID) {
       response = refuseRequest(data, "the page shows no lobby for this game");
     } else if (shown.relayed >= maxRelayedRequests) {
       response = refuseRequest(data, "too many requests at once; wait for an answer first");
@@ -453,8 +611,11 @@ async function relayGameRequest(data) {
       // never hold up the next one's.
       shown.relayed++;
       try {
+        // A watcher's document reads the game's watcher prefix only, never a
+        // player's, and nothing when its game names none.
         response = await relayRequest(data, {
-          prefix: games.get(state.room.game_key)?.data_url_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
+          prefix: target.watching ? watchLibrary?.watchRelayPrefix(target.game) ?? null : target.game?.data_url_prefix,
+          lobbyID, origin: location.origin, credential: state.session.access_token,
         });
       } finally {
         shown.relayed--;
@@ -468,7 +629,7 @@ async function relayGameRequest(data) {
     response = { type: "lobby.response", id, status: 0, body: null, error: "the page could not load its request relay; try again" };
   }
   // Answer only the document that asked, while it still shows its lobby.
-  if (!response || epoch !== roomEpoch || round !== gameEpoch || resultRoom !== lobbyID || resultDocument !== shown || !resultDocumentShown()) return;
+  if (!response || epoch !== roomEpoch || watch !== watchEpoch || round !== gameEpoch || resultRoom !== lobbyID || resultDocument !== shown || !resultDocumentShown()) return;
   $("game-result").contentWindow?.postMessage(response, "*");
 }
 
@@ -604,6 +765,192 @@ async function retryResult(epoch, lobbyID) {
     resultRetryTimer = null;
     if (epoch === roomEpoch && snapshot?.lobby.id === lobbyID && snapshot.lobby.phase === "started") void loadResult();
   }, delay);
+}
+
+// ----- Watching a lobby from outside its roster -----
+//
+// A watcher has no room: the lobby shows its members to its members only. The
+// page shows the game's own watcher document once the game has started, reads
+// it with the guest credential, and follows what the lobby's watch channel
+// publishes by passing it on to the document. The host can remove a watcher.
+
+function watchStatus(text) {
+  $("result-status").hidden = false;
+  $("result-status").textContent = text;
+}
+
+// Starts watching the lobby of a join code, and shows its game. A member of
+// that lobby gets their room instead.
+async function startWatching(joinCode, gameKey) {
+  await ensureSession();
+  const access = await api("/watches", "POST", { game_key: gameKey, join_code: joinCode });
+  if (access.member) {
+    acceptSnapshot(await api(roomPath({ game_key: access.game_key, lobby_id: access.lobby_id })));
+    scheduleSync(0);
+    return;
+  }
+  if (state.room) {
+    await api(`${roomPath()}/membership`, "DELETE").catch(() => {});
+    dropRoom();
+  }
+  dropWatch();
+  state.watch = { game_key: access.game_key, lobby_id: access.lobby_id, channel: access.channel, join_code: joinCode };
+  save();
+  watchStatus("Waiting for the host to start the game…");
+  $("retry-game").hidden = true;
+  void connectWatch();
+  void loadWatchResult();
+}
+
+// Stops watching and returns to the start screen, saying why when there is
+// a reason. Leaving asks the lobby to forget the watcher; a removed watcher
+// has already been forgotten.
+async function stopWatching({ message = "", leave = true } = {}) {
+  const watch = state.watch;
+  if (!watch) return;
+  dropWatch();
+  notice(message);
+  render();
+  if (!leave) return;
+  try { await api(`${roomPath(watch)}/watch`, "DELETE"); } catch { /* The lobby forgets a watcher that goes silent. */ }
+}
+
+// A watcher's subscription ended. The host may have removed them, which only
+// the lobby's answer tells; anything else is a connection that the client
+// restores by itself.
+async function confirmWatching(epoch) {
+  const watch = state.watch;
+  if (!watch || epoch !== watchEpoch) return;
+  try {
+    await api("/watches", "POST", { game_key: watch.game_key, join_code: watch.join_code });
+  } catch (error) {
+    if (epoch !== watchEpoch) return;
+    if (watchLibrary?.wasKicked(error)) {
+      await stopWatching({ message: watchLibrary.kickedMessage, leave: false });
+    } else if (error.code === "not_found") {
+      await stopWatching({ message: "That lobby is gone.", leave: false });
+    } else if (error.status === 401) {
+      reportError(error);
+      render();
+    }
+  }
+}
+
+async function connectWatch() {
+  const epoch = watchEpoch;
+  const watch = state.watch;
+  try {
+    const token = await api("/connection-token", "POST", {});
+    if (epoch !== watchEpoch) return;
+    const client = new Centrifuge(token.websocket_url, {
+      token: token.token,
+      getToken: async () => (await api("/connection-token", "POST", {})).token,
+    });
+    watchClient = client;
+    const connection = (connected) => {
+      if (epoch !== watchEpoch) return;
+      $("watch-connection").textContent = connected ? "Live updates connected" : "Reconnecting…";
+      $("watch-connection").classList.toggle("reconnecting", !connected);
+    };
+    client.on("connected", () => connection(true));
+    client.on("connecting", () => connection(false));
+    client.on("disconnected", () => connection(false));
+    const subscription = client.newSubscription(watch.channel, { recoverable: true, positioned: true });
+    let subscribed = false;
+    subscription.on("subscribed", (context) => {
+      if (epoch !== watchEpoch) return;
+      // After a reconnect that could not recover every publication, the
+      // document is read again, so it misses no generation.
+      if (subscribed && !context.recovered) reloadWatchResult();
+      subscribed = true;
+    });
+    subscription.on("publication", ({ data }) => {
+      if (epoch !== watchEpoch) return;
+      watchEvents.push(data);
+      if (watchEvents.length > 100) watchEvents.shift();
+      flushWatchEvents();
+    });
+    subscription.on("unsubscribed", () => void confirmWatching(epoch));
+    subscription.on("error", () => void confirmWatching(epoch));
+    subscription.subscribe();
+    client.connect();
+  } catch (error) {
+    if (epoch !== watchEpoch) return;
+    if (error.status === 401) {
+      reportError(error);
+      render();
+    } else {
+      setTimeout(() => { if (epoch === watchEpoch) void connectWatch(); }, 2000);
+    }
+  }
+}
+
+// Passes the lobby's watch events to the shown document, which ignores
+// those it already has. Events that arrive before a document is shown wait.
+function flushWatchEvents() {
+  const watch = state.watch;
+  if (!watch || resultRoom !== watch.lobby_id || !resultDocumentShown()) return;
+  const frame = $("game-result").contentWindow;
+  if (!frame) return;
+  for (const event of watchEvents) frame.postMessage({ type: "lobby.watch-event", game_key: watch.game_key, event }, "*");
+  watchEvents = [];
+}
+
+// The watcher's document is loaded anew, for the lobby's next game or after a
+// connection that missed publications.
+function reloadWatchResult() {
+  if (!state.watch) return;
+  resultRoom = null;
+  void loadWatchResult();
+}
+
+async function loadWatchResult() {
+  const watch = state.watch;
+  const template = watch && games.get(watch.game_key)?.watch_result_url;
+  if (!template || watchRequest || resultRoom === watch.lobby_id) return;
+  clearTimeout(watchRetryTimer);
+  watchRetryTimer = null;
+  const epoch = watchEpoch;
+  const controller = new AbortController();
+  watchRequest = controller;
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(watchLibrary.watchResultURL(template, watch.lobby_id), {
+      headers: { Authorization: `Bearer ${state.session.access_token}`, Accept: "text/html" }, signal: controller.signal,
+    });
+    if (epoch !== watchEpoch) return;
+    if (response.status === 403) {
+      await stopWatching({ message: watchLibrary.kickedMessage, leave: false });
+      return;
+    }
+    if (response.status === 401) {
+      reportError({ status: 401 });
+      render();
+      return;
+    }
+    // The document is missing until the host has started the game.
+    if (!response.ok) throw Object.assign(new Error("The document is not available."), { shown: response.status === 404 ? "Waiting for the host to start the game…" : "Could not load the game. Retrying…" });
+    const html = await response.text();
+    if (controller !== watchRequest || epoch !== watchEpoch) return;
+    watchFailures = 0;
+    resultRoom = watch.lobby_id;
+    resultFailures = 0;
+    showResultDocument(html);
+    $("game-result").hidden = false;
+    $("result-status").hidden = true;
+    render();
+  } catch (error) {
+    if (controller !== watchRequest || epoch !== watchEpoch) return;
+    watchStatus(error.shown ?? (error.name === "AbortError" ? "The game is taking longer to load. Retrying…" : "Could not load the game. Retrying…"));
+    const delay = watchLibrary.watchRetryDelay(++watchFailures);
+    watchRetryTimer = setTimeout(() => {
+      watchRetryTimer = null;
+      if (epoch === watchEpoch) void loadWatchResult();
+    }, delay);
+  } finally {
+    clearTimeout(timeout);
+    if (controller === watchRequest) watchRequest = null;
+  }
 }
 
 // A game's settings and room modules are imported once per page; a module
@@ -810,7 +1157,7 @@ async function openRoomSettings() {
   try {
     const { SettingsForm } = await settingsModule(game);
     if (roomSettingsForm?.epoch !== epoch || roomSettingsForm.form) return;
-    roomSettingsForm.form = new SettingsForm({ container: $("room-settings-fields"), onChange: () => {}, current: snapshot.lobby.game_settings });
+    roomSettingsForm.form = new SettingsForm({ container: $("room-settings-fields"), onChange: () => {}, current: snapshot.lobby.game_settings, teamCount: snapshot.teams.length });
   } catch {
     if (roomSettingsForm?.epoch !== epoch) return;
     closeRoomSettings();
@@ -857,20 +1204,34 @@ async function saveRoomSettings() {
 function render() {
   void mountSettingsForm();
   const demoExample = selectedGame()?.example_player;
-  $("demo-setup").hidden = !demoExample;
+  $("demo-setup").hidden = !demoExample || Boolean(state.watch);
   $("demo-summary").textContent = demoExample?.summary || "";
   showGameLinks($("game-links"), selectedGame());
-  $("entry-panel").hidden = Boolean(snapshot);
+  const watching = Boolean(state.watch);
+  $("entry-panel").hidden = Boolean(snapshot) || watching;
   $("room-panel").hidden = !snapshot;
-  $("result-panel").hidden = !snapshot || snapshot.lobby.phase !== "started" || !games.has(snapshot.lobby.game_key);
-  $("example-controls").hidden = !(state.demoPlayer || playerReports) || snapshot?.lobby.phase !== "started";
+  $("watch-panel").hidden = !watching;
+  $("watch-form").hidden = !selectedGameWatchable();
+  $("result-panel").hidden = watching ? false : !snapshot || snapshot.lobby.phase !== "started" || !games.has(snapshot.lobby.game_key);
+  // A watcher has no lobby to go back to and no player of their own.
+  $("result-actions").hidden = watching;
+  $("example-controls").hidden = watching || !(state.demoPlayer || playerReports) || snapshot?.lobby.phase !== "started";
+  $("copy-invite").hidden = !linksLibrary;
+  if (watching) {
+    $("watch-game").textContent = games.get(state.watch.game_key)?.name || state.watch.game_key;
+    $("watching-as").textContent = `Watching as ${state.session?.display_name || ""}`;
+    $("watch-status").textContent = resultRoom === state.watch.lobby_id ? "The game is shown below." : "The game appears below once the host starts it.";
+  }
+  $("stop-watching").disabled = busy;
+  $("watch-button").disabled = busy || !games.size;
+  $("link-invite-button").disabled = busy || !games.size;
   $("example-label").textContent = state.demoPlayer ? "Example strategy · " : "Your localhost bot";
   $("example-strategy").hidden = !state.demoPlayer;
   $("example-toggle").hidden = !state.demoPlayer;
   $("display-name").readOnly = Boolean(state.session);
   $("change-player").hidden = !state.session;
   // Nothing can be created or joined until the host's games are known.
-  for (const id of ["create-button", "join-button", "change-player", "leave-button", "demo-button", "game"]) $(id).disabled = busy || !games.size;
+  for (const id of ["create-button", "join-button", "change-player", "leave-button", "demo-button", "game", "copy-invite"]) $(id).disabled = busy || !games.size;
   if (!snapshot) return;
 
   const { lobby, teams, members } = snapshot;
@@ -933,6 +1294,7 @@ function render() {
   $("team-select").disabled = busy || !waiting;
   $("waiting-controls").hidden = !waiting;
   ensureRoomPanel();
+  showWatchers(host);
   showSeatControls(host && waiting);
   showChangeSettings(host && waiting && !state.demoPlayer);
   $("ready-button").textContent = self?.ready ? "Not ready" : "Mark ready";
@@ -1084,8 +1446,71 @@ $("copy-code").addEventListener("click", async () => {
     setTimeout(() => { $("copy-code").textContent = "Copy code"; }, 1800);
   } catch { $("room-code").select(); }
 });
+// The invite link joins the lobby for whoever opens it, once they have a name.
+$("copy-invite").addEventListener("click", async () => {
+  if (!snapshot || !linksLibrary) return;
+  const link = linksLibrary.inviteLink(location.origin, location.pathname, snapshot.lobby.join_code, snapshot.lobby.game_key);
+  try {
+    await navigator.clipboard.writeText(link);
+    $("copy-invite").textContent = "Copied!";
+    setTimeout(() => { $("copy-invite").textContent = "Copy invite link"; }, 1800);
+  } catch {
+    // Without clipboard access, show the link to copy by hand.
+    notice(`Copy this invite link: ${link}`);
+  }
+});
+$("watch-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  action(() => startWatching($("watch-code").value.trim().toUpperCase(), $("game").value));
+});
+$("stop-watching").addEventListener("click", () => action(() => stopWatching()));
+$("link-invite-button").addEventListener("click", () => {
+  const link = pendingLink;
+  if (link) action(() => followLink(link));
+});
 $("room-code").addEventListener("click", () => $("room-code").select());
 $("game").addEventListener("change", render);
+
+// followLink joins or watches the lobby of an invite or watch link, which needs
+// the player's name first. A code that is wrong or expired is reported like a
+// wrong code typed into the form, and stays in its field to correct.
+async function followLink(link) {
+  const field = link.action === "join" ? "join-code" : "watch-code";
+  $(field).value = link.code;
+  try {
+    await ensureSession();
+  } catch (error) {
+    // Without a name the link waits, with its banner, for the person to enter one.
+    showPendingLink(link);
+    throw error;
+  }
+  pendingLink = null;
+  $("link-invite").hidden = true;
+  if (state.watch) await stopWatching();
+  if (state.room) {
+    // The link leads to another lobby than the one this tab was in.
+    await api(`${roomPath()}/membership`, "DELETE").catch(() => {});
+    dropRoom();
+  }
+  if (link.action === "watch") {
+    await startWatching(link.code, link.game || $("game").value);
+    return;
+  }
+  acceptSnapshot(await api("/memberships", "POST", {
+    game_key: link.game || $("game").value, join_code: link.code, client_instance_id: state.clientInstanceID,
+  }));
+  scheduleSync(0);
+}
+
+function showPendingLink(link) {
+  pendingLink = link;
+  const lobby = `lobby ${link.code}`;
+  $("link-invite-text").textContent = link.action === "join"
+    ? `You were invited to join ${lobby}. Enter your name, then continue.`
+    : `You were invited to watch ${lobby}. Enter your name, then continue.`;
+  $("link-invite-button").textContent = link.action === "join" ? "Join lobby" : "Watch lobby";
+  $("link-invite").hidden = false;
+}
 
 async function restore() {
   const invitation = new URLSearchParams(location.hash.slice(1));
@@ -1108,10 +1533,43 @@ async function restore() {
     });
     return;
   }
+  // An invite or watch link is acted on once, after the player has a name, and
+  // then leaves the address bar so a reload doesn't repeat it.
+  const link = linksLibrary ? linksLibrary.readLinkParams(location.search) : { action: null, problem: null };
+  if (link.action || link.problem) history.replaceState(null, "", linksLibrary.addressWithout(location.pathname, link.rest, location.hash));
   if (!state.session?.access_token || !(Date.parse(state.session.expires_at) > Date.now())) state = {};
   if (state.session) $("display-name").value = state.session.display_name;
   save();
   render();
+  if (link.problem) {
+    notice(link.problem);
+    if (!state.room && !state.watch) return;
+  }
+  if (link.action) {
+    if (link.game && !games.has(link.game)) link.game = null;
+    if (link.game) $("game").value = link.game;
+    render();
+    // With a name already, the link acts at once; otherwise it waits for one.
+    if (state.session) await action(() => followLink(link));
+    else showPendingLink(link);
+    return;
+  }
+  if (state.watch) {
+    // A reload while watching watches again: the code finds the watcher row, or
+    // says that the host removed this watcher or the lobby is gone.
+    const watch = state.watch;
+    state.watch = null;
+    $("game").value = watch.game_key;
+    await action(async () => {
+      try {
+        await startWatching(watch.join_code, watch.game_key);
+      } catch (error) {
+        save();
+        throw error;
+      }
+    });
+    return;
+  }
   if (!state.room) return;
   await action(async () => {
     // Reuse this tab's lease on reload; an expired membership needs explicit rejoin.
@@ -1139,5 +1597,13 @@ async function loadGames() {
   }
 }
 
+// The link and watcher rules load beside the catalog; a page that can't load
+// them still plays, without invite links and watching.
+async function loadLibraries() {
+  const [links, watch] = await Promise.allSettled([gameModule("./links.mjs"), gameModule("./watch.mjs")]);
+  linksLibrary = links.status === "fulfilled" ? links.value : null;
+  watchLibrary = watch.status === "fulfilled" ? watch.value : null;
+}
+
 render();
-loadGames().then(restore);
+Promise.all([loadGames(), loadLibraries()]).then(restore);
