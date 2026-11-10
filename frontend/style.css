@@ -98,6 +98,8 @@ h3 { font-size: 1rem; margin: 0; }
 .game-settings:empty { display: none; }
 .game-settings input[type="file"] { margin-bottom: 12px; }
 .game-settings .hint { margin: -8px 0 20px; }
+/* A hint under a button keeps clear of it; the pull-up is for a hint under a field. */
+.game-settings button + .hint { margin-top: 8px; }
 .game-settings .hint:empty { display: none; }
 .room-settings { margin: 6px 0 0; font-size: .87rem; }
 /* The host's form for changing a waiting room's settings. */
