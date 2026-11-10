@@ -446,6 +446,12 @@
           "phase": {
             "type": "string"
           },
+          "round": {
+            "description": "The lobby's round, from 1. Reopening the started lobby after its game ended (reopenLobby) raises it by one and makes the lobby wait again; a game tells the lobby's games apart by lobby and round.",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
           "version": {
             "format": "int64",
             "type": "integer"
@@ -458,6 +464,7 @@
           "join_code",
           "capacity",
           "phase",
+          "round",
           "version",
           "host_player_id",
           "created_at",
@@ -601,6 +608,7 @@
               "invalid_game_settings",
               "invalid_seat_settings",
               "game_requirement",
+              "game_running",
               "watcher_kicked",
               "watchers_full",
               "unavailable",
@@ -1692,6 +1700,123 @@
         ]
       }
     },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/reopen": {
+      "post": {
+        "description": "Brings a started lobby whose game has ended back to waiting, so its members can play another game in it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets not_found. The lobby's round goes up by one, and the game binds the next game to the new round. Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats stay ready, and the start roster is emptied until the next start. The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits, people can join it and the host can change its settings as before a first game.",
+        "operationId": "reopenLobby",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Reopen a lobby after its game",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats": {
       "post": {
         "description": "Adds a seat that no person plays, such as the game's bot, to a team, and returns the snapshot, where the seat is a member of kind seat. Only the host can add one (otherwise not_host), and only while the lobby waits (otherwise phase_conflict). The game checks seat_settings and names the seat; settings it doesn't understand fail with invalid_seat_settings, and a game without seats refuses every one. The seat takes its team, which then holds no other member, and counts toward the lobby's capacity: a team that already has a person or a seat is team_full, and a lobby with as many members as teams is lobby_full. It counts toward the members a start needs, is always ready, never disconnects, and joins the start roster with its own player_id. A start still needs the host, a person. A team_id that isn't one of the lobby's teams is invalid_input. The optional request_id makes a retry after a lost response safe: repeating it with the same team_id and seat_settings returns the current snapshot without a second seat, and with another team or settings fails with idempotency_conflict. Without one, each call adds a seat.",
@@ -2076,7 +2201,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start": {
       "post": {
-        "description": "Starts an eligible lobby and freezes its roster. The host can start once at least two members are present and every member has chosen a team, is ready and is connected; otherwise it fails with not_ready. The snapshot's start_rules list the game's extra conditions: with every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the empty teams. A game that requires something of each member before they get ready checks the whole roster again, and fails with game_requirement for a member who doesn't meet it.",
+        "description": "Starts an eligible lobby and freezes its roster. The host can start once at least two members are present and every member has chosen a team, is ready and is connected; otherwise it fails with not_ready. The snapshot's start_rules list the game's extra conditions: with every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the empty teams. A game that requires something of each member before they get ready checks the whole roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays frozen while the lobby is started; once the game has ended, a member can reopen the lobby for another game (reopenLobby), which empties the roster for the next start.",
         "operationId": "startLobby",
         "parameters": [
           {
@@ -2785,7 +2910,7 @@
     },
     "/lobby/v1/memberships": {
       "post": {
-        "description": "Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started lobbies allow only frozen-roster rejoin.",
+        "description": "Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits and anyone with the code can join again.",
         "operationId": "joinLobby",
         "requestBody": {
           "content": {

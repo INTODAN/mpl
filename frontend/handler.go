@@ -15,7 +15,7 @@ import (
 	"islandBattles/lobby/domain"
 )
 
-//go:embed index.html app.js relay.mjs resultretry.mjs roomapi.mjs style.css throttle.mjs vendor
+//go:embed index.html app.js relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor
 var assets embed.FS
 
 // catalogPath is the file, relative to the frontend's mount point, that lists
@@ -30,6 +30,10 @@ const StaticAssetCacheControl = "public, max-age=300"
 // LobbyIDPlaceholder marks where a game's result URL takes the lobby ID.
 const LobbyIDPlaceholder = "{lobby_id}"
 
+// RoundPlaceholder optionally marks where a game's result URL takes the
+// lobby's round, so the game answers with the game of that round only.
+const RoundPlaceholder = "{round}"
+
 // Game is one entry in the frontend's game catalog. The host supplies every
 // game-specific name, URL and line of copy, so the frontend stays generic.
 type Game struct {
@@ -38,8 +42,10 @@ type Game struct {
 	// Name is shown in the create form and above the room.
 	Name string `json:"name"`
 	// ResultURL is the same-origin path of the HTML document shown once the
-	// lobby starts. LobbyIDPlaceholder is replaced with the lobby ID. The
-	// document is fetched with the guest bearer credential.
+	// lobby starts. LobbyIDPlaceholder is replaced with the lobby ID, and
+	// RoundPlaceholder, where it appears, with the lobby's round: a lobby
+	// plays one game per round, and the page loads each round's document
+	// anew. The document is fetched with the guest bearer credential.
 	ResultURL string `json:"result_url"`
 	// StartedHint optionally tells the players of a started lobby how they take
 	// part, for example which client submits their turns.

@@ -44,8 +44,8 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 				return err
 			}
 		}
-		if len(original.StartRoster) > 0 && !reflect.DeepEqual(aggregate.StartRoster, original.StartRoster) {
-			return domain.NewError(domain.CodeInvalidInput, "start roster is immutable")
+		if err := validateRoundChange(original, aggregate); err != nil {
+			return err
 		}
 		for _, member := range original.Members {
 			current := domain.FindMember(&aggregate, member.PlayerID)
@@ -79,6 +79,13 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 		room := roomRecord(aggregate.Lobby)
 		if err := tx.Model(&RoomRecord{}).Where(&RoomRecord{ID: scope.LobbyID, GameKey: scope.GameKey}).Select("*").Updates(&room).Error; err != nil {
 			return err
+		}
+		// Reopening empties the roster of the round that ended; the next
+		// start writes a new one.
+		if len(original.StartRoster) > 0 && len(aggregate.StartRoster) == 0 {
+			if err := tx.Where(&StartRosterRecord{LobbyID: scope.LobbyID}).Delete(&StartRosterRecord{}).Error; err != nil {
+				return err
+			}
 		}
 		if teamsChanged {
 			if err := prepareTeamChanges(tx, original.Teams, aggregate.Teams); err != nil {
@@ -166,6 +173,26 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool, origi
 		}
 	}
 	return persistWatchers(tx, aggregate, originalWatchers)
+}
+
+// validateRoundChange keeps a started lobby's roster frozen, and lets the
+// round change only when a started lobby is reopened: it goes back to
+// waiting in its next round with an empty roster, which the next start fills
+// again.
+func validateRoundChange(original domain.Aggregate, aggregate domain.Aggregate) error {
+	if original.Lobby.Phase == domain.PhaseStarted && aggregate.Lobby.Phase == domain.PhaseWaiting {
+		if aggregate.Lobby.Round != original.Lobby.Round+1 || len(aggregate.StartRoster) > 0 {
+			return domain.NewError(domain.CodeInvalidInput, "a reopened lobby must wait in its next round with an empty start roster")
+		}
+		return nil
+	}
+	if aggregate.Lobby.Round != original.Lobby.Round {
+		return domain.NewError(domain.CodeInvalidInput, "the round changes only when a started lobby is reopened")
+	}
+	if len(original.StartRoster) > 0 && !reflect.DeepEqual(aggregate.StartRoster, original.StartRoster) {
+		return domain.NewError(domain.CodeInvalidInput, "start roster is immutable")
+	}
+	return nil
 }
 
 // validateSettingsChange lets a mutation change the game settings and the

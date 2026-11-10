@@ -30,7 +30,7 @@ The handler serves the catalog as JSON at `games.json`, and `app.js` loads it at
 |---|---|
 | `Key` | The lobby game key. |
 | `Name` | Shown in the create form and above the room. |
-| `ResultURL` | Same-origin path of the game's result document once the lobby starts. `{lobby_id}` is replaced with the lobby ID. |
+| `ResultURL` | Same-origin path of the game's result document once the lobby starts. `{lobby_id}` is replaced with the lobby ID, and `{round}`, where it appears, with the lobby's round: a lobby plays one game per round. |
 | `StartedHint` | Optional. Tells the players of a started lobby how they take part, for example which client submits their turns. |
 | `ExamplePlayer` | Optional. A browser player `Module`, with a short `Strategy` name and a one-sentence `Summary`. It lets the page follow the game live and enables **New demo lobby** for the game. |
 | `SettingsModule` | Optional. Same-origin URL of an ES module that adds the game's own controls to the create form and chooses the new lobby's `game_settings` and teams. |
@@ -112,8 +112,11 @@ When the server throttles a request with 429, the page sends it again up to 3 ti
 
 If the page can't load the result document, for example because the host binds the game just after the lobby starts, it retries with backoff of 1, 2 and 4 seconds, then every 10 seconds, while the lobby is started and the document isn't loaded. [`resultretry.mjs`](resultretry.mjs) decides the delay; run its tests with `node lobby/frontend/resultretry.test.mjs`.
 
-An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, playerID, credential, subscription, enabled, demo, pending, savePending, onState, onStatus}`:
+A lobby plays one game per round (`lobby.round` in the snapshot). Once the game has ended, **Back to lobby** in the result area reopens the lobby (`POST …/reopen`), which goes back to waiting with the same players, teams and seats, so everyone gets ready again and the host starts the next game. While the game runs, the page explains that it opens once the game has ended. The page keeps one result document and one example player per round: when the round changes it drops them, and the next start loads the next round's. A result URL with `{round}` gets the lobby's round in its place, so the game can answer only with that round's game; Island Battles' result URL asks for `?lobby_round={round}`. [`rounds.mjs`](rounds.mjs) fills the URL and words a refused reopen.
 
+An example player module is an ES module that exports an `ExamplePlayer` class. The page constructs it with `{lobbyID, lobbyRound, playerID, credential, subscription, enabled, demo, pending, savePending, onState, onStatus}`:
+
+- `lobbyRound` is the lobby round that the player plays; the page makes a new player for each round. The player should take only the states of that round's game.
 - `credential` is the guest bearer credential, and `subscription` is an unsubscribed Centrifugo subscription to the player's `player:<player_id>` channel.
 - `demo` is true for a demo lobby's player, which plays its example strategy while `enabled`, and false for any other lobby, where the player does what its game assigns the page, such as relaying a bot's turns, and `enabled` stays true.
 - `enabled` says whether the player may submit turns. The page reads `player.enabled` and calls `player.setEnabled(enabled)` for **Pause this player**.

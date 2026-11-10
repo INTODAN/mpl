@@ -12,6 +12,9 @@ type Application interface {
 	SelectTeam(context.Context, Principal, Scope, SelectTeamRequest) (Snapshot, error)
 	SetReady(context.Context, Principal, Scope, ReadyRequest) (Snapshot, error)
 	Start(context.Context, Principal, Scope) (Snapshot, error)
+	// Reopen brings a started lobby whose game ended back to waiting, for
+	// its next round. Any active person may call it.
+	Reopen(context.Context, Principal, Scope) (Snapshot, error)
 	// ChangeSettings lets the host replace the game settings and the teams
 	// while the lobby waits.
 	ChangeSettings(context.Context, Principal, Scope, ChangeSettingsRequest) (Snapshot, error)

@@ -34,6 +34,7 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/ready":                       {http.MethodPut, "setLobbyReady", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start":                       {http.MethodPost, "startLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/settings":                    {http.MethodPut, "changeLobbySettings", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/reopen":                      {http.MethodPost, "reopenLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats":                       {http.MethodPost, "addLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}":             {http.MethodDelete, "removeLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  {http.MethodDelete, "leaveLobby", http.StatusNoContent},
@@ -344,6 +345,27 @@ func TestSnapshotDoesNotExposeInternalFieldsAndDeleteResponsesAreEmpty(t *testin
 	}
 }
 
+// Reopening returns the snapshot with its round, and a running game is a
+// conflict with its own code.
+func TestReopenRoute(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	path := "/lobby/v1/games/quiz-demo/lobbies/" + testUUID + "/reopen"
+	response := api.Post(path, "Authorization: Bearer good")
+	if response.Code != http.StatusOK || application.reopenScope != (domain.Scope{GameKey: "quiz-demo", LobbyID: testUUID}) {
+		t.Fatalf("reopen = %d %s; scope %#v", response.Code, response.Body.String(), application.reopenScope)
+	}
+	if !strings.Contains(response.Body.String(), `"round":2`) {
+		t.Fatalf("reopen snapshot has no round: %s", response.Body.String())
+	}
+	application.reopenError = domain.ErrGameRunning
+	response = api.Post(path, "Authorization: Bearer good")
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"game_running"`) {
+		t.Fatalf("reopen of a running game = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestRegistrationIsOfflineAndInvalidationSchemaRegistered(t *testing.T) {
 	t.Parallel()
 	_, api := newTestAPI(t)
@@ -407,6 +429,8 @@ type fakeApplication struct {
 	settingsRequest domain.ChangeSettingsRequest
 	settingsScope   domain.Scope
 	settingsError   error
+	reopenScope     domain.Scope
+	reopenError     error
 	seatError       error
 	removedSeat     string
 	watchRequest    domain.WatchRequest
@@ -443,6 +467,15 @@ func (application *fakeApplication) SetReady(_ context.Context, _ domain.Princip
 }
 func (*fakeApplication) Start(context.Context, domain.Principal, domain.Scope) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil
+}
+func (application *fakeApplication) Reopen(_ context.Context, _ domain.Principal, scope domain.Scope) (domain.Snapshot, error) {
+	application.reopenScope = scope
+	if application.reopenError != nil {
+		return domain.Snapshot{}, application.reopenError
+	}
+	snapshot := fakeSnapshot()
+	snapshot.Lobby.Round = 2
+	return snapshot, nil
 }
 func (application *fakeApplication) ChangeSettings(_ context.Context, _ domain.Principal, scope domain.Scope, request domain.ChangeSettingsRequest) (domain.Snapshot, error) {
 	application.settingsRequest = request

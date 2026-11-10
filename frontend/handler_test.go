@@ -152,7 +152,7 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})
 	// The file server answers index.html at the mount point itself.
-	for _, file := range []string{"", "app.js", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "style.css"} {
+	for _, file := range []string{"", "app.js", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "rounds.mjs", "style.css"} {
 		path := "/lobby/ui/" + file
 		body, err := io.ReadAll(get(t, handler, path).Body)
 		if err != nil {

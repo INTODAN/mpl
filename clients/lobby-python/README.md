@@ -17,6 +17,8 @@ People outside a lobby can watch it with its join code, without a seat: `watch(g
 
 The host can change a waiting lobby's `game_settings` and teams with `change_settings(scope, teams=[...], game_settings={...})`, which takes the same fields and rules as `create_lobby`. The teams are rebuilt by position: a kept team keeps its ID, new teams get new IDs, removed teams disappear (their person loses the team, their seat is removed), and every person's ready is cleared. So a lobby's `teams`, `capacity` and `game_settings` are no longer fixed while it waits. What to do: regenerate or upgrade the client, and read them from each snapshot instead of keeping the ones from the create or join.
 
+**Playing again in the same lobby is a breaking change; clients must upgrade.** A lobby plays one game per round: every snapshot's lobby has `round` (from 1), and once the game has ended any active person calls `reopen(scope)`, which brings the started lobby back to `waiting` in its next round with the same members, teams, seats and settings, every person's ready cleared and an empty `start_roster`. Calling it again is safe. While the game runs it raises `LobbyError` with the new code `game_running` (409); for a closed lobby or a game that doesn't play again, `phase_conflict`. So `started` is no longer final, and the start roster can change between games. What to do: regenerate or upgrade the client, which needs `round` in every snapshot, and treat a lobby that goes from `started` back to `waiting` as the next round, not as an error.
+
 ## Installing from PyPI
 
 Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):

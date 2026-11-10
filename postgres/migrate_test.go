@@ -380,7 +380,9 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	seed := func(code string, roomCapacity int, teamNames ...string) (lobbypostgres.RoomRecord, []legacyTeamRecord) {
 		room := roomFor(player.ID, "island-battles", code)
 		room.Capacity = roomCapacity
-		mustCreate(t, db, &room)
+		if err := db.Omit("Round").Create(&room).Error; err != nil {
+			t.Fatal(err)
+		}
 		teams := make([]legacyTeamRecord, len(teamNames))
 		for index, name := range teamNames {
 			teams[index] = legacyTeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: name, NormalizedName: strings.ToLower(name), Capacity: 8, TeamOrder: index + 1}
@@ -433,6 +435,48 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	tooWide.Capacity = 17
 	if err := db.Create(&tooWide).Error; err == nil {
 		t.Fatal("a room with more than 16 teams' capacity was stored")
+	}
+}
+
+// Rooms from before migration 0008 are in their first round, and the round
+// counts from 1.
+func TestMigrateStartsExistingRoomsAtRoundOne(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	before := lobbypostgres.Migrations()
+	files := fstest.MapFS{}
+	for _, name := range migrationNames(t, before.Files)[:7] {
+		data, err := fs.ReadFile(before.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: data}
+	}
+	before.Files = files
+	if err := before.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	room := seedRoom(t, db, player.ID, "island-battles", "ROUNDONE")
+	if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: room.ID}).Update("phase", "started").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate existing rooms: %v", err)
+	}
+	store, err := lobbypostgres.NewStore(db, domain.SystemClock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregate, err := store.Read(context.Background(), domain.Scope{GameKey: room.GameKey, LobbyID: room.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregate.Lobby.Round != 1 || aggregate.Lobby.Phase != domain.PhaseStarted {
+		t.Fatalf("existing room = round %d, phase %s; want round 1, started", aggregate.Lobby.Round, aggregate.Lobby.Phase)
+	}
+	if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: room.ID}).Update("round", 0).Error; err == nil {
+		t.Fatal("a room in round 0 was stored")
 	}
 }
 

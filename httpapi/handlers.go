@@ -81,6 +81,13 @@ func (handler handlers) start(ctx context.Context, input *StartInput) (*Snapshot
 	}
 	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
 }
+func (handler handlers) reopen(ctx context.Context, input *ReopenInput) (*SnapshotOutput, error) {
+	result, err := handler.app.Reopen(ctx, principalFromContext(ctx), scope(input.ScopeInput))
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
 func (handler handlers) changeSettings(ctx context.Context, input *ChangeSettingsInput) (*SnapshotOutput, error) {
 	teams := make([]domain.TeamDefinition, len(input.Body.Teams))
 	for index, team := range input.Body.Teams {

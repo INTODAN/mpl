@@ -32,7 +32,10 @@ func (SessionRecord) TableName() string { return "lobby_sessions" }
 // that migration 0003 adds; rooms created before it hold an empty object.
 // LastConnectedAt is migration 0004's; it decides when an idle room is deleted.
 // Capacity is the room's number of teams, which migration 0007 set for rooms
-// created before a team held one member.
+// created before a team held one member. Round is migration 0008's: the
+// lobby's round, from 1, which goes up each time the lobby is reopened after
+// a game; rooms created before it are in round 1, and a record created
+// without a round gets that default.
 type RoomRecord struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
 	GameKey          string    `gorm:"column:game_key;not null"`
@@ -40,6 +43,7 @@ type RoomRecord struct {
 	JoinCode         string    `gorm:"column:join_code;not null"`
 	Capacity         int       `gorm:"column:capacity;not null"`
 	Phase            string    `gorm:"column:phase;not null"`
+	Round            int64     `gorm:"column:round;not null;default:1"`
 	Version          int64     `gorm:"column:version;not null"`
 	HostPlayerID     *string   `gorm:"column:host_player_id;type:uuid"`
 	CreatedAt        time.Time `gorm:"column:created_at;not null"`
@@ -96,8 +100,10 @@ type LeaseRecord struct {
 
 func (LeaseRecord) TableName() string { return "lobby_leases" }
 
-// StartRosterRecord is immutable after the lobby starts. Its stable key is the
-// room and source membership identity rather than a synthetic ID.
+// StartRosterRecord is the roster a start froze. It never changes while the
+// lobby is started; reopening the lobby after the game deletes its rows, and
+// the next start writes new ones. Its stable key is the room and source
+// membership identity rather than a synthetic ID.
 type StartRosterRecord struct {
 	LobbyID   string `gorm:"column:lobby_id;type:uuid;primaryKey"`
 	PlayerID  string `gorm:"column:player_id;type:uuid;not null"`

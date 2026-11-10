@@ -29,6 +29,8 @@ class Lobby:
         join_code (str):
         name (str):
         phase (str):
+        round_ (int): The lobby's round, from 1. Reopening the started lobby after its game ended (reopenLobby) raises
+            it by one and makes the lobby wait again; a game tells the lobby's games apart by lobby and round.
         version (int):
     """
 
@@ -41,6 +43,7 @@ class Lobby:
     join_code: str
     name: str
     phase: str
+    round_: int
     version: int
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +66,8 @@ class Lobby:
 
         phase = self.phase
 
+        round_ = self.round_
+
         version = self.version
 
         field_dict: dict[str, Any] = {}
@@ -78,6 +83,7 @@ class Lobby:
                 "join_code": join_code,
                 "name": name,
                 "phase": phase,
+                "round": round_,
                 "version": version,
             }
         )
@@ -112,6 +118,8 @@ class Lobby:
 
         phase = d.pop("phase")
 
+        round_ = d.pop("round")
+
         version = d.pop("version")
 
         lobby = cls(
@@ -124,6 +132,7 @@ class Lobby:
             join_code=join_code,
             name=name,
             phase=phase,
+            round_=round_,
             version=version,
         )
 

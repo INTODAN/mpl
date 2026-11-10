@@ -49,13 +49,14 @@ type LobbySummary struct {
 	JoinCode             string    `json:"join_code"`
 	GameKey              string    `json:"game_key"`
 	Phase                string    `json:"phase"`
+	Round                int64     `json:"round" jsonschema:"The lobby's round, from 1. It goes up each time a member reopens the lobby after its game."`
 	Capacity             int       `json:"capacity" jsonschema:"The members the lobby holds: its number of teams, since a team holds one member."`
 	MemberCount          int       `json:"member_count" jsonschema:"Active members, who hold a seat, connected or not."`
 	ConnectedMemberCount int       `json:"connected_member_count" jsonschema:"Active members with a lease that has not expired or been released."`
 	HostDisplayName      *string   `json:"host_display_name"`
 	CreatedAt            time.Time `json:"created_at"`
 	LastConnectedAt      time.Time `json:"last_connected_at" jsonschema:"The last time a member created, joined, heartbeated, released a lease or left."`
-	GameID               any       `json:"game_id" jsonschema:"The game started from the lobby, or null."`
+	GameID               any       `json:"game_id" jsonschema:"The newest game started from the lobby, or null."`
 }
 
 // LobbyList is list_lobbies' answer.
@@ -241,7 +242,7 @@ func limitWithin(requested, defaultLimit, maxLimit int) (int, error) {
 
 // summaryColumns are the room columns a summary shows. They leave out the
 // game settings, which may be large.
-var summaryColumns = []string{"ID", "GameKey", "Name", "JoinCode", "Capacity", "Phase", "HostPlayerID", "CreatedAt", "LastConnectedAt"}
+var summaryColumns = []string{"ID", "GameKey", "Name", "JoinCode", "Capacity", "Phase", "Round", "HostPlayerID", "CreatedAt", "LastConnectedAt"}
 
 func (reader lobbyReader) listLobbies(transaction *gorm.DB, input ListLobbiesInput) (LobbyList, error) {
 	limit, err := limitWithin(input.Limit, DefaultListLimit, MaxListLimit)
@@ -324,7 +325,7 @@ func (reader lobbyReader) summaries(transaction *gorm.DB, rooms []postgres.RoomR
 // summary is the part of a lobby's summary that its room row holds.
 func summary(room postgres.RoomRecord, gameID any) LobbySummary {
 	return LobbySummary{
-		ID: room.ID, Name: room.Name, JoinCode: room.JoinCode, GameKey: room.GameKey, Phase: room.Phase, Capacity: room.Capacity,
+		ID: room.ID, Name: room.Name, JoinCode: room.JoinCode, GameKey: room.GameKey, Phase: room.Phase, Round: room.Round, Capacity: room.Capacity,
 		CreatedAt: room.CreatedAt.UTC(), LastConnectedAt: room.LastConnectedAt.UTC(), GameID: gameID,
 	}
 }

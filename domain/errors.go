@@ -21,7 +21,10 @@ const (
 	// CodeGameRequirement is a game's own refusal, from its ReadyGate. The
 	// error's Type names the game's problem.
 	CodeGameRequirement ErrorCode = "game_requirement"
-	CodeUnavailable     ErrorCode = "unavailable"
+	// CodeGameRunning refuses to reopen a started lobby whose game hasn't
+	// ended.
+	CodeGameRunning ErrorCode = "game_running"
+	CodeUnavailable ErrorCode = "unavailable"
 	// CodeWatcherKicked refuses a watcher whom the host kicked from the lobby.
 	CodeWatcherKicked ErrorCode = "watcher_kicked"
 	// CodeWatchersFull refuses a new watcher once the lobby has
@@ -81,6 +84,7 @@ var (
 	ErrIdempotencyConflict = NewError(CodeIdempotencyConflict, "request ID was used with different input")
 	ErrInvalidInput        = NewError(CodeInvalidInput, "invalid input")
 	ErrUnavailable         = NewError(CodeUnavailable, "service temporarily unavailable")
+	ErrGameRunning         = NewError(CodeGameRunning, "the lobby's game is still running")
 	ErrWatcherKicked       = NewError(CodeWatcherKicked, "the host removed you from this lobby's watchers")
 	ErrWatchersFull        = NewError(CodeWatchersFull, "this lobby has as many watchers as it allows")
 	ErrPermissionDenied    = NewError(CodePermissionDenied, "permission denied")

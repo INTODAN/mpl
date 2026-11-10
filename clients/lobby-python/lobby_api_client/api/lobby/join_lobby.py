@@ -94,7 +94,8 @@ def sync_detailed(
     """Join a lobby
 
      Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started
-    lobbies allow only frozen-roster rejoin.
+    lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits
+    and anyone with the code can join again.
 
     Args:
         body (JoinLobbyBody):
@@ -126,7 +127,8 @@ def sync(
     """Join a lobby
 
      Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started
-    lobbies allow only frozen-roster rejoin.
+    lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits
+    and anyone with the code can join again.
 
     Args:
         body (JoinLobbyBody):
@@ -153,7 +155,8 @@ async def asyncio_detailed(
     """Join a lobby
 
      Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started
-    lobbies allow only frozen-roster rejoin.
+    lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits
+    and anyone with the code can join again.
 
     Args:
         body (JoinLobbyBody):
@@ -183,7 +186,8 @@ async def asyncio(
     """Join a lobby
 
      Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started
-    lobbies allow only frozen-roster rejoin.
+    lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits
+    and anyone with the code can join again.
 
     Args:
         body (JoinLobbyBody):

@@ -107,7 +107,9 @@ def sync_detailed(
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
     empty teams. A game that requires something of each member before they get ready checks the whole
-    roster again, and fails with game_requirement for a member who doesn't meet it.
+    roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
+    frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
+    another game (reopenLobby), which empties the roster for the next start.
 
     Args:
         game_key (str):
@@ -149,7 +151,9 @@ def sync(
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
     empty teams. A game that requires something of each member before they get ready checks the whole
-    roster again, and fails with game_requirement for a member who doesn't meet it.
+    roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
+    frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
+    another game (reopenLobby), which empties the roster for the next start.
 
     Args:
         game_key (str):
@@ -186,7 +190,9 @@ async def asyncio_detailed(
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
     empty teams. A game that requires something of each member before they get ready checks the whole
-    roster again, and fails with game_requirement for a member who doesn't meet it.
+    roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
+    frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
+    another game (reopenLobby), which empties the roster for the next start.
 
     Args:
         game_key (str):
@@ -226,7 +232,9 @@ async def asyncio(
     not_ready. The snapshot's start_rules list the game's extra conditions: with
     every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the
     empty teams. A game that requires something of each member before they get ready checks the whole
-    roster again, and fails with game_requirement for a member who doesn't meet it.
+    roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
+    frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
+    another game (reopenLobby), which empties the roster for the next start.
 
     Args:
         game_key (str):

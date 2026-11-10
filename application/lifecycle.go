@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"errors"
+	"math"
 	"time"
 
 	"islandBattles/lobby/domain"
@@ -99,6 +101,96 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 		return domain.Snapshot{}, err
 	}
 	return service.snapshot(aggregate, principal.PlayerID)
+}
+
+// errRoundMoved tells Reopen that the lobby is no longer in the round whose
+// game it asked about, so it asks again.
+var errRoundMoved = errors.New("the lobby's round moved while reopening")
+
+// reopenAttempts bounds how often Reopen asks the game again when the lobby
+// starts or moves to another round meanwhile.
+const reopenAttempts = 3
+
+// Reopen brings a started lobby whose game ended back to waiting, in its next
+// round, so its members can play another game. Any active person may reopen
+// it. Members, teams, seats and the game settings stay; every person's ready
+// is cleared, seats stay ready, and the start roster is emptied for the next
+// start. A lobby that already waits is returned unchanged, so two members
+// reopening at once both succeed. A closed lobby, or one whose game declares
+// no GameOver check, fails with phase_conflict, and one whose game hasn't
+// ended with game_running.
+//
+// The game is asked before the transaction, like the ready gate, so it never
+// reads its data while the room is locked. The transaction then checks that
+// the lobby is still started in the round it asked about; if it moved, it
+// asks again. A game that ended stays ended, so the answer can't go stale
+// within a round.
+func (service *Service) Reopen(ctx context.Context, principal domain.Principal, scope domain.Scope) (domain.Snapshot, error) {
+	if err := validatePrincipal(principal); err != nil {
+		return domain.Snapshot{}, err
+	}
+	if err := service.policy.ValidateScope(scope); err != nil {
+		return domain.Snapshot{}, err
+	}
+	game, err := service.policy.Game(scope.GameKey)
+	if err != nil {
+		return domain.Snapshot{}, err
+	}
+	for range reopenAttempts {
+		current, err := service.store.Read(ctx, scope)
+		if err != nil {
+			return domain.Snapshot{}, err
+		}
+		// The game is asked only for a member's request about a started
+		// lobby; the transaction refuses everyone else first.
+		asked, over := int64(0), false
+		member := domain.FindMember(&current, principal.PlayerID)
+		if member != nil && member.Active && current.Lobby.Phase == domain.PhaseStarted && game.GameOver != nil {
+			over, err = game.CheckGameOver(ctx, scope.LobbyID, current.Lobby.Round)
+			if err != nil {
+				return domain.Snapshot{}, err
+			}
+			asked = current.Lobby.Round
+		}
+		aggregate, err := service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, now time.Time) (domain.Change, error) {
+			member, err := activeMember(aggregate, principal.PlayerID)
+			if err != nil {
+				return domain.Change{}, err
+			}
+			if member.IsSeat() {
+				return domain.Change{}, domain.ErrNotFound
+			}
+			switch {
+			case aggregate.Lobby.Phase == domain.PhaseWaiting:
+				return domain.Change{}, nil
+			case aggregate.Lobby.Phase != domain.PhaseStarted, game.GameOver == nil:
+				return domain.Change{}, domain.ErrPhaseConflict
+			case aggregate.Lobby.Round != asked:
+				return domain.Change{}, errRoundMoved
+			case !over:
+				return domain.Change{}, domain.ErrGameRunning
+			case aggregate.Lobby.Round == math.MaxInt64:
+				return domain.Change{}, domain.ErrUnavailable
+			}
+			aggregate.Lobby.Phase = domain.PhaseWaiting
+			aggregate.Lobby.Round++
+			aggregate.StartRoster = domain.StartRoster{}
+			for index := range aggregate.Members {
+				if member := &aggregate.Members[index]; !member.IsSeat() {
+					member.Ready = false
+				}
+			}
+			return domain.Change{PublicChanged: true}, nil
+		})
+		if errors.Is(err, errRoundMoved) {
+			continue
+		}
+		if err != nil {
+			return domain.Snapshot{}, err
+		}
+		return service.snapshot(aggregate, principal.PlayerID)
+	}
+	return domain.Snapshot{}, domain.ErrUnavailable
 }
 
 func (service *Service) Leave(ctx context.Context, principal domain.Principal, scope domain.Scope) error {

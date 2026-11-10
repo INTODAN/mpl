@@ -291,6 +291,31 @@ async def test_change_settings_sends_the_teams_and_the_games_settings(h):
         "invalid_game_settings", 422, "game_settings.map_template_id: no default map has ID 9")
 
 
+async def test_reopen_brings_the_lobby_back_for_its_next_round(h):
+    seen = []
+    running = True
+
+    async def reopening(request):
+        if not request.url.path.endswith("/reopen"):
+            return None
+        seen.append((request.method, request.url.path, request.content))
+        if running:
+            return httpx.Response(409, json={"code": "game_running", "status": 409, "title": "Conflict",
+                                             "detail": "the lobby's game is still running"})
+        body = snapshot(6)
+        body["lobby"]["round"] = 2
+        return httpx.Response(200, json=body)
+    h.hook = reopening
+    await h.join()
+    with pytest.raises(LobbyError) as refused:
+        await h.client.reopen(SCOPE)
+    assert (refused.value.code, refused.value.status) == ("game_running", 409)
+    running = False
+    reopened = await h.client.reopen(SCOPE)
+    assert reopened.lobby.version == 6 and reopened.lobby.round_ == 2
+    assert seen[-1] == ("POST", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/reopen", b"")
+
+
 async def test_watchers_watch_with_the_code_and_the_host_kicks_them(h):
     watcher = str(uuid4())
     seen = []

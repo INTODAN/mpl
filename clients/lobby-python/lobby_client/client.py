@@ -20,7 +20,7 @@ from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
     add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_session,
     get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
-    kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, select_lobby_team,
+    kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, reopen_lobby, select_lobby_team,
     set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
 )
 from lobby_api_client.models import (
@@ -477,6 +477,19 @@ class LobbyClient:
 
     async def start(self, scope: Scope) -> Snapshot:
         return await self._command(scope, start_lobby, body=StartInputBody())
+
+    async def reopen(self, scope: Scope) -> Snapshot:
+        """Bring a started lobby whose game has ended back to waiting.
+
+        Any active person in the lobby can, to play another game in it. The
+        lobby's round goes up by one; members, teams, seats and the game
+        settings stay, every person's ready is cleared and the start roster is
+        emptied. A lobby that already waits comes back unchanged, so calling it
+        again is safe. While the game runs it raises LobbyError with code
+        game_running; for a closed lobby, or a game that doesn't play again,
+        phase_conflict.
+        """
+        return await self._command(scope, reopen_lobby)
 
     async def change_settings(self, scope: Scope, *, teams: list[TeamDefinition],
                               game_settings: dict[str, Any] | None = None) -> Snapshot:

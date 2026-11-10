@@ -17,6 +17,11 @@ let realtimeLoading = null;
 let lobbySubscription = null;
 let syncing = false;
 let teamOptions = "";
+// The lobby round whose game the page shows: its result document and its
+// example player. A lobby plays one game per round, so they start over when the
+// round changes. gameEpoch counts those starts, like roomEpoch counts rooms.
+let gameRound = null;
+let gameEpoch = 0;
 let resultRoom = null;
 let resultRequest = null;
 // The pending retry of loadResult after a failed read, and the failed reads in a row.
@@ -123,35 +128,17 @@ async function api(path, method = "GET", body) {
   }
 }
 
-function dropRoom() {
-  clearTimeout(timer);
-  clearTimeout(heartbeatTimer);
-  roomEpoch++;
-  if (state.room) $("join-code").value = state.room.join_code || "";
-  state.room = null;
-  delete state.demoPlayer;
+// The current round's game: its example player, its latest state and its
+// result document. A lobby plays one game per round, so the page drops them
+// when the round changes, and with the room.
+function dropGame() {
+  gameEpoch++;
+  gameRound = null;
   gamePlayer?.stop();
   gamePlayer = null;
   playerReports = false;
-  realtime?.disconnect();
-  realtime = null;
-  realtimeLoading = null;
-  lobbySubscription = null;
   playerLoading = false;
   latestGameState = null;
-  describedRoom = null;
-  changeSettingsLabel = null;
-  closeRoomSettings();
-  roomPanel = null;
-  roomPanelLoading = null;
-  seatOptions = null;
-  seatControls = "";
-  $("seat-controls").replaceChildren();
-  $("seat-controls").hidden = true;
-  $("game-room-panel").replaceChildren();
-  $("game-room-panel").hidden = true;
-  $("room-settings").hidden = true;
-  snapshot = null;
   resultRequest?.abort();
   resultRequest = null;
   clearTimeout(resultRetryTimer);
@@ -165,6 +152,33 @@ function dropRoom() {
   $("result-status").hidden = false;
   $("result-status").textContent = "Preparing the game…";
   $("retry-game").hidden = true;
+}
+
+function dropRoom() {
+  clearTimeout(timer);
+  clearTimeout(heartbeatTimer);
+  roomEpoch++;
+  if (state.room) $("join-code").value = state.room.join_code || "";
+  state.room = null;
+  delete state.demoPlayer;
+  dropGame();
+  realtime?.disconnect();
+  realtime = null;
+  realtimeLoading = null;
+  lobbySubscription = null;
+  describedRoom = null;
+  changeSettingsLabel = null;
+  closeRoomSettings();
+  roomPanel = null;
+  roomPanelLoading = null;
+  seatOptions = null;
+  seatControls = "";
+  $("seat-controls").replaceChildren();
+  $("seat-controls").hidden = true;
+  $("game-room-panel").replaceChildren();
+  $("game-room-panel").hidden = true;
+  $("room-settings").hidden = true;
+  snapshot = null;
   $("demo-player-link").hidden = true;
   save();
 }
@@ -219,6 +233,9 @@ async function ensureSession() {
 function acceptSnapshot(next) {
   if (snapshot && next.lobby.id === snapshot.lobby.id && next.lobby.version < snapshot.lobby.version) return;
   if (!snapshot || next.lobby.id !== snapshot.lobby.id) roomEpoch++;
+  // The lobby was reopened, or its next game started: the game the page
+  // showed is over, and the next one gets its own result and player.
+  if (gameRound !== null && gameRound !== next.lobby.round) dropGame();
   snapshot = next;
   state.room = {
     game_key: next.lobby.game_key, lobby_id: next.lobby.id,
@@ -423,6 +440,7 @@ async function relayGameRequest(data) {
   const shown = resultDocument;
   const lobbyID = resultRoom;
   const epoch = roomEpoch;
+  const round = gameEpoch;
   let response;
   try {
     const { maxRelayedRequests, refuseRequest, relayRequest } = await loadRelay();
@@ -450,7 +468,7 @@ async function relayGameRequest(data) {
     response = { type: "lobby.response", id, status: 0, body: null, error: "the page could not load its request relay; try again" };
   }
   // Answer only the document that asked, while it still shows its lobby.
-  if (!response || epoch !== roomEpoch || resultRoom !== lobbyID || resultDocument !== shown || !resultDocumentShown()) return;
+  if (!response || epoch !== roomEpoch || round !== gameEpoch || resultRoom !== lobbyID || resultDocument !== shown || !resultDocumentShown()) return;
   $("game-result").contentWindow?.postMessage(response, "*");
 }
 
@@ -459,22 +477,31 @@ async function ensureGamePlayer() {
   if (!example || gamePlayer || playerLoading) return;
   playerLoading = true;
   const epoch = roomEpoch;
+  const round = gameEpoch;
+  const current = () => epoch === roomEpoch && round === gameEpoch;
   try {
     const { ExamplePlayer } = await import(example.module);
     const client = await ensureRealtime();
-    if (epoch !== roomEpoch) return;
+    if (!current()) return;
     if (!client) return;
+    gameRound = snapshot.lobby.round;
+    // A previous round's player stopped, but its subscription to the player
+    // channel stays registered with the client, which allows one per channel.
+    const channel = `player:${state.session.player_id}`;
+    const previous = client.getSubscription(channel);
+    if (previous) client.removeSubscription(previous);
+    // The player follows the game of this lobby round only.
     gamePlayer = new ExamplePlayer({
-      lobbyID: snapshot.lobby.id, playerID: state.session.player_id, credential: state.session.access_token,
-      subscription: client.newSubscription(`player:${state.session.player_id}`),
+      lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id, credential: state.session.access_token,
+      subscription: client.newSubscription(channel),
       // Outside a demo the player submits only the turns of a localhost bot,
       // which it relays; the demo's player can be paused.
       demo: Boolean(state.demoPlayer), enabled: state.demoPlayer ? Boolean(state.demoPlayer.enabled) : true, pending: state.demoPlayer?.pending || null,
       savePending: (pending) => {
-        if (epoch === roomEpoch && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
+        if (current() && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
       },
       onState: (gameState) => {
-        if (epoch !== roomEpoch) return;
+        if (!current()) return;
         latestGameState = gameState;
         displayGameState();
         // The game reports state only once it exists, so a document that isn't
@@ -482,7 +509,7 @@ async function ensureGamePlayer() {
         if (snapshot?.lobby.phase === "started" && resultRoom !== snapshot.lobby.id) void loadResult();
       },
       onStatus: (title, detail) => {
-        if (epoch !== roomEpoch) return;
+        if (!current()) return;
         if (!state.demoPlayer && !playerReports) {
           playerReports = true;
           render();
@@ -494,9 +521,9 @@ async function ensureGamePlayer() {
     });
     gamePlayer.start();
   } catch {
-    if (epoch === roomEpoch) $("example-detail").textContent = "Could not load the example player. Retrying…";
+    if (current()) $("example-detail").textContent = "Could not load the example player. Retrying…";
   } finally {
-    if (epoch === roomEpoch) playerLoading = false;
+    if (current()) playerLoading = false;
   }
 }
 
@@ -509,19 +536,28 @@ $("example-toggle").addEventListener("click", () => {
   save();
 });
 
-// The game owns the result document. The lobby only loads and displays it.
+// The game owns the result document. The lobby only loads and displays it. The
+// result URL can ask for the round, so that the game answers only with the game
+// of the round the page shows.
+let roundsModule = null;
 async function loadResult() {
   const room = snapshot.lobby;
-  const resultURL = games.get(room.game_key)?.result_url;
-  if (!resultURL || resultRequest || resultRoom === room.id) return;
+  const template = games.get(room.game_key)?.result_url;
+  if (!template || resultRequest || resultRoom === room.id) return;
   clearTimeout(resultRetryTimer);
   resultRetryTimer = null;
   const epoch = roomEpoch;
+  gameRound = room.round;
   const controller = new AbortController();
   resultRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(resultURL.replaceAll("{lobby_id}", encodeURIComponent(room.id)), {
+    roundsModule ??= import("./rounds.mjs").catch((error) => {
+      roundsModule = null;
+      throw error;
+    });
+    const { resultURL } = await roundsModule;
+    const response = await fetch(resultURL(template, room), {
       headers: { Authorization: `Bearer ${state.session.access_token}`, Accept: "text/html" }, signal: controller.signal,
     });
     if (!response.ok) throw new Error(response.status === 404 ? "The game is being prepared. If it doesn’t appear, the host can retry starting it." : "Could not load the game. Retrying…");
@@ -913,6 +949,7 @@ function render() {
     : game?.started_hint || "The game has started.";
   $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite the other players." : allReady && emptyHint ? emptyHint : host ? "Once every player chooses a team and marks ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;
+  $("back-to-lobby").disabled = busy;
   if (!waiting) { loadResult(); ensureGamePlayer(); }
 }
 
@@ -1010,6 +1047,25 @@ $("room-settings-form").addEventListener("submit", (event) => {
   action(saveRoomSettings);
 });
 $("retry-game").addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/start`, "POST", {}))));
+// Back to lobby: once the game has ended, any player brings the lobby back to
+// waiting, with its players, teams and seats, for the next game. A second
+// press, or one after another player's, changes nothing.
+$("back-to-lobby").addEventListener("click", () => action(async () => {
+  try {
+    acceptSnapshot(await api(`${roomPath()}/reopen`, "POST"));
+  } catch (error) {
+    roundsModule ??= import("./rounds.mjs").catch(() => {
+      roundsModule = null;
+      return { reopenMessage: () => null };
+    });
+    const message = (await roundsModule).reopenMessage(error);
+    if (!message) throw error;
+    const explained = new Error(message);
+    explained.code = error.code;
+    explained.status = error.status;
+    throw explained;
+  }
+}));
 $("leave-button").addEventListener("click", () => action(async () => {
   await api(`${roomPath()}/membership`, "DELETE");
   dropRoom();

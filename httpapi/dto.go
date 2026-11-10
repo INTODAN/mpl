@@ -168,6 +168,11 @@ type StartInput struct {
 	ScopeInput
 	Body struct{} `json:"-"`
 }
+
+// ReopenInput takes no body.
+type ReopenInput struct {
+	ScopeInput
+}
 type ChangeSettingsInput struct {
 	ScopeInput
 	Body ChangeSettingsBody `json:"-"`
@@ -274,6 +279,7 @@ type Lobby struct {
 	JoinCode     string       `json:"join_code"`
 	Capacity     int          `json:"capacity" doc:"The number of members the lobby holds, which is its number of teams, since each team holds one member."`
 	Phase        domain.Phase `json:"phase"`
+	Round        int64        `json:"round" minimum:"1" doc:"The lobby's round, from 1. Reopening the started lobby after its game ended (reopenLobby) raises it by one and makes the lobby wait again; a game tells the lobby's games apart by lobby and round."`
 	Version      int64        `json:"version"`
 	HostPlayerID *string      `json:"host_player_id"`
 	CreatedAt    time.Time    `json:"created_at"`
@@ -333,5 +339,5 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		roster[index] = StartRosterEntry{PlayerID: entry.PlayerID, TeamID: entry.TeamID, MemberID: entry.MemberID, TeamOrder: entry.TeamOrder}
 	}
 	room := source.Lobby
-	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}, WatcherCount: source.WatcherCount}
+	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}, WatcherCount: source.WatcherCount}
 }

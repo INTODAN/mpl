@@ -31,8 +31,12 @@ type Lobby struct {
 	JoinCode string `json:"join_code"`
 	// Capacity is the number of teams, which is the number of members the
 	// lobby holds, since a team holds at most one member.
-	Capacity     int       `json:"capacity"`
-	Phase        Phase     `json:"phase"`
+	Capacity int   `json:"capacity"`
+	Phase    Phase `json:"phase"`
+	// Round numbers the lobby's games, from 1. Reopening a started lobby
+	// after its game ended raises it by one and makes the lobby wait again,
+	// so a game tells the lobby's games apart by lobby and round.
+	Round        int64     `json:"round"`
 	Version      int64     `json:"version"`
 	HostPlayerID *string   `json:"host_player_id"`
 	CreatedAt    time.Time `json:"created_at"`

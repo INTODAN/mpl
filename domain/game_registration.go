@@ -33,7 +33,23 @@ type GameRegistration struct {
 	// team, such as the level of the game's bot that plays it, and names the
 	// seat. Nil means the game has no seats and refuses every one.
 	ValidateSeat SeatValidator
+	// GameOver tells whether the game of a lobby's round has ended, so that
+	// the lobby can be reopened for its next round. Nil means the game's
+	// lobbies play one game and are never reopened.
+	GameOver GameOverCheck
 }
+
+// GameOverCheck reports whether the game that a started lobby plays in round
+// is over. The lobby calls it with the lobby's ID before the transaction of a
+// reopen request, so the game never reads its data while the lobby holds the
+// room's lock. A game that has ended must stay ended. A game should also
+// report a round whose start never created a game as over, so that the
+// lobby can't be stuck.
+//
+// To report that the check itself could not run, return the context's error
+// or an error wrapping ErrUnavailable; any other error is reported as
+// unavailable too.
+type GameOverCheck func(ctx context.Context, lobbyID string, round int64) (bool, error)
 
 // SeatValidator receives the settings of a seat that the host adds, as a
 // canonical JSON object, and returns the display name that the lobby shows
@@ -92,6 +108,20 @@ func (game GameRegistration) CheckReady(ctx context.Context, lobbyID string) (Re
 		}
 		return gateUnavailable(err)
 	}, nil
+}
+
+// CheckGameOver asks the game whether the game of a lobby's round is over.
+// Without a GameOver check, the lobby can't be reopened: it fails with
+// ErrPhaseConflict. Errors of the check are reported as unavailable.
+func (game GameRegistration) CheckGameOver(ctx context.Context, lobbyID string, round int64) (bool, error) {
+	if game.GameOver == nil {
+		return false, ErrPhaseConflict
+	}
+	over, err := game.GameOver(ctx, lobbyID, round)
+	if err != nil {
+		return false, gateUnavailable(err)
+	}
+	return over, nil
 }
 
 // gateUnavailable reports a ready gate that could not decide.

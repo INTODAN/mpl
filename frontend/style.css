@@ -75,6 +75,7 @@ h3 { font-size: 1rem; margin: 0; }
 .page-footer { color: #8b94a4; text-align: center; font-size: .75rem; padding-top: 35px; }
 .game-result { margin-top: 20px; padding: 8px; }
 .game-result > p, .game-result > button { margin: 16px; }
+.result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px; }
 .example-controls { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border-bottom: 1px solid #edf0f5; }
 .example-controls .eyebrow, .example-controls strong { display: block; }
 .example-controls .eyebrow { margin-bottom: 8px; }
