@@ -68,13 +68,21 @@
 
     <section id="room-panel" class="card room" aria-label="Your lobby" hidden>
       <div class="room-heading">
-        <div><p id="room-game" class="eyebrow"></p><h2 id="room-name"></h2><p id="room-settings" class="room-settings" hidden></p><nav id="room-links" class="game-links" aria-label="Pages of this game" hidden></nav></div>
+        <div><p id="room-game" class="eyebrow"></p><h2 id="room-name"></h2><p id="room-settings" class="room-settings" hidden></p><button id="change-settings" class="text-button" type="button" hidden>Change settings</button><nav id="room-links" class="game-links" aria-label="Pages of this game" hidden></nav></div>
         <span id="connection" class="connection" role="status">Connected</span>
       </div>
       <div class="invite">
         <div><label for="room-code">Invite your friend</label><p>Share this code to join the same lobby.</p></div>
         <div class="invite-code"><input id="room-code" readonly aria-label="Lobby join code"><button id="copy-code" class="secondary" type="button">Copy code</button></div>
       </div>
+      <form id="room-settings-form" class="room-settings-form" aria-label="Change the lobby’s settings" hidden>
+        <div id="room-settings-fields" class="game-settings"></div>
+        <p class="hint">Saving clears every player’s ready, so everyone confirms the new settings.</p>
+        <div class="controls">
+          <button id="save-settings" class="primary" type="submit">Save</button>
+          <button id="cancel-settings" class="secondary" type="button">Cancel</button>
+        </div>
+      </form>
       <div class="section-heading"><h3>Players <span id="player-count"></span></h3><span id="phase" class="tag">Waiting</span></div>
       <div id="players" class="player-grid" aria-live="polite"></div>
       <div id="seat-controls" class="seat-controls" aria-label="Seats the game plays" hidden></div>

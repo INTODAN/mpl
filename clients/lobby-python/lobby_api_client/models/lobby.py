@@ -22,8 +22,8 @@ class Lobby:
         created_at (datetime.datetime):
         game_key (str):
         game_settings (LobbyGameSettings): Settings for the game, as a JSON object that only the game reads. The game
-            checks them when the lobby is created, and they can't change afterwards. The lobby returns them compacted with
-            sorted keys, and omitted settings as an empty object.
+            checks them when the lobby is created, and again when the host changes them while the lobby waits. The lobby
+            returns them compacted with sorted keys, and omitted settings as an empty object.
         host_player_id (None | str):
         id (str):
         join_code (str):

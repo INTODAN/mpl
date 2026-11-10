@@ -419,12 +419,12 @@ func TestCreateStoresCanonicalGameSettings(t *testing.T) {
 	if err != nil || string(stored.Lobby.GameSettings) != canonical {
 		t.Fatalf("stored settings = %s, %v", stored.Lobby.GameSettings, err)
 	}
-	_, err = fixture.store.Transact(context.Background(), aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
+	changed, err := fixture.store.Transact(context.Background(), aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
 		aggregate.Lobby.GameSettings = json.RawMessage(`{"a":"y"}`)
 		return domain.Change{PublicChanged: true}, nil
 	})
-	if !errors.Is(err, domain.ErrInvalidInput) {
-		t.Fatal("game settings changed after creation", err)
+	if err != nil || string(changed.Lobby.GameSettings) != `{"a":"y"}` {
+		t.Fatalf("game settings of a waiting lobby = %s, %v", changed.Lobby.GameSettings, err)
 	}
 }
 func TestCreateCodeCollisionRollsBack(t *testing.T) {

@@ -33,6 +33,7 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/team":                        {http.MethodPut, "selectLobbyTeam", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/ready":                       {http.MethodPut, "setLobbyReady", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start":                       {http.MethodPost, "startLobby", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/settings":                    {http.MethodPut, "changeLobbySettings", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats":                       {http.MethodPost, "addLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}":             {http.MethodDelete, "removeLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  {http.MethodDelete, "leaveLobby", http.StatusNoContent},
@@ -178,6 +179,41 @@ func TestCreatePassesGameSettingsThroughUnread(t *testing.T) {
 	var problem Problem
 	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != http.StatusUnprocessableEntity || problem.Code != domain.CodeInvalidGameSettings || problem.Detail != "rounds must be between 1 and 10" {
 		t.Fatalf("rejected settings = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestChangeSettingsPassesTeamsAndSettingsThrough(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	path := "/lobby/v1/games/quiz-demo/lobbies/" + testUUID + "/settings"
+	const settings = `{"rounds": 3, "seed": 12345678901234567890123}`
+	response := api.Put(path, "Authorization: Bearer good", strings.NewReader(`{"teams":[{"name":"Blue"},{"name":"Red"},{"name":"Green"}],"game_settings":`+settings+`}`))
+	if response.Code != http.StatusOK || string(application.settingsRequest.GameSettings) != settings || len(application.settingsRequest.Teams) != 3 || application.settingsRequest.Teams[2].Name != "Green" || application.settingsScope != (domain.Scope{GameKey: "quiz-demo", LobbyID: testUUID}) {
+		t.Fatalf("change settings = %d %s; application received %#v in %#v", response.Code, response.Body.String(), application.settingsRequest, application.settingsScope)
+	}
+	if !strings.Contains(response.Body.String(), `"game_settings":{"rounds":3,"seed":12345678901234567890123}`) {
+		t.Fatalf("snapshot settings: %s", response.Body.String())
+	}
+	application.settingsRequest = domain.ChangeSettingsRequest{}
+	response = api.Put(path, "Authorization: Bearer good", map[string]any{"teams": []map[string]any{{"name": "Blue"}, {"name": "Red"}}})
+	if response.Code != http.StatusOK || application.settingsRequest.GameSettings != nil || len(application.settingsRequest.Teams) != 2 {
+		t.Fatalf("omitted settings = %d %s; application received %#v", response.Code, response.Body.String(), application.settingsRequest)
+	}
+	for _, invalid := range []map[string]any{{}, {"teams": []map[string]any{{"name": "Blue"}}}, {"teams": []map[string]any{{"name": "Blue"}, {"name": "Red"}}, "game_settings": "text"}} {
+		application.settingsRequest = domain.ChangeSettingsRequest{}
+		response = api.Put(path, "Authorization: Bearer good", invalid)
+		if response.Code != http.StatusUnprocessableEntity || application.settingsRequest.Teams != nil {
+			t.Fatalf("invalid body %v = %d %s", invalid, response.Code, response.Body.String())
+		}
+	}
+	for code, status := range map[domain.ErrorCode]int{domain.CodeNotHost: http.StatusForbidden, domain.CodePhaseConflict: http.StatusConflict, domain.CodeLobbyFull: http.StatusConflict, domain.CodeInvalidGameSettings: http.StatusUnprocessableEntity} {
+		application.settingsError = domain.NewError(code, "refused")
+		response = api.Put(path, "Authorization: Bearer good", map[string]any{"teams": []map[string]any{{"name": "Blue"}, {"name": "Red"}}})
+		var problem Problem
+		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != status || problem.Code != code {
+			t.Fatalf("%s = %d %s", code, response.Code, response.Body.String())
+		}
 	}
 }
 
@@ -368,6 +404,9 @@ type fakeApplication struct {
 	createRequest   domain.CreateRequest
 	createError     error
 	seatRequest     domain.AddSeatRequest
+	settingsRequest domain.ChangeSettingsRequest
+	settingsScope   domain.Scope
+	settingsError   error
 	seatError       error
 	removedSeat     string
 	watchRequest    domain.WatchRequest
@@ -404,6 +443,16 @@ func (application *fakeApplication) SetReady(_ context.Context, _ domain.Princip
 }
 func (*fakeApplication) Start(context.Context, domain.Principal, domain.Scope) (domain.Snapshot, error) {
 	return fakeSnapshot(), nil
+}
+func (application *fakeApplication) ChangeSettings(_ context.Context, _ domain.Principal, scope domain.Scope, request domain.ChangeSettingsRequest) (domain.Snapshot, error) {
+	application.settingsRequest = request
+	application.settingsScope = scope
+	if application.settingsError != nil {
+		return domain.Snapshot{}, application.settingsError
+	}
+	snapshot := fakeSnapshot()
+	snapshot.Lobby.GameSettings = request.GameSettings
+	return snapshot, nil
 }
 func (application *fakeApplication) AddSeat(_ context.Context, _ domain.Principal, _ domain.Scope, request domain.AddSeatRequest) (domain.Snapshot, error) {
 	application.seatRequest = request

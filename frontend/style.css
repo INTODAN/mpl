@@ -99,6 +99,11 @@ h3 { font-size: 1rem; margin: 0; }
 .game-settings .hint { margin: -8px 0 20px; }
 .game-settings .hint:empty { display: none; }
 .room-settings { margin: 6px 0 0; font-size: .87rem; }
+/* The host's form for changing a waiting room's settings. */
+.room-settings-form { margin: 20px 0 24px; padding: 18px; border: 1px solid #e3e7ef; border-radius: 12px; }
+.room-settings-form label { margin-bottom: 20px; }
+.room-settings-form[hidden] { display: none; }
+.room-settings-form .controls { margin-top: 12px; }
 .game-links { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; font-size: .87rem; }
 .game-links[hidden] { display: none; }
 .game-links a { color: #305dc7; }

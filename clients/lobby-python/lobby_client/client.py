@@ -18,13 +18,14 @@ import httpx
 from centrifuge.exceptions import CentrifugeError, OperationTimeoutError
 from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
-    add_lobby_seat, create_lobby, create_lobby_connection_token, create_lobby_session,
+    add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_session,
     get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
     kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, select_lobby_team,
     set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
 )
 from lobby_api_client.models import (
-    AddSeatBody, AddSeatBodySeatSettings, ConnectionTokenInputBody, CreateLobbyBody,
+    AddSeatBody, AddSeatBodySeatSettings, ChangeSettingsBody, ChangeSettingsBodyGameSettings,
+    ConnectionTokenInputBody, CreateLobbyBody,
     CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
     JoinLobbyBody, ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
     WatchAccess, Watcher, WatchLobbyBody,
@@ -233,7 +234,8 @@ class LobbyClient:
                            game_settings: dict[str, Any] | None = None) -> Snapshot:
         """Each team holds one member, so the lobby holds len(teams) members.
 
-        game_settings is the game's own JSON object, fixed for the lobby's lifetime.
+        game_settings is the game's own JSON object; the host can change it,
+        with the teams, while the lobby waits (change_settings).
         """
         self._require_auth()
         request_id = UUID(str(request_id))
@@ -475,6 +477,21 @@ class LobbyClient:
 
     async def start(self, scope: Scope) -> Snapshot:
         return await self._command(scope, start_lobby, body=StartInputBody())
+
+    async def change_settings(self, scope: Scope, *, teams: list[TeamDefinition],
+                              game_settings: dict[str, Any] | None = None) -> Snapshot:
+        """Replace the lobby's game settings and teams while it waits.
+
+        Only the host can. The rules are a create request's: the game checks
+        game_settings against the new teams and LobbyError with code
+        invalid_game_settings carries its message. The teams are rebuilt by
+        position: the lobby's first team keeps its ID and takes the first name,
+        and so on; a person on a removed team loses their team and a seat on
+        one is removed. Every person's ready is cleared. A change that leaves
+        more members than teams raises LobbyError with code lobby_full.
+        """
+        settings = UNSET if game_settings is None else ChangeSettingsBodyGameSettings.from_dict(game_settings)
+        return await self._command(scope, change_lobby_settings, body=ChangeSettingsBody(teams=teams, game_settings=settings))
 
     async def add_seat(self, scope: Scope, team_id: str, seat_settings: dict[str, Any],
                        request_id: UUID | str | None = None) -> Snapshot:

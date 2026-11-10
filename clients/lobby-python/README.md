@@ -15,6 +15,8 @@ The lobby API also gained the error code `game_requirement` and a `type` field o
 
 People outside a lobby can watch it with its join code, without a seat: `watch(game_key=..., join_code=...)` returns the lobby ID and its watch channel (`member` is true for an active member, who gets no watcher row), and `unwatch(scope)` stops. Members list the watchers with `watchers(scope)`, and the host kicks one with `kick_watcher(scope, player_id)`. A watcher holds no lease, so the client follows nothing for them; subscribe to the watch channel with the Centrifugo SDK and use the game's watcher reads. Snapshots carry `watcher_count`, and the new error codes `watcher_kicked` (the host kicked that session) and `watchers_full` (the lobby has its maximum of watchers) refuse a watcher. What to do: regenerate or upgrade the client, which needs `watcher_count` in every snapshot.
 
+The host can change a waiting lobby's `game_settings` and teams with `change_settings(scope, teams=[...], game_settings={...})`, which takes the same fields and rules as `create_lobby`. The teams are rebuilt by position: a kept team keeps its ID, new teams get new IDs, removed teams disappear (their person loses the team, their seat is removed), and every person's ready is cleared. So a lobby's `teams`, `capacity` and `game_settings` are no longer fixed while it waits. What to do: regenerate or upgrade the client, and read them from each snapshot instead of keeping the ones from the create or join.
+
 ## Installing from PyPI
 
 Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):

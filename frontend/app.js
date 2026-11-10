@@ -33,7 +33,14 @@ let latestGameState = null;
 // The selected game's settings form, from its catalog settings module.
 let settingsForm = null;
 let settingsFormGame = null;
+// The room and settings that #room-settings describes, as a key.
 let describedRoom = null;
+// The game settings module's label for changing a waiting room's settings,
+// for the room it was loaded for: {epoch, label}.
+let changeSettingsLabel = null;
+// The host's form for changing a waiting room's settings while it is open:
+// {epoch, form}, form being the game's SettingsForm, or null while it loads.
+let roomSettingsForm = null;
 // The game's controls in the waiting room, from its catalog room module:
 // {epoch, panel} for the room it was made for, with a null panel when the
 // module failed to load. roomPanelLoading is the epoch being loaded.
@@ -133,6 +140,8 @@ function dropRoom() {
   playerLoading = false;
   latestGameState = null;
   describedRoom = null;
+  changeSettingsLabel = null;
+  closeRoomSettings();
   roomPanel = null;
   roomPanelLoading = null;
   seatOptions = null;
@@ -719,22 +728,94 @@ function lobbyChoice() {
   return { settings: choice.settings || {}, teams };
 }
 
-// Show the room's settings as the game's settings module describes them.
+// Show the room's settings as the game's settings module describes them. The
+// host can change them while the room waits, so the description follows the
+// snapshot's settings.
 async function describeRoomSettings() {
   const game = games.get(snapshot.lobby.game_key);
-  if (describedRoom === snapshot.lobby.id) return;
-  describedRoom = snapshot.lobby.id;
+  const key = JSON.stringify([snapshot.lobby.id, snapshot.lobby.game_settings]);
+  if (describedRoom === key) return;
+  describedRoom = key;
   if (!game?.settings_module) return;
   const epoch = roomEpoch;
   try {
-    const { describeSettings } = await settingsModule(game);
-    const text = describeSettings ? await describeSettings(snapshot.lobby.game_settings) : "";
-    if (epoch !== roomEpoch) return;
+    const module = await settingsModule(game);
+    const text = module.describeSettings ? await module.describeSettings(snapshot.lobby.game_settings) : "";
+    if (epoch !== roomEpoch || describedRoom !== key) return;
+    changeSettingsLabel = { epoch, label: String(module.changeSettingsLabel || "Change settings") };
     $("room-settings").textContent = text || "";
     $("room-settings").hidden = !text;
+    render();
   } catch {
-    if (epoch === roomEpoch) describedRoom = null;
+    if (epoch === roomEpoch && describedRoom === key) describedRoom = null;
   }
+}
+
+// For the host of a waiting room whose game has a settings module, a control
+// that opens the game's settings form, filled with the room's settings.
+// Saving replaces the room's settings and teams.
+function showChangeSettings(shown) {
+  if (!shown) closeRoomSettings();
+  const label = changeSettingsLabel?.epoch === roomEpoch ? changeSettingsLabel.label : null;
+  $("change-settings").hidden = !shown || !label || roomSettingsForm !== null;
+  if (label) $("change-settings").textContent = label;
+  $("change-settings").disabled = busy;
+  $("save-settings").disabled = busy || !roomSettingsForm?.form;
+  $("cancel-settings").disabled = busy;
+}
+async function openRoomSettings() {
+  const game = games.get(snapshot.lobby.game_key);
+  if (roomSettingsForm || !game?.settings_module) return;
+  const epoch = roomEpoch;
+  roomSettingsForm = { epoch, form: null };
+  $("room-settings-fields").replaceChildren();
+  $("room-settings-form").hidden = false;
+  render();
+  try {
+    const { SettingsForm } = await settingsModule(game);
+    if (roomSettingsForm?.epoch !== epoch || roomSettingsForm.form) return;
+    roomSettingsForm.form = new SettingsForm({ container: $("room-settings-fields"), onChange: () => {}, current: snapshot.lobby.game_settings });
+  } catch {
+    if (roomSettingsForm?.epoch !== epoch) return;
+    closeRoomSettings();
+    notice("Could not load this game’s settings. Try again in a moment.");
+  }
+  render();
+}
+function closeRoomSettings() {
+  roomSettingsForm?.form?.destroy?.();
+  roomSettingsForm = null;
+  $("room-settings-fields").replaceChildren();
+  $("room-settings-form").hidden = true;
+}
+
+// What the host reads when a change of the room's settings is refused.
+function settingsChangeError(error) {
+  const messages = {
+    not_host: "Only the host can change the settings.",
+    phase_conflict: "The game has already started, so its settings can’t change any more.",
+    lobby_full: "These settings have fewer teams than the lobby has players and bots. Remove a bot, or choose settings with more teams.",
+    invalid_game_settings: `These settings can’t be used: ${error.message}`,
+  };
+  if (!messages[error.code]) return error;
+  const explained = new Error(messages[error.code]);
+  explained.status = error.status;
+  return explained;
+}
+async function saveRoomSettings() {
+  const form = roomSettingsForm?.form;
+  if (!form) return;
+  const choice = form.choice();
+  const teams = choice.teams || defaultTeams;
+  if (teams.length < 2) throw new Error("A lobby needs at least two teams. Choose other settings.");
+  let changed;
+  try {
+    changed = await api(`${roomPath()}/settings`, "PUT", { teams: teams.map((team) => ({ name: team })), game_settings: choice.settings || {} });
+  } catch (error) {
+    throw settingsChangeError(error);
+  }
+  closeRoomSettings();
+  acceptSnapshot(changed);
 }
 
 function render() {
@@ -817,6 +898,7 @@ function render() {
   $("waiting-controls").hidden = !waiting;
   ensureRoomPanel();
   showSeatControls(host && waiting);
+  showChangeSettings(host && waiting && !state.demoPlayer);
   $("ready-button").textContent = self?.ready ? "Not ready" : "Mark ready";
   $("ready-button").disabled = busy || !self?.team_id;
   $("start-button").hidden = !host;
@@ -918,6 +1000,15 @@ $("ready-button").addEventListener("click", () => action(async () => {
   acceptSnapshot(await api(`${roomPath()}/ready`, "PUT", { ready: !self.ready }));
 }));
 $("start-button").addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/start`, "POST", {}))));
+$("change-settings").addEventListener("click", () => void openRoomSettings());
+$("cancel-settings").addEventListener("click", () => {
+  closeRoomSettings();
+  render();
+});
+$("room-settings-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  action(saveRoomSettings);
+});
 $("retry-game").addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/start`, "POST", {}))));
 $("leave-button").addEventListener("click", () => action(async () => {
   await api(`${roomPath()}/membership`, "DELETE");

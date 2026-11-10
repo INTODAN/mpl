@@ -68,7 +68,7 @@ func (settings *GameSettings) UnmarshalJSON(data []byte) error {
 	return nil
 }
 func (GameSettings) Schema(huma.Registry) *huma.Schema {
-	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Description: "Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them compacted with sorted keys, and omitted settings as an empty object."}
+	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Description: "Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created, and again when the host changes them while the lobby waits. The lobby returns them compacted with sorted keys, and omitted settings as an empty object."}
 }
 
 type JoinLobbyInput struct {
@@ -167,6 +167,14 @@ type ReadyBody struct {
 type StartInput struct {
 	ScopeInput
 	Body struct{} `json:"-"`
+}
+type ChangeSettingsInput struct {
+	ScopeInput
+	Body ChangeSettingsBody `json:"-"`
+}
+type ChangeSettingsBody struct {
+	Teams        []TeamDefinition `json:"teams" minItems:"2" maxItems:"16" doc:"The lobby's new teams, in order, with the rules of a create request. They replace the lobby's teams by position: the first keeps the lobby's first team and its ID and takes this name, and so on; teams beyond the lobby's are added, and the lobby's teams beyond these are removed."`
+	GameSettings GameSettings     `json:"game_settings,omitempty"`
 }
 type AddSeatInput struct {
 	ScopeInput

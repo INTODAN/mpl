@@ -2,6 +2,8 @@
 
 from .add_seat_body import AddSeatBody
 from .add_seat_body_seat_settings import AddSeatBodySeatSettings
+from .change_settings_body import ChangeSettingsBody
+from .change_settings_body_game_settings import ChangeSettingsBodyGameSettings
 from .connection_token import ConnectionToken
 from .connection_token_input_body import ConnectionTokenInputBody
 from .create_lobby_body import CreateLobbyBody
@@ -39,6 +41,8 @@ from .watcher_list import WatcherList
 __all__ = (
     "AddSeatBody",
     "AddSeatBodySeatSettings",
+    "ChangeSettingsBody",
+    "ChangeSettingsBodyGameSettings",
     "ConnectionToken",
     "ConnectionTokenInputBody",
     "CreateLobbyBody",

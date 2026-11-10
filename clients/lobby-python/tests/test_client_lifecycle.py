@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from test_reconcile import Harness, FakeSDK, SCOPE, OTHER, Scope, h, snapshot, until
+from lobby_api_client.models import TeamDefinition
 from lobby_client import AuthenticationError, MembershipError, TransientError, LobbyError, ClientClosedError
 
 
@@ -258,6 +259,36 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
         "invalid_seat_settings", 422, "bot_level must be 1, 2 or 3")
     removed = await h.client.remove_seat(SCOPE, seat)
     assert removed.members == [] and seen[-1][:2] == ("DELETE", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/seats/{seat}")
+
+
+async def test_change_settings_sends_the_teams_and_the_games_settings(h):
+    seen = []
+
+    async def settings(request):
+        if not request.url.path.endswith("/settings"):
+            return None
+        sent = json.loads(request.content)
+        seen.append((request.method, request.url.path, sent))
+        if sent.get("game_settings", {}).get("map_template_id") == 9:
+            return httpx.Response(422, json={"code": "invalid_game_settings", "status": 422, "title": "Unprocessable Entity",
+                                             "detail": "game_settings.map_template_id: no default map has ID 9"})
+        body = snapshot(5)
+        body["lobby"]["game_settings"] = sent.get("game_settings", {})
+        return httpx.Response(200, json=body)
+    h.hook = settings
+    await h.join()
+    teams = [TeamDefinition(name="Blue"), TeamDefinition(name="Red"), TeamDefinition(name="Green")]
+    changed = await h.client.change_settings(SCOPE, teams=teams, game_settings={"map_template_id": 3})
+    assert changed.lobby.version == 5 and changed.lobby.game_settings.to_dict() == {"map_template_id": 3}
+    assert seen[0] == ("PUT", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/settings",
+                       {"teams": [{"name": "Blue"}, {"name": "Red"}, {"name": "Green"}], "game_settings": {"map_template_id": 3}})
+    # Omitted settings are omitted, as on create.
+    await h.client.change_settings(SCOPE, teams=teams[:2])
+    assert seen[1][2] == {"teams": [{"name": "Blue"}, {"name": "Red"}]}
+    with pytest.raises(LobbyError) as invalid:
+        await h.client.change_settings(SCOPE, teams=teams, game_settings={"map_template_id": 9})
+    assert (invalid.value.code, invalid.value.status, invalid.value.detail) == (
+        "invalid_game_settings", 422, "game_settings.map_template_id: no default map has ID 9")
 
 
 async def test_watchers_watch_with_the_code_and_the_host_kicks_them(h):

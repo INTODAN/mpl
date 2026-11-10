@@ -28,8 +28,8 @@ class CreateLobbyBody:
             the lobby holds as many members as it has teams.
         schema (str | Unset): A URL to the JSON Schema for this object.
         game_settings (CreateLobbyBodyGameSettings | Unset): Settings for the game, as a JSON object that only the game
-            reads. The game checks them when the lobby is created, and they can't change afterwards. The lobby returns them
-            compacted with sorted keys, and omitted settings as an empty object.
+            reads. The game checks them when the lobby is created, and again when the host changes them while the lobby
+            waits. The lobby returns them compacted with sorted keys, and omitted settings as an empty object.
     """
 
     client_instance_id: UUID

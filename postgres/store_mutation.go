@@ -35,8 +35,14 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 			committed = original
 			return nil
 		}
-		if aggregate.Lobby.ID != original.Lobby.ID || aggregate.Lobby.GameKey != original.Lobby.GameKey || !bytes.Equal(aggregate.Lobby.GameSettings, original.Lobby.GameSettings) || !reflect.DeepEqual(aggregate.Teams, original.Teams) {
-			return domain.NewError(domain.CodeInvalidInput, "immutable lobby identity, game settings or teams changed")
+		if aggregate.Lobby.ID != original.Lobby.ID || aggregate.Lobby.GameKey != original.Lobby.GameKey {
+			return domain.NewError(domain.CodeInvalidInput, "immutable lobby identity changed")
+		}
+		teamsChanged := !reflect.DeepEqual(aggregate.Teams, original.Teams)
+		if teamsChanged || !bytes.Equal(aggregate.Lobby.GameSettings, original.Lobby.GameSettings) {
+			if err := validateSettingsChange(original, aggregate); err != nil {
+				return err
+			}
 		}
 		if len(original.StartRoster) > 0 && !reflect.DeepEqual(aggregate.StartRoster, original.StartRoster) {
 			return domain.NewError(domain.CodeInvalidInput, "start roster is immutable")
@@ -74,8 +80,18 @@ func (store *Store) Transact(ctx context.Context, scope domain.Scope, mutation d
 		if err := tx.Model(&RoomRecord{}).Where(&RoomRecord{ID: scope.LobbyID, GameKey: scope.GameKey}).Select("*").Updates(&room).Error; err != nil {
 			return err
 		}
+		if teamsChanged {
+			if err := prepareTeamChanges(tx, original.Teams, aggregate.Teams); err != nil {
+				return err
+			}
+		}
 		if err := persistChildren(tx, aggregate, false, original.Watchers); err != nil {
 			return err
+		}
+		if teamsChanged {
+			if err := finishTeamChanges(tx, original.Teams, aggregate.Teams); err != nil {
+				return err
+			}
 		}
 		if err := validateRevocations(aggregate.Lobby.Scope(), change); err != nil {
 			return err
@@ -151,6 +167,86 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool, origi
 	}
 	return persistWatchers(tx, aggregate, originalWatchers)
 }
+
+// validateSettingsChange lets a mutation change the game settings and the
+// teams only while the lobby waits, and only by rebuilding the teams by
+// position: the teams the change keeps hold their ID and order, new teams
+// follow them in order, and the capacity is the number of teams.
+func validateSettingsChange(original domain.Aggregate, aggregate domain.Aggregate) error {
+	if original.Lobby.Phase != domain.PhaseWaiting || aggregate.Lobby.Phase != domain.PhaseWaiting || len(original.StartRoster) > 0 {
+		return domain.NewError(domain.CodeInvalidInput, "game settings or teams changed outside the waiting phase")
+	}
+	if len(aggregate.Teams) < domain.MinTeams || len(aggregate.Teams) > domain.MaxTeams || aggregate.Lobby.Capacity != len(aggregate.Teams) {
+		return domain.NewError(domain.CodeInvalidInput, "changed teams don't match the lobby's capacity")
+	}
+	for index, team := range aggregate.Teams {
+		if team.LobbyID != aggregate.Lobby.ID {
+			return domain.NewError(domain.CodeInvalidInput, "team scope mismatch")
+		}
+		if index < len(original.Teams) {
+			if team.ID != original.Teams[index].ID || team.Order != original.Teams[index].Order {
+				return domain.NewError(domain.CodeInvalidInput, "teams must be rebuilt by position")
+			}
+			continue
+		}
+		if index == 0 || team.Order != aggregate.Teams[index-1].Order+1 {
+			return domain.NewError(domain.CodeInvalidInput, "teams must be rebuilt by position")
+		}
+	}
+	return nil
+}
+
+// A team's rebuild runs in two steps around the membership writes, so that no
+// statement trips a constraint halfway: prepareTeamChanges moves each renamed
+// team to a placeholder normalized name, which frees its old name for another
+// team (two teams can swap names), and inserts the new teams, which members
+// may then take. Once the members have left the removed teams,
+// finishTeamChanges deletes those teams and gives the renamed teams their new
+// names. A rebuild by position never both adds and removes teams, so a new
+// team's order is free.
+func prepareTeamChanges(tx *gorm.DB, original []domain.Team, changed []domain.Team) error {
+	for index, team := range changed {
+		if index >= len(original) {
+			record := TeamRecord{ID: team.ID, LobbyID: team.LobbyID, Name: team.Name, NormalizedName: domain.TeamNameKey(team.Name), TeamOrder: team.Order}
+			if err := tx.Create(&record).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if team.Name == original[index].Name {
+			continue
+		}
+		if err := tx.Model(&TeamRecord{}).Where(&TeamRecord{ID: team.ID, LobbyID: team.LobbyID}).Updates(&TeamRecord{NormalizedName: placeholderTeamNameKey(team.ID)}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func finishTeamChanges(tx *gorm.DB, original []domain.Team, changed []domain.Team) error {
+	if len(original) > len(changed) {
+		removed := make([]any, 0, len(original)-len(changed))
+		for _, team := range original[len(changed):] {
+			removed = append(removed, team.ID)
+		}
+		if err := tx.Where(&TeamRecord{LobbyID: original[0].LobbyID}).Where(clause.IN{Column: clause.Column{Name: "id"}, Values: removed}).Delete(&TeamRecord{}).Error; err != nil {
+			return err
+		}
+	}
+	for index, team := range changed {
+		if index >= len(original) || team.Name == original[index].Name {
+			continue
+		}
+		if err := tx.Model(&TeamRecord{}).Where(&TeamRecord{ID: team.ID, LobbyID: team.LobbyID}).Updates(&TeamRecord{Name: team.Name, NormalizedName: domain.TeamNameKey(team.Name)}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// placeholderTeamNameKey is a normalized name that no team can have: team
+// names are trimmed, so a normalized name never starts with a space.
+func placeholderTeamNameKey(teamID string) string { return " " + teamID }
 
 // persistWatchers writes only the watcher rows that changed since the
 // mutation loaded them: new rows are inserted, and rows whose kick changed

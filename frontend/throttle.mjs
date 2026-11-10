@@ -21,6 +21,7 @@ export const retryWaitBudgetMs = maxRetryWaitMs;
 const repeatableLobbyRequests = [
   { method: "PUT", path: /\/lobbies\/[^/]+\/team$/ },
   { method: "PUT", path: /\/lobbies\/[^/]+\/ready$/ },
+  { method: "PUT", path: /\/lobbies\/[^/]+\/settings$/ },
   { method: "POST", path: /\/lobbies\/[^/]+\/heartbeat$/ },
 ];
 

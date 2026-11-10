@@ -21,6 +21,14 @@ type CreateRequest struct {
 	// same as before settings existed.
 	GameSettings json.RawMessage `json:"game_settings,omitempty"`
 }
+
+// ChangeSettingsRequest replaces a waiting lobby's game settings and teams,
+// with the same rules as a create request's. The lobby's teams are rebuilt by
+// position: the first definition renames the lobby's first team, and so on.
+type ChangeSettingsRequest struct {
+	Teams        []TeamDefinition
+	GameSettings json.RawMessage
+}
 type JoinRequest struct {
 	GameKey          string `json:"game_key"`
 	JoinCode         string `json:"join_code"`

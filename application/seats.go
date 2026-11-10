@@ -115,10 +115,7 @@ func (service *Service) RemoveSeat(ctx context.Context, principal domain.Princip
 			if !seat.Active {
 				return domain.Change{}, nil
 			}
-			// Like a member who left, the seat stays in the lobby's history.
-			seat.Active = false
-			seat.TeamID = nil
-			seat.Ready = false
+			removeSeat(seat)
 			return domain.Change{PublicChanged: true}, nil
 		}
 		return domain.Change{}, domain.ErrInvalidInput
@@ -129,7 +126,16 @@ func (service *Service) RemoveSeat(ctx context.Context, principal domain.Princip
 	return service.snapshot(aggregate, principal.PlayerID)
 }
 
-// requireWaitingHost lets only the host of a waiting lobby change its seats.
+// removeSeat removes an active seat from the lobby. Like a member who left,
+// the seat stays in the lobby's history.
+func removeSeat(seat *domain.Member) {
+	seat.Active = false
+	seat.TeamID = nil
+	seat.Ready = false
+}
+
+// requireWaitingHost lets only the host of a waiting lobby change its seats
+// and its settings.
 func requireWaitingHost(aggregate *domain.Aggregate, principal domain.Principal) error {
 	if _, err := activeMember(aggregate, principal.PlayerID); err != nil {
 		return err

@@ -12,8 +12,8 @@ T = TypeVar("T", bound="CreateLobbyBodyGameSettings")
 @_attrs_define
 class CreateLobbyBodyGameSettings:
     """Settings for the game, as a JSON object that only the game reads. The game checks them when the lobby is created,
-    and they can't change afterwards. The lobby returns them compacted with sorted keys, and omitted settings as an
-    empty object.
+    and again when the host changes them while the lobby waits. The lobby returns them compacted with sorted keys, and
+    omitted settings as an empty object.
 
     """
 
