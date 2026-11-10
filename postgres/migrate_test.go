@@ -390,6 +390,9 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	}
 	wide, _ := seed("WIDEROOM", 64, "Red", "Blue", "Green")
 	shared, sharedTeams := seed("SHARED01", 4, "Red", "Blue")
+	// A room without teams, which only a test can make, must not stop the
+	// migration with a capacity over the narrower check.
+	teamless, _ := seed("NOTEAMS1", 64)
 	// Two people on one team, which a team's capacity allowed before.
 	for sequence := range 2 {
 		member := memberFor(shared.ID, seedPlayer(t, db).ID)
@@ -403,11 +406,11 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	if db.Migrator().HasColumn(&lobbypostgres.TeamRecord{}, "capacity") {
 		t.Fatal("lobby_teams.capacity survived the migration")
 	}
-	for id, want := range map[string]int{wide.ID: 3, shared.ID: 2} {
+	for id, want := range map[string]int{wide.ID: 3, shared.ID: 2, teamless.ID: 16} {
 		var room lobbypostgres.RoomRecord
 		mustFind(t, db, &room, id)
 		if room.Capacity != want {
-			t.Errorf("room %s capacity = %d, want its %d teams", room.JoinCode, room.Capacity, want)
+			t.Errorf("room %s capacity = %d, want %d", room.JoinCode, room.Capacity, want)
 		}
 	}
 	store, err := lobbypostgres.NewStore(db, domain.SystemClock{})
