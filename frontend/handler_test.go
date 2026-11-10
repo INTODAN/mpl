@@ -175,6 +175,9 @@ func TestHandlerCachesOnlyTheStaticAssets(t *testing.T) {
 	for file, want := range map[string]string{
 		"": "no-store", "games.json": "no-store", "index.html": "no-store",
 		"app.js": "public, max-age=300", "relay.mjs": "public, max-age=300", "style.css": "public, max-age=300",
+		// Go's file server drops Cache-Control from an error answer, so a missing
+		// file's 404 is never kept.
+		"missing.mjs": "",
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/lobby/ui/"+file, nil))
