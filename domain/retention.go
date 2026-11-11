@@ -28,13 +28,16 @@ type RetentionPolicy struct {
 type LobbyRetention struct {
 	// IdlePeriod runs from the last time any member was connected.
 	IdlePeriod time.Duration
-	// MaximumAge runs from creation and applies even to a lobby in use.
+	// MaximumAge runs from the start of the lobby's current round: its
+	// creation, or the last time it was reopened. It applies even to a lobby
+	// in use.
 	MaximumAge time.Duration
 }
 
 // DefaultRetention keeps create requests for a day, expired sessions for an
 // hour, and lobbies for an hour after their last connection or a day after
-// creation. A pass deletes at most 50 rows of each kind, at most once a minute
+// the start of their current round: their creation, or the last time they
+// were reopened. A pass deletes at most 50 rows of each kind, at most once a minute
 // per process unless the previous pass found more to delete.
 func DefaultRetention() RetentionPolicy {
 	return RetentionPolicy{
@@ -111,11 +114,13 @@ type RetentionCutoffs struct {
 }
 
 // LobbyCutoffs delete a game's lobbies that nobody has been connected to
-// since IdleBefore, and those created before CreatedBefore.
+// since IdleBefore, and those whose current round started before
+// RoundStartedBefore: the round starts at the lobby's creation, or the last
+// time it was reopened.
 type LobbyCutoffs struct {
-	GameKey       string
-	IdleBefore    time.Time
-	CreatedBefore time.Time
+	GameKey            string
+	IdleBefore         time.Time
+	RoundStartedBefore time.Time
 }
 
 // RetentionCutoffs derives the cutoffs of a pass that runs at now.
@@ -138,7 +143,7 @@ func (policy Policy) RetentionCutoffs(now time.Time) RetentionCutoffs {
 }
 
 func lobbyCutoffs(gameKey string, retention LobbyRetention, now time.Time) LobbyCutoffs {
-	return LobbyCutoffs{GameKey: gameKey, IdleBefore: now.Add(-retention.IdlePeriod), CreatedBefore: now.Add(-retention.MaximumAge)}
+	return LobbyCutoffs{GameKey: gameKey, IdleBefore: now.Add(-retention.IdlePeriod), RoundStartedBefore: now.Add(-retention.MaximumAge)}
 }
 
 // RetentionResult counts what one pass deleted. Players counts the players no

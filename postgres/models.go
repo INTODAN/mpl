@@ -35,7 +35,9 @@ func (SessionRecord) TableName() string { return "lobby_sessions" }
 // created before a team held one member. Round is migration 0008's: the
 // lobby's round, from 1, which goes up each time the lobby is reopened after
 // a game; rooms created before it are in round 1, and a record created
-// without a round gets that default.
+// without a round gets that default. RoundStartedAt is migration 0009's: when
+// the current round began, which the maximum age of retention counts from;
+// rooms created before it have their creation time.
 type RoomRecord struct {
 	ID               string    `gorm:"column:id;type:uuid;primaryKey"`
 	GameKey          string    `gorm:"column:game_key;not null"`
@@ -50,6 +52,7 @@ type RoomRecord struct {
 	NextJoinSequence int64     `gorm:"column:next_join_sequence;not null"`
 	GameSettings     []byte    `gorm:"column:game_settings;type:json"`
 	LastConnectedAt  time.Time `gorm:"column:last_connected_at;not null"`
+	RoundStartedAt   time.Time `gorm:"column:round_started_at;not null"`
 }
 
 func (RoomRecord) TableName() string { return "lobby_rooms" }

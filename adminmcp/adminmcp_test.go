@@ -79,15 +79,15 @@ func seedLobbies(t *testing.T, database *gorm.DB) seed {
 	dave := ids.dave
 	create(t, database, &lobbypostgres.RoomRecord{
 		ID: ids.waiting, GameKey: "island-battles", Name: "Waiting room", JoinCode: "ABCD2345", Capacity: 2, Phase: "waiting", Version: 1,
-		HostPlayerID: &alice, CreatedAt: now.Add(-2 * time.Hour), NextJoinSequence: 5, GameSettings: []byte(`{"map_template_id":3}`), LastConnectedAt: now.Add(-time.Minute),
+		HostPlayerID: &alice, CreatedAt: now.Add(-2 * time.Hour), RoundStartedAt: now.Add(-90 * time.Minute), NextJoinSequence: 5, GameSettings: []byte(`{"map_template_id":3}`), LastConnectedAt: now.Add(-time.Minute),
 	})
 	create(t, database, &lobbypostgres.RoomRecord{
 		ID: ids.started, GameKey: "quiz-demo", Name: "Started room", JoinCode: "EFGH2345", Capacity: 2, Phase: "started", Version: 3,
-		HostPlayerID: &dave, CreatedAt: now.Add(-time.Hour), NextJoinSequence: 2, GameSettings: []byte(`{}`), LastConnectedAt: now.Add(-10 * time.Minute),
+		HostPlayerID: &dave, CreatedAt: now.Add(-time.Hour), RoundStartedAt: now.Add(-time.Hour), NextJoinSequence: 2, GameSettings: []byte(`{}`), LastConnectedAt: now.Add(-10 * time.Minute),
 	})
 	create(t, database, &lobbypostgres.RoomRecord{
 		ID: ids.closed, GameKey: "island-battles", Name: "Closed room", JoinCode: "JKMN2345", Capacity: 2, Phase: "closed", Version: 2,
-		CreatedAt: now.Add(-3 * time.Hour), NextJoinSequence: 1, GameSettings: []byte(`{}`), LastConnectedAt: now.Add(-3 * time.Hour),
+		CreatedAt: now.Add(-3 * time.Hour), RoundStartedAt: now.Add(-3 * time.Hour), NextJoinSequence: 1, GameSettings: []byte(`{}`), LastConnectedAt: now.Add(-3 * time.Hour),
 	})
 	create(t, database, &lobbypostgres.TeamRecord{ID: ids.blue, LobbyID: ids.waiting, Name: "Blue", NormalizedName: "blue", TeamOrder: 1})
 	create(t, database, &lobbypostgres.TeamRecord{ID: ids.red, LobbyID: ids.waiting, Name: "Red", NormalizedName: "red", TeamOrder: 2})

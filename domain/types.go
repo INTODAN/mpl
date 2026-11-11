@@ -50,6 +50,11 @@ type Lobby struct {
 	// creating, joining, heartbeating, releasing a lease or leaving. The
 	// retention pass deletes the lobby once it is older than the idle period.
 	LastConnectedAt time.Time `json:"-"`
+	// RoundStartedAt is when the lobby's current round began: its creation
+	// for round 1, and the time of the last reopen for later rounds. The
+	// retention pass counts the maximum age from it. It is not part of the
+	// public snapshot.
+	RoundStartedAt time.Time `json:"-"`
 }
 
 func (room Lobby) Scope() Scope { return Scope{GameKey: room.GameKey, LobbyID: room.ID} }

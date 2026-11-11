@@ -80,6 +80,7 @@ func seedLobby(t *testing.T, db *gorm.DB, hostID, gameKey string, age, idle time
 	room := roomFor(hostID, gameKey, joinCode(t))
 	room.Phase = string(domain.PhaseStarted)
 	room.CreatedAt = retentionNow.Add(-age)
+	room.RoundStartedAt = room.CreatedAt
 	room.LastConnectedAt = retentionNow.Add(-idle)
 	mustCreate(t, db, &room)
 	team := lobbypostgres.TeamRecord{ID: uuid.NewString(), LobbyID: room.ID, Name: "Red", NormalizedName: "red", TeamOrder: 1}
@@ -243,6 +244,35 @@ func TestRetentionDeletesLobbiesPastTheirGamesPeriods(t *testing.T) {
 		}
 	}
 	requireIDs(t, "players", remainingIDs(t, db, &lobbypostgres.PlayerRecord{}), host)
+}
+
+// The maximum age counts from the start of the lobby's current round: its
+// creation, or the last reopen.
+func TestRetentionCountsTheMaximumAgeFromTheCurrentRound(t *testing.T) {
+	db := testutil.NewPostgresFixture(t)
+	host := playerCreated(t, db, time.Hour)
+	sessionExpiring(t, db, host, time.Hour)
+	reopened := func(lobbyID string, ago time.Duration) string {
+		t.Helper()
+		if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: lobbyID}).
+			Updates(&lobbypostgres.RoomRecord{Round: 2, RoundStartedAt: retentionNow.Add(-ago)}).Error; err != nil {
+			t.Fatal(err)
+		}
+		return lobbyID
+	}
+	day := 24 * time.Hour
+	// Created 25 hours ago, reopened an hour ago, connected a minute ago.
+	kept := reopened(seedLobby(t, db, host, "island-battles", day+time.Hour, time.Minute), time.Hour)
+	// The same lobby without the reopen.
+	seedLobby(t, db, host, "island-battles", day+time.Hour, time.Minute)
+	// Reopened 25 hours ago.
+	reopened(seedLobby(t, db, host, "island-battles", 2*day, time.Minute), day+time.Hour)
+
+	result := deleteExpired(t, newRetentionStore(t, db), retentionPolicy().RetentionCutoffs(retentionNow))
+	if result != (domain.RetentionResult{Lobbies: 2}) {
+		t.Fatalf("result = %+v, want 2 lobbies", result)
+	}
+	requireIDs(t, "rooms", remainingIDs(t, db, &lobbypostgres.RoomRecord{}), kept)
 }
 
 func TestRetentionFreesPlayersOfDeletedLobbiesInTheSamePass(t *testing.T) {

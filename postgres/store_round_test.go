@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/postgres"
@@ -41,6 +42,9 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 	}
 
 	refused("a round changed while the lobby waits", func(aggregate *domain.Aggregate) { aggregate.Lobby.Round++ })
+	refused("a round start changed while the lobby waits", func(aggregate *domain.Aggregate) {
+		aggregate.Lobby.RoundStartedAt = aggregate.Lobby.RoundStartedAt.Add(time.Hour)
+	})
 	if err := transact(start); err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +53,9 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 	}
 	refused("a roster emptied while started", func(aggregate *domain.Aggregate) { aggregate.StartRoster = domain.StartRoster{} })
 	refused("a round changed while started", func(aggregate *domain.Aggregate) { aggregate.Lobby.Round++ })
+	refused("a round start changed while started", func(aggregate *domain.Aggregate) {
+		aggregate.Lobby.RoundStartedAt = aggregate.Lobby.RoundStartedAt.Add(time.Hour)
+	})
 	refused("a reopen in the same round", func(aggregate *domain.Aggregate) {
 		aggregate.Lobby.Phase = domain.PhaseWaiting
 		aggregate.StartRoster = domain.StartRoster{}
@@ -63,14 +70,19 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 		aggregate.Lobby.Round++
 	})
 
+	reopenedAt := readStore(t, fixture).Lobby.RoundStartedAt.Add(time.Hour)
 	if err := transact(func(aggregate *domain.Aggregate) {
 		aggregate.Lobby.Phase = domain.PhaseWaiting
 		aggregate.Lobby.Round++
+		aggregate.Lobby.RoundStartedAt = reopenedAt
 		aggregate.StartRoster = domain.StartRoster{}
 	}); err != nil {
 		t.Fatal(err)
 	}
 	reopened := readStore(t, fixture)
+	if !reopened.Lobby.RoundStartedAt.Equal(reopenedAt) {
+		t.Fatalf("reopened lobby's round started at %v, want %v", reopened.Lobby.RoundStartedAt, reopenedAt)
+	}
 	if reopened.Lobby.Phase != domain.PhaseWaiting || reopened.Lobby.Round != 2 || len(reopened.StartRoster) != 0 {
 		t.Fatalf("reopened lobby = phase %s, round %d, roster %v", reopened.Lobby.Phase, reopened.Lobby.Round, reopened.StartRoster)
 	}

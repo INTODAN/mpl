@@ -101,7 +101,7 @@ func lobbiesPastRetention(cutoffs domain.RetentionCutoffs) clause.Expression {
 	pastCutoffs := func(lobby domain.LobbyCutoffs) clause.Expression {
 		return clause.Or(
 			clause.Lt{Column: clause.Column{Name: "last_connected_at"}, Value: lobby.IdleBefore},
-			clause.Lt{Column: clause.Column{Name: "created_at"}, Value: lobby.CreatedBefore},
+			clause.Lt{Column: clause.Column{Name: "round_started_at"}, Value: lobby.RoundStartedBefore},
 		)
 	}
 	matches := make([]clause.Expression, 0, len(cutoffs.Games)+1)

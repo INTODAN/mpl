@@ -380,7 +380,7 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	seed := func(code string, roomCapacity int, teamNames ...string) (lobbypostgres.RoomRecord, []legacyTeamRecord) {
 		room := roomFor(player.ID, "island-battles", code)
 		room.Capacity = roomCapacity
-		if err := db.Omit("Round").Create(&room).Error; err != nil {
+		if err := db.Omit("Round", "RoundStartedAt").Create(&room).Error; err != nil {
 			t.Fatal(err)
 		}
 		teams := make([]legacyTeamRecord, len(teamNames))
@@ -668,5 +668,41 @@ func assertSameSchema(t *testing.T, got, want []string) {
 		if !slices.Contains(got, line) {
 			t.Errorf("missing: %s", line)
 		}
+	}
+}
+
+// Rooms from before migration 0009 have their creation as the start of their
+// round.
+func TestMigrateStartsExistingRoomsRoundAtCreation(t *testing.T) {
+	db := testutil.NewEmptyPostgres(t)
+	before := lobbypostgres.Migrations()
+	files := fstest.MapFS{}
+	for _, name := range migrationNames(t, before.Files)[:8] {
+		data, err := fs.ReadFile(before.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: data}
+	}
+	before.Files = files
+	if err := before.Apply(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	player := seedPlayer(t, db)
+	room := seedRoom(t, db, player.ID, "island-battles", "STARTED1")
+	createdAt := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Microsecond)
+	if err := db.Model(&lobbypostgres.RoomRecord{}).Where(&lobbypostgres.RoomRecord{ID: room.ID}).Update("created_at", createdAt).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate existing rooms: %v", err)
+	}
+	var migrated lobbypostgres.RoomRecord
+	if err := db.Where(&lobbypostgres.RoomRecord{ID: room.ID}).Take(&migrated).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !migrated.RoundStartedAt.Equal(createdAt) {
+		t.Fatalf("existing room's round started at %v, want its creation %v", migrated.RoundStartedAt, createdAt)
 	}
 }

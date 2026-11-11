@@ -56,7 +56,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 		now := service.clock.Now().UTC()
 		host := principal.PlayerID
 		aggregate := domain.Aggregate{
-			Lobby:   domain.Lobby{ID: roomID, GameKey: request.GameKey, Name: request.Name, JoinCode: joinCode, Capacity: len(request.Teams), Phase: domain.PhaseWaiting, Round: 1, Version: 1, HostPlayerID: &host, CreatedAt: now, GameSettings: settings, NextJoinSequence: 2, LastConnectedAt: now},
+			Lobby:   domain.Lobby{ID: roomID, GameKey: request.GameKey, Name: request.Name, JoinCode: joinCode, Capacity: len(request.Teams), Phase: domain.PhaseWaiting, Round: 1, Version: 1, HostPlayerID: &host, CreatedAt: now, GameSettings: settings, NextJoinSequence: 2, LastConnectedAt: now, RoundStartedAt: now},
 			Members: []domain.Member{{ID: memberID, PlayerID: principal.PlayerID, DisplayName: displayName, Generation: 1, Active: true, JoinedAt: now, JoinSequence: 1, Kind: domain.MemberHuman}},
 			Leases:  []domain.Lease{{LobbyID: roomID, PlayerID: principal.PlayerID, Generation: 1, ClientInstanceID: request.ClientInstanceID, ExpiresAt: now.Add(service.policy.LeaseDuration)}},
 			Teams:   []domain.Team{}, StartRoster: domain.StartRoster{},

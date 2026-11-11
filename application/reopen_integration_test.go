@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"islandBattles/lobby/domain"
 )
@@ -82,6 +83,9 @@ func TestReopenAfterTheGameEndsPlaysAnotherRound(t *testing.T) {
 	}
 
 	before := fixture.read(t)
+	if !before.Lobby.RoundStartedAt.Equal(before.Lobby.CreatedAt) {
+		t.Fatalf("a new lobby's round started at %v, want its creation %v", before.Lobby.RoundStartedAt, before.Lobby.CreatedAt)
+	}
 	pushes := fixture.pushed(invalidationPushes)
 	_, err := fixture.service.Reopen(context.Background(), guest, fixture.scope)
 	requireDomainError(t, err, domain.ErrGameRunning)
@@ -89,10 +93,19 @@ func TestReopenAfterTheGameEndsPlaysAnotherRound(t *testing.T) {
 		t.Fatal("reopening a running game changed the lobby")
 	}
 
+	if !fixture.read(t).Lobby.RoundStartedAt.Equal(before.Lobby.RoundStartedAt) {
+		t.Fatal("a refused reopen changed the start of the round")
+	}
+
 	replayGame.end(fixture.scope.LobbyID, 1)
+	reopenedAt := fixture.origin.Add(10 * time.Second)
+	fixture.clock.Set(reopenedAt)
 	reopened, err := fixture.service.Reopen(context.Background(), guest, fixture.scope)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := fixture.read(t).Lobby; !got.RoundStartedAt.Equal(reopenedAt) || !got.CreatedAt.Equal(before.Lobby.CreatedAt) {
+		t.Fatalf("after the reopen the round started at %v and the lobby was created at %v, want %v and %v", got.RoundStartedAt, got.CreatedAt, reopenedAt, before.Lobby.CreatedAt)
 	}
 	if reopened.Lobby.Phase != domain.PhaseWaiting || reopened.Lobby.Round != 2 || len(reopened.StartRoster) != 0 || reopened.Lobby.Version != before.Lobby.Version+1 {
 		t.Fatalf("reopened = phase %s, round %d, roster %v, version %d", reopened.Lobby.Phase, reopened.Lobby.Round, reopened.StartRoster, reopened.Lobby.Version)
@@ -117,10 +130,16 @@ func TestReopenAfterTheGameEndsPlaysAnotherRound(t *testing.T) {
 		t.Fatal("the seat left with the reopen")
 	}
 
-	// A second call finds the lobby waiting and returns it unchanged.
+	// A second call finds the lobby waiting and returns it unchanged, also
+	// when it comes later.
+	fixture.clock.Set(reopenedAt.Add(5 * time.Second))
 	again, err := fixture.service.Reopen(context.Background(), fixture.host, fixture.scope)
 	if err != nil || again.Lobby.Version != reopened.Lobby.Version || again.Lobby.Round != 2 || fixture.pushed(invalidationPushes) != pushes+1 {
 		t.Fatalf("second reopen = version %d round %d, %v", again.Lobby.Version, again.Lobby.Round, err)
+	}
+
+	if got := fixture.read(t).Lobby.RoundStartedAt; !got.Equal(reopenedAt) {
+		t.Fatalf("reopening a waiting lobby moved the start of the round to %v, want %v", got, reopenedAt)
 	}
 
 	// The lobby waits as before a first game: a new player joins on the free

@@ -110,19 +110,19 @@ func TestRetentionCutoffs(t *testing.T) {
 		t.Fatalf("player cutoff = %v", cutoffs.PlayersCreatedBefore)
 	}
 	want := []domain.LobbyCutoffs{
-		{GameKey: "island-battles", IdleBefore: utc.Add(-time.Hour), CreatedBefore: utc.Add(-24 * time.Hour)},
-		{GameKey: "quiz-demo", IdleBefore: utc.Add(-10 * time.Minute), CreatedBefore: utc.Add(-2 * time.Hour)},
+		{GameKey: "island-battles", IdleBefore: utc.Add(-time.Hour), RoundStartedBefore: utc.Add(-24 * time.Hour)},
+		{GameKey: "quiz-demo", IdleBefore: utc.Add(-10 * time.Minute), RoundStartedBefore: utc.Add(-2 * time.Hour)},
 	}
 	if len(cutoffs.Games) != len(want) {
 		t.Fatalf("game cutoffs = %+v", cutoffs.Games)
 	}
 	for index := range want {
 		got := cutoffs.Games[index]
-		if got.GameKey != want[index].GameKey || !got.IdleBefore.Equal(want[index].IdleBefore) || !got.CreatedBefore.Equal(want[index].CreatedBefore) {
+		if got.GameKey != want[index].GameKey || !got.IdleBefore.Equal(want[index].IdleBefore) || !got.RoundStartedBefore.Equal(want[index].RoundStartedBefore) {
 			t.Errorf("game cutoffs[%d] = %+v, want %+v", index, got, want[index])
 		}
 	}
-	if other := cutoffs.OtherGames; other.GameKey != "" || !other.IdleBefore.Equal(utc.Add(-time.Hour)) || !other.CreatedBefore.Equal(utc.Add(-24*time.Hour)) {
+	if other := cutoffs.OtherGames; other.GameKey != "" || !other.IdleBefore.Equal(utc.Add(-time.Hour)) || !other.RoundStartedBefore.Equal(utc.Add(-24*time.Hour)) {
 		t.Fatalf("other games = %+v", other)
 	}
 }

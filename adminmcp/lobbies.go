@@ -56,6 +56,7 @@ type LobbySummary struct {
 	HostDisplayName      *string   `json:"host_display_name"`
 	CreatedAt            time.Time `json:"created_at"`
 	LastConnectedAt      time.Time `json:"last_connected_at" jsonschema:"The last time a member created, joined, heartbeated, released a lease or left."`
+	RoundStartedAt       time.Time `json:"round_started_at" jsonschema:"When the lobby's current round began: its creation, or the last time a member reopened it. The maximum age of retention counts from it."`
 	GameID               any       `json:"game_id" jsonschema:"The newest game started from the lobby, or null."`
 }
 
@@ -242,7 +243,7 @@ func limitWithin(requested, defaultLimit, maxLimit int) (int, error) {
 
 // summaryColumns are the room columns a summary shows. They leave out the
 // game settings, which may be large.
-var summaryColumns = []string{"ID", "GameKey", "Name", "JoinCode", "Capacity", "Phase", "Round", "HostPlayerID", "CreatedAt", "LastConnectedAt"}
+var summaryColumns = []string{"ID", "GameKey", "Name", "JoinCode", "Capacity", "Phase", "Round", "HostPlayerID", "CreatedAt", "LastConnectedAt", "RoundStartedAt"}
 
 func (reader lobbyReader) listLobbies(transaction *gorm.DB, input ListLobbiesInput) (LobbyList, error) {
 	limit, err := limitWithin(input.Limit, DefaultListLimit, MaxListLimit)
@@ -326,7 +327,7 @@ func (reader lobbyReader) summaries(transaction *gorm.DB, rooms []postgres.RoomR
 func summary(room postgres.RoomRecord, gameID any) LobbySummary {
 	return LobbySummary{
 		ID: room.ID, Name: room.Name, JoinCode: room.JoinCode, GameKey: room.GameKey, Phase: room.Phase, Round: room.Round, Capacity: room.Capacity,
-		CreatedAt: room.CreatedAt.UTC(), LastConnectedAt: room.LastConnectedAt.UTC(), GameID: gameID,
+		CreatedAt: room.CreatedAt.UTC(), LastConnectedAt: room.LastConnectedAt.UTC(), RoundStartedAt: room.RoundStartedAt.UTC(), GameID: gameID,
 	}
 }
 
@@ -469,11 +470,11 @@ func findRoom(transaction *gorm.DB, input GetLobbyInput) (postgres.RoomRecord, e
 
 // retentionDeadline is when default retention deletes room at the latest:
 // after its idle period, which a member's connection restarts, or at its
-// maximum age, whichever comes first.
+// maximum age from the start of its current round, whichever comes first.
 func (reader lobbyReader) retentionDeadline(room postgres.RoomRecord) time.Time {
 	retention := reader.lobbyRetention(room.GameKey)
 	idle := room.LastConnectedAt.Add(retention.IdlePeriod)
-	aged := room.CreatedAt.Add(retention.MaximumAge)
+	aged := room.RoundStartedAt.Add(retention.MaximumAge)
 	if aged.Before(idle) {
 		return aged.UTC()
 	}

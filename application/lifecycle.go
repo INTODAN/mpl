@@ -174,6 +174,7 @@ func (service *Service) Reopen(ctx context.Context, principal domain.Principal, 
 			}
 			aggregate.Lobby.Phase = domain.PhaseWaiting
 			aggregate.Lobby.Round++
+			aggregate.Lobby.RoundStartedAt = now
 			aggregate.StartRoster = domain.StartRoster{}
 			for index := range aggregate.Members {
 				if member := &aggregate.Members[index]; !member.IsSeat() {

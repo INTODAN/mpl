@@ -16,7 +16,7 @@ func TestFixtureIsolation(t *testing.T) {
 	room := lobbypostgres.RoomRecord{
 		ID: uuid.NewString(), GameKey: "island-battles", Name: "isolated",
 		JoinCode: "ISOLATE1", Capacity: 2, Phase: "waiting", Version: 1,
-		CreatedAt: time.Now().UTC(), NextJoinSequence: 1, GameSettings: []byte(`{}`),
+		CreatedAt: time.Now().UTC(), RoundStartedAt: time.Now().UTC(), NextJoinSequence: 1, GameSettings: []byte(`{}`),
 	}
 	if err := first.Create(&room).Error; err != nil {
 		t.Fatal(err)
