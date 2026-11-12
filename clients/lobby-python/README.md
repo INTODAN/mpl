@@ -19,6 +19,8 @@ The host can change a waiting lobby's `game_settings` and teams with `change_set
 
 **Playing again in the same lobby is a breaking change; clients must upgrade.** A lobby plays one game per round: every snapshot's lobby has `round` (from 1), and once the game has ended any active person calls `reopen(scope)`, which brings the started lobby back to `waiting` in its next round with the same members, teams, seats and settings, every person's ready cleared and an empty `start_roster`. Calling it again is safe. While the game runs it raises `LobbyError` with the new code `game_running` (409); for a closed lobby or a game that doesn't play again, `phase_conflict`. So `started` is no longer final, and the start roster can change between games. What to do: regenerate or upgrade the client, which needs `round` in every snapshot, and treat a lobby that goes from `started` back to `waiting` as the next round, not as an error.
 
+**Member settings are a breaking change; clients must upgrade.** Each person sets their own settings for the lobby's game, a JSON object that only the game reads, with `set_member_settings(scope, {...})`, while the lobby waits. Every snapshot member now has `member_settings` (null until set, always null for a seat), and every member sees every member's. The game checks them, and the new error code `invalid_member_settings` (422) carries its message; a game that takes none refuses every value. New settings clear your ready, the same settings again change nothing, and they stay when the lobby is reopened. Island Battles' bot choice moved here: its member settings are `{"bot": {"kind": "localhost"}}` or `{"bot": {"kind": "default", "level": N}}`, and the game's own `PUT /game/lobbies/{lobby_id}/bot` and `GET /game/lobbies/{lobby_id}/bots` are gone. What to do: regenerate or upgrade the client, which needs `member_settings` in every snapshot, and set an Island Battles bot with `set_member_settings` instead of the game's endpoint.
+
 ## Installing from PyPI
 
 Each release publishes this client to PyPI as `mpl-lobby-client`, at the release's version (the import name is `lobby_client`):
@@ -85,8 +87,8 @@ Expected conflicts such as `lobby_full`, `team_full`, `not_ready`,
 `empty_teams`, `not_host`, and `phase_conflict` are printed as typed command failures.
 A game can also refuse `ready`, or `start`, until a player does something in the
 game's own API: the failure is `game_requirement`, printed with the game's message.
-Island Battles refuses until the player has chosen a bot with
-`PUT /game/lobbies/{lobby_id}/bot` (see the [backend README](../../../backend/README.md#choosing-a-bot));
+Island Battles refuses until the player has set a bot in their member settings
+with `set_member_settings` (see the [backend README](../../../backend/README.md#choosing-a-bot));
 `--game-key quiz-demo` plays a game without that rule. An
 expired credential or lost membership explains that an explicit new session or
 join is required. Create uses one UUID request id for the process lifetime;

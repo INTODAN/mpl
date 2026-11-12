@@ -988,6 +988,19 @@ function roomRequester(lobbyID) {
   return (method, path, body) => requestForRoom(lobbyID, { method, path, body });
 }
 
+// A game's room module saves the player's own member settings for the game
+// through the page, with the lobby's PUT …/member-settings. The page shows the
+// snapshot it answers with, and the module gets it back. A refusal rejects
+// with an Error that carries the lobby's detail, code and status.
+function memberSettingsSaver(lobbyID) {
+  return async (settings) => {
+    if (!state.session || state.room?.lobby_id !== lobbyID) throw new Error("The page no longer shows this lobby.");
+    const next = await api(`${roomPath()}/member-settings`, "PUT", { member_settings: settings });
+    if (state.room?.lobby_id === lobbyID) acceptSnapshot(next);
+    return next;
+  };
+}
+
 // While the lobby waits, the game's room module shows the player the game's
 // own controls, such as a choice the game requires before getting ready, and
 // sees every new snapshot.
@@ -1011,7 +1024,7 @@ async function loadRoomPanel(game) {
     const module = await gameModule(game.room_module);
     if (epoch !== roomEpoch) return;
     $("game-room-panel").replaceChildren();
-    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID) });
+    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID), saveMemberSettings: memberSettingsSaver(lobbyID) });
     if (module.seatOptions) void loadSeatOptions(module.seatOptions, epoch);
   } catch {
     if (epoch === roomEpoch) $("game-room-panel").replaceChildren(element("p", "hint", "Could not load this game’s controls. Reload the page to try again."));
@@ -1080,7 +1093,7 @@ async function prepareDemoPlayer() {
   const game = games.get(snapshot.lobby.game_key);
   if (!game?.room_module) return;
   const { prepareDemo } = await gameModule(game.room_module);
-  if (prepareDemo) await prepareDemo({ lobbyID: snapshot.lobby.id, request: roomRequester(snapshot.lobby.id) });
+  if (prepareDemo) await prepareDemo({ lobbyID: snapshot.lobby.id, request: roomRequester(snapshot.lobby.id), saveMemberSettings: memberSettingsSaver(snapshot.lobby.id) });
 }
 
 async function mountSettingsForm() {

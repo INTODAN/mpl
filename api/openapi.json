@@ -552,6 +552,14 @@
             ],
             "type": "string"
           },
+          "member_settings": {
+            "additionalProperties": true,
+            "description": "The settings this person set for the game with setLobbyMemberSettings, compacted with sorted keys, which only the game reads. Null until they set some, and always null for a seat. Every member sees every member's settings.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "player_id": {
             "type": "string"
           },
@@ -585,7 +593,31 @@
           "join_sequence",
           "disconnected_until",
           "kind",
-          "seat_settings"
+          "seat_settings",
+          "member_settings"
+        ],
+        "type": "object"
+      },
+      "MemberSettingsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/MemberSettingsBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "member_settings": {
+            "additionalProperties": true,
+            "description": "Your own settings for the lobby's game, as a JSON object of at most 4 KiB that only the game reads, such as what plays for you. The game checks them; settings it doesn't accept fail with invalid_member_settings, and a game that takes none refuses every value.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "member_settings"
         ],
         "type": "object"
       },
@@ -607,6 +639,7 @@
               "invalid_input",
               "invalid_game_settings",
               "invalid_seat_settings",
+              "invalid_member_settings",
               "game_requirement",
               "game_running",
               "watcher_kicked",
@@ -1463,6 +1496,133 @@
         ]
       }
     },
+    "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/member-settings": {
+      "put": {
+        "description": "Sets your own settings for the lobby's game, a JSON object of at most 4 KiB that only the game reads, such as what plays for you, and returns the snapshot, which shows every member's member_settings. You can set only your own, as an active member (otherwise not_found), and only while the lobby waits (otherwise phase_conflict). The game checks member_settings: settings it doesn't accept fail with invalid_member_settings, whose detail says why, and a game that takes none refuses every value. New settings clear your ready, so the start sees what you confirmed by getting ready again, and publish lobby.changed. Settings equal to yours change nothing: the snapshot comes back with the same version and you stay ready. Your settings stay when you leave and rejoin and when the lobby is reopened for its next round.",
+        "operationId": "setLobbyMemberSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "game_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lobby_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberSettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Set your member settings",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership": {
       "delete": {
         "description": "Leaves durable membership across client instances.",
@@ -1575,7 +1735,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/ready": {
       "put": {
-        "description": "ready is required; false explicitly clears readiness. A member needs a team to get ready, or it fails with not_ready. A game can also require something of its own first, such as a choice made in the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem type and whose detail says what to do.",
+        "description": "ready is required; false explicitly clears readiness. A member needs a team to get ready, or it fails with not_ready. A game can also require something of its own first, such as member_settings set with setLobbyMemberSettings: then getting ready fails with 409 game_requirement, whose type is the game's problem type and whose detail says what to do.",
         "operationId": "setLobbyReady",
         "parameters": [
           {
@@ -1702,7 +1862,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/reopen": {
       "post": {
-        "description": "Brings a started lobby whose game has ended back to waiting, so its members can play another game in it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets not_found. The lobby's round goes up by one, and the game binds the next game to the new round. Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats stay ready, and the start roster is emptied until the next start. The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits, people can join it and the host can change its settings as before a first game.",
+        "description": "Brings a started lobby whose game has ended back to waiting, so its members can play another game in it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets not_found. The lobby's round goes up by one, and the game binds the next game to the new round. Members, teams, seats, the game settings, every member's member_settings and the host stay; every person's ready is cleared, seats stay ready, and the start roster is emptied until the next start. The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits, people can join it and the host can change its settings as before a first game.",
         "operationId": "reopenLobby",
         "parameters": [
           {

@@ -106,6 +106,13 @@ func (handler handlers) addSeat(ctx context.Context, input *AddSeatInput) (*Snap
 	}
 	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
 }
+func (handler handlers) memberSettings(ctx context.Context, input *MemberSettingsInput) (*SnapshotOutput, error) {
+	result, err := handler.app.SetMemberSettings(ctx, principalFromContext(ctx), scope(input.ScopeInput), domain.MemberSettingsRequest{MemberSettings: json.RawMessage(input.Body.MemberSettings)})
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &SnapshotOutput{Body: snapshotFromDomain(result)}, nil
+}
 func (handler handlers) removeSeat(ctx context.Context, input *RemoveSeatInput) (*SnapshotOutput, error) {
 	result, err := handler.app.RemoveSeat(ctx, principalFromContext(ctx), scope(input.ScopeInput), input.SeatID)
 	if err != nil {

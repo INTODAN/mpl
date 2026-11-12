@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -87,7 +88,7 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 				if member == nil || member.IsSeat() {
 					continue
 				}
-				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: member.DisplayName})
+				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: member.DisplayName, Settings: bytes.Clone(member.MemberSettings)})
 			}
 			if err := check(members, true); err != nil {
 				return domain.Change{}, err
@@ -113,9 +114,9 @@ const reopenAttempts = 3
 
 // Reopen brings a started lobby whose game ended back to waiting, in its next
 // round, so its members can play another game. Any active person may reopen
-// it. Members, teams, seats and the game settings stay; every person's ready
-// is cleared, seats stay ready, and the start roster is emptied for the next
-// start. A lobby that already waits is returned unchanged, so two members
+// it. Members, teams, seats, the game settings and member settings stay;
+// every person's ready is cleared, seats stay ready, and the start roster is
+// emptied for the next start. A lobby that already waits is returned unchanged, so two members
 // reopening at once both succeed. A closed lobby, or one whose game declares
 // no GameOver check, fails with phase_conflict, and one whose game hasn't
 // ended with game_running.

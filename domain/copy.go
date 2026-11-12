@@ -18,6 +18,7 @@ func (aggregate Aggregate) DeepCopy() Aggregate {
 		result.Members[index].TeamID = optional.Copy(aggregate.Members[index].TeamID)
 		result.Members[index].DisconnectedUntil = optional.Copy(aggregate.Members[index].DisconnectedUntil)
 		result.Members[index].SeatSettings = bytes.Clone(aggregate.Members[index].SeatSettings)
+		result.Members[index].MemberSettings = bytes.Clone(aggregate.Members[index].MemberSettings)
 	}
 	result.Leases = append([]Lease{}, aggregate.Leases...)
 	for index := range result.Leases {

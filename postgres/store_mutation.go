@@ -152,8 +152,8 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool, origi
 		if member.SeatRequestID != "" {
 			seatRequestID = &member.SeatRequestID
 		}
-		record := MembershipRecord{ID: member.ID, LobbyID: aggregate.Lobby.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: string(kind), SeatSettings: seatSettings, SeatRequestID: seatRequestID}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"generation", "active", "team_id", "ready", "joined_at", "join_sequence", "disconnected_until"})}).Create(&record).Error; err != nil {
+		record := MembershipRecord{ID: member.ID, LobbyID: aggregate.Lobby.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: string(kind), SeatSettings: seatSettings, SeatRequestID: seatRequestID, MemberSettings: member.MemberSettings}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.AssignmentColumns([]string{"generation", "active", "team_id", "ready", "joined_at", "join_sequence", "disconnected_until", "member_settings"})}).Create(&record).Error; err != nil {
 			return err
 		}
 	}

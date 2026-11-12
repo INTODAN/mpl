@@ -37,6 +37,7 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/reopen":                      {http.MethodPost, "reopenLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats":                       {http.MethodPost, "addLobbySeat", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}":             {http.MethodDelete, "removeLobbySeat", http.StatusOK},
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/member-settings":             {http.MethodPut, "setLobbyMemberSettings", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  {http.MethodDelete, "leaveLobby", http.StatusNoContent},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   {http.MethodPost, "heartbeatLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": {http.MethodDelete, "releaseLobbyLease", http.StatusNoContent},
@@ -252,6 +253,43 @@ func TestSeatsPassSettingsThroughUnreadAndShowTheirKind(t *testing.T) {
 	}
 }
 
+func TestMemberSettingsPassThroughUnreadAndShowForEveryMember(t *testing.T) {
+	t.Parallel()
+	application := &fakeApplication{}
+	_, api := newTestAPIWithApp(t, application)
+	path := "/lobby/v1/games/island-battles/lobbies/" + testUUID + "/member-settings"
+	const settings = `{"bot": {"kind": "default", "level": 2}}`
+	response := api.Put(path, "Authorization: Bearer good", strings.NewReader(`{"member_settings":`+settings+`}`))
+	if response.Code != http.StatusOK || string(application.memberRequest.MemberSettings) != settings || application.memberScope != (domain.Scope{GameKey: "island-battles", LobbyID: testUUID}) {
+		t.Fatalf("set member settings = %d %s; application received %#v in %#v", response.Code, response.Body.String(), application.memberRequest, application.memberScope)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"seat_settings":null,"member_settings":{"bot":{"kind":"default","level":2}}`) || !strings.Contains(body, `"display_name":"Guest"`) || !strings.Contains(body, `"kind":"human","seat_settings":null,"member_settings":null`) {
+		t.Fatalf("snapshot members: %s", body)
+	}
+	for _, invalid := range []map[string]any{{}, {"member_settings": "text"}, {"member_settings": nil}, {"member_settings": []int{1}}} {
+		application.memberRequest = domain.MemberSettingsRequest{}
+		response = api.Put(path, "Authorization: Bearer good", invalid)
+		if response.Code != http.StatusUnprocessableEntity || application.memberRequest.MemberSettings != nil {
+			t.Fatalf("invalid body %v = %d %s", invalid, response.Code, response.Body.String())
+		}
+	}
+	for code, status := range map[domain.ErrorCode]int{domain.CodeNotFound: http.StatusNotFound, domain.CodePhaseConflict: http.StatusConflict, domain.CodeInvalidMemberSettings: http.StatusUnprocessableEntity} {
+		application.memberError = domain.NewError(code, "kind must be localhost or default")
+		response = api.Put(path, "Authorization: Bearer good", map[string]any{"member_settings": map[string]any{"bot": map[string]any{"kind": "remote"}}})
+		var problem Problem
+		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || response.Code != status || problem.Code != code {
+			t.Fatalf("%s = %d %s", code, response.Code, response.Body.String())
+		}
+		if code == domain.CodeInvalidMemberSettings && problem.Detail != "kind must be localhost or default" {
+			t.Fatalf("invalid member settings detail = %q", problem.Detail)
+		}
+	}
+	if response = api.Put(path, "", map[string]any{"member_settings": map[string]any{}}); response.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous member settings = %d", response.Code)
+	}
+}
+
 func TestWatchRoutesReturnTheWatchChannelListAndKick(t *testing.T) {
 	t.Parallel()
 	application := &fakeApplication{}
@@ -436,6 +474,9 @@ type fakeApplication struct {
 	watchRequest    domain.WatchRequest
 	watchError      error
 	kickedWatcher   string
+	memberRequest   domain.MemberSettingsRequest
+	memberScope     domain.Scope
+	memberError     error
 }
 
 func fakeSnapshot() domain.Snapshot {
@@ -497,6 +538,19 @@ func (application *fakeApplication) AddSeat(_ context.Context, _ domain.Principa
 	snapshot.Members = []domain.Member{
 		{ID: testUUID, PlayerID: testUUID, DisplayName: "Host", Generation: 1, Active: true},
 		{ID: "33333333-3333-4333-8333-333333333333", PlayerID: "44444444-4444-4444-8444-444444444444", DisplayName: "Bot (level 2)", Generation: 1, Active: true, TeamID: &teamID, Ready: true, Kind: domain.MemberSeat, SeatSettings: request.SeatSettings},
+	}
+	return snapshot, nil
+}
+func (application *fakeApplication) SetMemberSettings(_ context.Context, _ domain.Principal, scope domain.Scope, request domain.MemberSettingsRequest) (domain.Snapshot, error) {
+	application.memberRequest = request
+	application.memberScope = scope
+	if application.memberError != nil {
+		return domain.Snapshot{}, application.memberError
+	}
+	snapshot := fakeSnapshot()
+	snapshot.Members = []domain.Member{
+		{ID: testUUID, PlayerID: testUUID, DisplayName: "Host", Generation: 1, Active: true, MemberSettings: request.MemberSettings},
+		{ID: "33333333-3333-4333-8333-333333333333", PlayerID: "44444444-4444-4444-8444-444444444444", DisplayName: "Guest", Generation: 1, Active: true},
 	}
 	return snapshot, nil
 }

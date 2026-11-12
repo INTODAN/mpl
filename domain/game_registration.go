@@ -33,6 +33,10 @@ type GameRegistration struct {
 	// team, such as the level of the game's bot that plays it, and names the
 	// seat. Nil means the game has no seats and refuses every one.
 	ValidateSeat SeatValidator
+	// ValidateMemberSettings checks the member settings that a person sets
+	// for themselves in a waiting lobby, such as what plays for them. Nil
+	// means the game takes no member settings and refuses every value.
+	ValidateMemberSettings MemberSettingsValidator
 	// GameOver tells whether the game of a lobby's round has ended, so that
 	// the lobby can be reopened for its next round. Nil means the game's
 	// lobbies play one game and are never reopened.
@@ -59,15 +63,23 @@ type GameOverCheck func(ctx context.Context, lobbyID string, round int64) (bool,
 // ErrUnavailable.
 type SeatValidator func(ctx context.Context, settings json.RawMessage) (displayName string, err error)
 
+// MemberSettingsValidator receives the member settings that a person sets for
+// themselves in a lobby, as a canonical JSON object, with the lobby's ID. To
+// reject them, return an error whose message is safe to show the client. To
+// report that the check itself failed, return the context's error or an error
+// wrapping ErrUnavailable.
+type MemberSettingsValidator func(ctx context.Context, lobbyID string, settings json.RawMessage) error
+
 // ReadyGate loads what a game needs to decide which members of a lobby may get
-// ready, such as a choice each player makes in the game's own API. The lobby
-// calls it with the lobby's ID before the transaction of a request that sets a
-// member ready or starts the lobby, so the game never reads its data while the
-// lobby holds the room's lock. The returned ReadyCheck then runs inside the
-// transaction, for the member getting ready or for every member of the start
-// roster. Because the data is read first, a member must keep meeting the
-// condition once they do, for as long as the lobby is waiting: a game may let
-// a member change what they chose, but not take the choice away.
+// ready. Each ReadyMember carries the member's settings, so a game that
+// decides from them alone reads nothing and returns its check at once. The
+// lobby calls the gate with the lobby's ID before the transaction of a request
+// that sets a member ready or starts the lobby, so a game that does read data
+// of its own never reads it while the lobby holds the room's lock. The
+// returned ReadyCheck then runs inside the transaction, for the member getting
+// ready or for every member of the start roster. Data the gate read first may
+// be stale by then, so a member must keep meeting a condition on that data
+// once they do, for as long as the lobby is waiting.
 //
 // To report that the gate itself could not run, return the context's error or
 // an error wrapping ErrUnavailable; any other error is reported as unavailable
@@ -78,6 +90,9 @@ type ReadyGate func(ctx context.Context, lobbyID string) (ReadyCheck, error)
 type ReadyMember struct {
 	PlayerID    string
 	DisplayName string
+	// Settings are the member's member settings, the canonical JSON object
+	// that the game checked when they set it, or nil when they set none.
+	Settings json.RawMessage
 }
 
 // ReadyCheck reports whether members may be ready. It gets the one member who
@@ -204,6 +219,20 @@ func NormalizeSeatSettings(settings json.RawMessage) (json.RawMessage, error) {
 	return normalizeObject(settings, CodeInvalidSeatSettings, "seat settings", MaxSeatSettingsBytes)
 }
 
+// MaxMemberSettingsBytes bounds the canonical settings stored with each
+// member.
+const MaxMemberSettingsBytes = 4 * 1024
+
+// NormalizeMemberSettings returns a member's settings as one compact JSON
+// object with sorted keys, as NormalizeSeatSettings does for a seat. Omitted
+// settings are refused.
+func NormalizeMemberSettings(settings json.RawMessage) (json.RawMessage, error) {
+	if len(settings) == 0 {
+		return nil, NewError(CodeInvalidMemberSettings, "member settings must be a JSON object")
+	}
+	return normalizeObject(settings, CodeInvalidMemberSettings, "member settings", MaxMemberSettingsBytes)
+}
+
 // normalizeObject canonicalizes one JSON object of at most maximum bytes, or
 // fails with code and a message that names what the object is.
 func normalizeObject(settings json.RawMessage, code ErrorCode, what string, maximum int) (json.RawMessage, error) {
@@ -312,4 +341,31 @@ func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey string, s
 		return nil, "", &Error{Code: CodeUnavailable, Message: ErrUnavailable.Message, Cause: errors.New("the game named a seat with an invalid display name")}
 	}
 	return canonical, name, nil
+}
+
+// ValidateMemberSettings normalizes a person's member settings and checks them
+// with the game's validator for the lobby. It returns the canonical settings
+// to store with the member. A game without a validator takes no member
+// settings and refuses every value with CodeInvalidMemberSettings.
+func (policy Policy) ValidateMemberSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage) (json.RawMessage, error) {
+	game, err := policy.Game(gameKey)
+	if err != nil {
+		return nil, err
+	}
+	canonical, err := NormalizeMemberSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	if game.ValidateMemberSettings == nil {
+		return nil, NewError(CodeInvalidMemberSettings, "this game takes no member settings")
+	}
+	err = game.ValidateMemberSettings(ctx, lobbyID, bytes.Clone(canonical))
+	switch {
+	case err == nil:
+		return canonical, nil
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrUnavailable):
+		return nil, err
+	default:
+		return nil, &Error{Code: CodeInvalidMemberSettings, Message: err.Error(), Cause: err}
+	}
 }

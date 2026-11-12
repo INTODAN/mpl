@@ -229,6 +229,42 @@ func TestStorePersistsFalseZeroNull(t *testing.T) {
 		t.Fatal("zero fields omitted")
 	}
 }
+
+// Member settings are stored as jsonb, which reorders keys and adds spaces,
+// and are read back compact with sorted keys, as the lobby normalized them.
+func TestStorePersistsMemberSettingsCanonically(t *testing.T) {
+	fixture := newStoreFixture(t)
+	var columnType string
+	if err := fixture.db.Raw(`SELECT data_type FROM information_schema.columns WHERE table_name = 'lobby_memberships' AND column_name = 'member_settings'`).Scan(&columnType).Error; err != nil || columnType != "jsonb" {
+		t.Fatalf("member_settings column type = %q, %v", columnType, err)
+	}
+	if settings := readStore(t, fixture).Members[0].MemberSettings; settings != nil {
+		t.Fatalf("a new member's settings = %s, want null", settings)
+	}
+	const canonical = `{"bot":{"kind":"default","level":2},"name":"Ada <3","weights":[1.5,10000000000000000000001]}`
+	set := func(settings json.RawMessage) {
+		t.Helper()
+		_, err := fixture.store.Transact(context.Background(), fixture.aggregate.Lobby.Scope(), func(aggregate *domain.Aggregate) (domain.Change, error) {
+			aggregate.Members[0].MemberSettings = settings
+			return domain.Change{PublicChanged: true}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(json.RawMessage(canonical))
+	var stored string
+	if err := fixture.db.Raw(`SELECT member_settings::text FROM lobby_memberships WHERE id = ?`, fixture.aggregate.Members[0].ID).Scan(&stored).Error; err != nil || stored == canonical {
+		t.Fatalf("stored member_settings = %q, %v; want jsonb's own formatting", stored, err)
+	}
+	if settings := readStore(t, fixture).Members[0].MemberSettings; string(settings) != canonical {
+		t.Fatalf("read member settings = %s, want %s", settings, canonical)
+	}
+	set(nil)
+	if settings := readStore(t, fixture).Members[0].MemberSettings; settings != nil {
+		t.Fatalf("cleared member settings = %s, want null", settings)
+	}
+}
 func TestStoreLeaseOnlyMutationDoesNotInvalidate(t *testing.T) {
 	fixture := newStoreFixture(t)
 	deadline := fixture.clock.now.Add(time.Minute)

@@ -21,13 +21,14 @@ from lobby_api_client.api.lobby import (
     add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_session,
     get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
     kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, reopen_lobby, select_lobby_team,
-    set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
+    set_lobby_member_settings, set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
 )
 from lobby_api_client.models import (
     AddSeatBody, AddSeatBodySeatSettings, ChangeSettingsBody, ChangeSettingsBodyGameSettings,
     ConnectionTokenInputBody, CreateLobbyBody,
     CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
-    JoinLobbyBody, ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
+    JoinLobbyBody, MemberSettingsBody, MemberSettingsBodyMemberSettings,
+    ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
     WatchAccess, Watcher, WatchLobbyBody,
 )
 from lobby_api_client.types import UNSET
@@ -482,8 +483,8 @@ class LobbyClient:
         """Bring a started lobby whose game has ended back to waiting.
 
         Any active person in the lobby can, to play another game in it. The
-        lobby's round goes up by one; members, teams, seats and the game
-        settings stay, every person's ready is cleared and the start roster is
+        lobby's round goes up by one; members, teams, seats, the game
+        settings and member settings stay, every person's ready is cleared and the start roster is
         emptied. A lobby that already waits comes back unchanged, so calling it
         again is safe. While the game runs it raises LobbyError with code
         game_running; for a closed lobby, or a game that doesn't play again,
@@ -524,6 +525,18 @@ class LobbyClient:
         body = AddSeatBody(request_id=UUID(str(request_id)) if request_id else uuid4(), team_id=UUID(team_id),
                            seat_settings=AddSeatBodySeatSettings.from_dict(seat_settings))
         return await self._command(scope, add_lobby_seat, body=body)
+
+    async def set_member_settings(self, scope: Scope, member_settings: dict[str, Any]) -> Snapshot:
+        """Set your own settings for the lobby's game while it waits.
+
+        member_settings is the game's own JSON object for you, such as what
+        plays for you; the snapshot shows every member's. Settings the game
+        rejects raise LobbyError with code invalid_member_settings and the
+        game's message, and a started lobby raises phase_conflict. New
+        settings clear your ready; the same settings again change nothing.
+        """
+        body = MemberSettingsBody(member_settings=MemberSettingsBodyMemberSettings.from_dict(member_settings))
+        return await self._command(scope, set_lobby_member_settings, body=body)
 
     async def remove_seat(self, scope: Scope, seat_id: str) -> Snapshot:
         """Remove a seat that the host added, by its member ID."""

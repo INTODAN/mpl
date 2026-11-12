@@ -22,6 +22,9 @@ type Application interface {
 	// plays while the lobby waits. RemoveSeat takes the seat's member ID.
 	AddSeat(context.Context, Principal, Scope, AddSeatRequest) (Snapshot, error)
 	RemoveSeat(context.Context, Principal, Scope, string) (Snapshot, error)
+	// SetMemberSettings sets the caller's own member settings while the
+	// lobby waits.
+	SetMemberSettings(context.Context, Principal, Scope, MemberSettingsRequest) (Snapshot, error)
 	Leave(context.Context, Principal, Scope) error
 	Heartbeat(context.Context, Principal, Scope, HeartbeatRequest) (HeartbeatResult, error)
 	ReleaseLease(context.Context, Principal, Scope, ReleaseLeaseRequest) error

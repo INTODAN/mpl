@@ -94,12 +94,13 @@ def sync_detailed(
      Brings a started lobby whose game has ended back to waiting, so its members can play another game in
     it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets
     not_found. The lobby's round goes up by one, and the game binds the next game to the new round.
-    Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats
-    stay ready, and the start roster is emptied until the next start. The change publishes
-    lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once
-    both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of
-    a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits,
-    people can join it and the host can change its settings as before a first game.
+    Members, teams, seats, the game settings, every member's member_settings and the host stay; every
+    person's ready is cleared, seats stay ready, and the start roster is emptied until the next start.
+    The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members
+    reopening it at once both succeed. A lobby whose game is still running fails with game_running; a
+    closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict.
+    While the lobby waits, people can join it and the host can change its settings as before a first
+    game.
 
     Args:
         game_key (str):
@@ -136,12 +137,13 @@ def sync(
      Brings a started lobby whose game has ended back to waiting, so its members can play another game in
     it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets
     not_found. The lobby's round goes up by one, and the game binds the next game to the new round.
-    Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats
-    stay ready, and the start roster is emptied until the next start. The change publishes
-    lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once
-    both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of
-    a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits,
-    people can join it and the host can change its settings as before a first game.
+    Members, teams, seats, the game settings, every member's member_settings and the host stay; every
+    person's ready is cleared, seats stay ready, and the start roster is emptied until the next start.
+    The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members
+    reopening it at once both succeed. A lobby whose game is still running fails with game_running; a
+    closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict.
+    While the lobby waits, people can join it and the host can change its settings as before a first
+    game.
 
     Args:
         game_key (str):
@@ -173,12 +175,13 @@ async def asyncio_detailed(
      Brings a started lobby whose game has ended back to waiting, so its members can play another game in
     it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets
     not_found. The lobby's round goes up by one, and the game binds the next game to the new round.
-    Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats
-    stay ready, and the start roster is emptied until the next start. The change publishes
-    lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once
-    both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of
-    a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits,
-    people can join it and the host can change its settings as before a first game.
+    Members, teams, seats, the game settings, every member's member_settings and the host stay; every
+    person's ready is cleared, seats stay ready, and the start roster is emptied until the next start.
+    The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members
+    reopening it at once both succeed. A lobby whose game is still running fails with game_running; a
+    closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict.
+    While the lobby waits, people can join it and the host can change its settings as before a first
+    game.
 
     Args:
         game_key (str):
@@ -213,12 +216,13 @@ async def asyncio(
      Brings a started lobby whose game has ended back to waiting, so its members can play another game in
     it, and returns the snapshot. Any active person in the lobby may reopen it; anyone else gets
     not_found. The lobby's round goes up by one, and the game binds the next game to the new round.
-    Members, teams, seats, the game settings and the host stay; every person's ready is cleared, seats
-    stay ready, and the start roster is emptied until the next start. The change publishes
-    lobby.changed. A lobby that already waits is returned unchanged, so two members reopening it at once
-    both succeed. A lobby whose game is still running fails with game_running; a closed lobby, or one of
-    a game that doesn't let its lobbies play again, fails with phase_conflict. While the lobby waits,
-    people can join it and the host can change its settings as before a first game.
+    Members, teams, seats, the game settings, every member's member_settings and the host stay; every
+    person's ready is cleared, seats stay ready, and the start roster is emptied until the next start.
+    The change publishes lobby.changed. A lobby that already waits is returned unchanged, so two members
+    reopening it at once both succeed. A lobby whose game is still running fails with game_running; a
+    closed lobby, or one of a game that doesn't let its lobbies play again, fails with phase_conflict.
+    While the lobby waits, people can join it and the host can change its settings as before a first
+    game.
 
     Args:
         game_key (str):

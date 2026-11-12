@@ -70,6 +70,7 @@ test("lobby requests that create, join, start, change seats or remove watchers a
   assert.equal(isRepeatableLobbyRequest("PUT", `${path}/ready`), true);
   assert.equal(isRepeatableLobbyRequest("POST", `${path}/heartbeat`), true);
   assert.equal(isRepeatableLobbyRequest("PUT", `${path}/settings`), true);
+  assert.equal(isRepeatableLobbyRequest("PUT", `${path}/member-settings`), true);
   assert.equal(isRepeatableLobbyRequest("POST", `${path}/reopen`), true);
   assert.equal(isRepeatableLobbyRequest("POST", "/lobbies"), false);
   assert.equal(isRepeatableLobbyRequest("POST", "/memberships"), false);

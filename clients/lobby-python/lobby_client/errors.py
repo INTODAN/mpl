@@ -1,7 +1,8 @@
 """Typed public errors. Credentials and server response bodies are never
 included, except the game's own message for invalid_game_settings,
-invalid_seat_settings and game_requirement, and the game's problem type for
-game_requirement, which the game writes for clients."""
+invalid_seat_settings, invalid_member_settings and game_requirement, and the
+game's problem type for game_requirement, which the game writes for
+clients."""
 
 
 class LobbyError(Exception):
@@ -37,7 +38,7 @@ class ClientClosedError(LobbyError):
 
 def response_error(status: int, code: str, detail: str | None = None,
                    problem_type: str | None = None) -> LobbyError:
-    if code in ("invalid_game_settings", "invalid_seat_settings"):
+    if code in ("invalid_game_settings", "invalid_seat_settings", "invalid_member_settings"):
         # The game's validator wrote this message for clients, such as which
         # settings field is invalid.
         return LobbyError(code, status, detail or None)

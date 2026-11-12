@@ -1,8 +1,11 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 
 	"islandBattles/lobby/domain"
 
@@ -68,7 +71,11 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		return domain.Aggregate{}, err
 	}
 	for _, member := range members {
-		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings, SeatRequestID: deref(member.SeatRequestID)})
+		memberSettings, err := canonicalObject(member.MemberSettings)
+		if err != nil {
+			return domain.Aggregate{}, fmt.Errorf("member settings of membership %s: %w", member.ID, err)
+		}
+		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings, MemberSettings: memberSettings, SeatRequestID: deref(member.SeatRequestID)})
 	}
 	var leases []LeaseRecord
 	if err := tx.Where(&LeaseRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "player_id"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "generation"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "client_instance_id"}}).Find(&leases).Error; err != nil {
@@ -95,6 +102,28 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 }
 
 // deref returns the string a nullable column holds, or "" for null.
+// canonicalObject compacts a stored jsonb object with sorted keys, as the
+// lobby normalized it before storing it: jsonb reorders keys and adds spaces,
+// and an unchanged value must compare equal to a new request's. Null stays nil.
+func canonicalObject(stored []byte) (json.RawMessage, error) {
+	if stored == nil {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(stored))
+	decoder.UseNumber()
+	var object map[string]any
+	if err := decoder.Decode(&object); err != nil {
+		return nil, err
+	}
+	var canonical bytes.Buffer
+	encoder := json.NewEncoder(&canonical)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(object); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(canonical.Bytes(), []byte("\n")), nil
+}
+
 func deref(value *string) string {
 	if value == nil {
 		return ""

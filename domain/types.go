@@ -106,6 +106,12 @@ type Member struct {
 	// the host added the seat, and nil for a human. The lobby stores it
 	// without reading it.
 	SeatSettings json.RawMessage `json:"seat_settings"`
+	// MemberSettings is the canonical JSON object that the game checked when
+	// the person last set their own settings for the game, such as what plays
+	// for them, or nil when they set none. It stays when the person leaves and
+	// rejoins, and when the lobby is reopened for its next round. The lobby
+	// stores it without reading it.
+	MemberSettings json.RawMessage `json:"member_settings"`
 	// SeatRequestID is the request ID that added the seat, or empty when it
 	// had none. It never leaves the lobby.
 	SeatRequestID string `json:"-"`

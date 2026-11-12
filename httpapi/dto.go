@@ -227,6 +227,50 @@ func (MemberSeatSettings) Schema(huma.Registry) *huma.Schema {
 	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Nullable: true, Description: "For a seat, the settings the host added it with, compacted with sorted keys, which only the game reads. Null for a person."}
 }
 
+type MemberSettingsInput struct {
+	ScopeInput
+	Body MemberSettingsBody `json:"-"`
+}
+type MemberSettingsBody struct {
+	MemberSettings MemberSettings `json:"member_settings" required:"true"`
+}
+
+// MemberSettings is a game's own JSON object for one person in a lobby. Like
+// GameSettings, it keeps the raw bytes.
+type MemberSettings json.RawMessage
+
+func (settings MemberSettings) MarshalJSON() ([]byte, error) {
+	if len(settings) == 0 {
+		return []byte("null"), nil
+	}
+	return settings, nil
+}
+func (settings *MemberSettings) UnmarshalJSON(data []byte) error {
+	*settings = bytes.Clone(data)
+	return nil
+}
+func (MemberSettings) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Description: "Your own settings for the lobby's game, as a JSON object of at most 4 KiB that only the game reads, such as what plays for you. The game checks them; settings it doesn't accept fail with invalid_member_settings, and a game that takes none refuses every value."}
+}
+
+// MemberMemberSettings is a member's member settings: the object a person
+// set, or null.
+type MemberMemberSettings json.RawMessage
+
+func (settings MemberMemberSettings) MarshalJSON() ([]byte, error) {
+	if len(settings) == 0 {
+		return []byte("null"), nil
+	}
+	return settings, nil
+}
+func (settings *MemberMemberSettings) UnmarshalJSON(data []byte) error {
+	*settings = bytes.Clone(data)
+	return nil
+}
+func (MemberMemberSettings) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeObject, AdditionalProperties: true, Nullable: true, Description: "The settings this person set for the game with setLobbyMemberSettings, compacted with sorted keys, which only the game reads. Null until they set some, and always null for a seat. Every member sees every member's settings."}
+}
+
 type RemoveSeatInput struct {
 	ScopeInput
 	SeatID string `path:"seat_id" format:"uuid" doc:"The seat's member ID."`
@@ -293,18 +337,19 @@ type Team struct {
 	Order int    `json:"order"`
 }
 type Member struct {
-	ID                string             `json:"id"`
-	PlayerID          string             `json:"player_id"`
-	DisplayName       string             `json:"display_name"`
-	Generation        int64              `json:"generation"`
-	Active            bool               `json:"active"`
-	TeamID            *string            `json:"team_id"`
-	Ready             bool               `json:"ready"`
-	JoinedAt          time.Time          `json:"joined_at"`
-	JoinSequence      int64              `json:"join_sequence"`
-	DisconnectedUntil *time.Time         `json:"disconnected_until"`
-	Kind              domain.MemberKind  `json:"kind" enum:"human,seat" doc:"human: a person who joined. seat: a seat that no person plays, such as the game's bot, which the host added to a team; it is always ready, never disconnects or hosts, and the game plays it from seat_settings. Its id is the seat ID for removing it."`
-	SeatSettings      MemberSeatSettings `json:"seat_settings"`
+	ID                string               `json:"id"`
+	PlayerID          string               `json:"player_id"`
+	DisplayName       string               `json:"display_name"`
+	Generation        int64                `json:"generation"`
+	Active            bool                 `json:"active"`
+	TeamID            *string              `json:"team_id"`
+	Ready             bool                 `json:"ready"`
+	JoinedAt          time.Time            `json:"joined_at"`
+	JoinSequence      int64                `json:"join_sequence"`
+	DisconnectedUntil *time.Time           `json:"disconnected_until"`
+	Kind              domain.MemberKind    `json:"kind" enum:"human,seat" doc:"human: a person who joined. seat: a seat that no person plays, such as the game's bot, which the host added to a team; it is always ready, never disconnects or hosts, and the game plays it from seat_settings. Its id is the seat ID for removing it."`
+	SeatSettings      MemberSeatSettings   `json:"seat_settings"`
+	MemberSettings    MemberMemberSettings `json:"member_settings"`
 }
 type StartRosterEntry struct {
 	PlayerID  string `json:"player_id"`
@@ -332,7 +377,7 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		if member.IsSeat() {
 			kind, settings = domain.MemberSeat, MemberSeatSettings(member.SeatSettings)
 		}
-		members[index] = Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: kind, SeatSettings: settings}
+		members[index] = Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: kind, SeatSettings: settings, MemberSettings: MemberMemberSettings(member.MemberSettings)}
 	}
 	roster := make([]StartRosterEntry, len(source.StartRoster))
 	for index, entry := range source.StartRoster {

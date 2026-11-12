@@ -103,9 +103,9 @@ def sync_detailed(
     """Set readiness
 
      ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
-    fails with not_ready. A game can also require something of its own first, such as a choice made in
-    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
-    type and whose detail says what to do.
+    fails with not_ready. A game can also require something of its own first, such as member_settings
+    set with setLobbyMemberSettings: then getting ready fails with 409 game_requirement, whose type is
+    the game's problem type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -143,9 +143,9 @@ def sync(
     """Set readiness
 
      ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
-    fails with not_ready. A game can also require something of its own first, such as a choice made in
-    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
-    type and whose detail says what to do.
+    fails with not_ready. A game can also require something of its own first, such as member_settings
+    set with setLobbyMemberSettings: then getting ready fails with 409 game_requirement, whose type is
+    the game's problem type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -178,9 +178,9 @@ async def asyncio_detailed(
     """Set readiness
 
      ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
-    fails with not_ready. A game can also require something of its own first, such as a choice made in
-    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
-    type and whose detail says what to do.
+    fails with not_ready. A game can also require something of its own first, such as member_settings
+    set with setLobbyMemberSettings: then getting ready fails with 409 game_requirement, whose type is
+    the game's problem type and whose detail says what to do.
 
     Args:
         game_key (str):
@@ -216,9 +216,9 @@ async def asyncio(
     """Set readiness
 
      ready is required; false explicitly clears readiness. A member needs a team to get ready, or it
-    fails with not_ready. A game can also require something of its own first, such as a choice made in
-    the game's API: then getting ready fails with 409 game_requirement, whose type is the game's problem
-    type and whose detail says what to do.
+    fails with not_ready. A game can also require something of its own first, such as member_settings
+    set with setLobbyMemberSettings: then getting ready fails with 409 game_requirement, whose type is
+    the game's problem type and whose detail says what to do.
 
     Args:
         game_key (str):

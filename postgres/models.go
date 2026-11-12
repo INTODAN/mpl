@@ -71,6 +71,8 @@ func (TeamRecord) TableName() string { return "lobby_teams" }
 // person plays is kind "seat" with the game's settings, and a person is
 // "human" with null settings. SeatRequestID is the request ID that added the
 // seat, unique within its lobby, or null. All are written once, when the row is created.
+// MemberSettings is migration 0010's: the person's own settings for the game,
+// or null until they set some.
 type MembershipRecord struct {
 	ID                string     `gorm:"column:id;type:uuid;primaryKey"`
 	LobbyID           string     `gorm:"column:lobby_id;type:uuid;not null"`
@@ -86,6 +88,7 @@ type MembershipRecord struct {
 	Kind              string     `gorm:"column:kind;not null;default:human"`
 	SeatSettings      []byte     `gorm:"column:seat_settings;type:json"`
 	SeatRequestID     *string    `gorm:"column:seat_request_id;type:uuid"`
+	MemberSettings    []byte     `gorm:"column:member_settings;type:jsonb"`
 }
 
 func (MembershipRecord) TableName() string { return "lobby_memberships" }

@@ -22,7 +22,10 @@ from .lobby_invalidation_schema_version import LobbyInvalidationSchemaVersion
 from .lobby_invalidation_type import LobbyInvalidationType
 from .member import Member
 from .member_kind import MemberKind
+from .member_member_settings_type_0 import MemberMemberSettingsType0
 from .member_seat_settings_type_0 import MemberSeatSettingsType0
+from .member_settings_body import MemberSettingsBody
+from .member_settings_body_member_settings import MemberSettingsBodyMemberSettings
 from .problem import Problem
 from .problem_code import ProblemCode
 from .ready_body import ReadyBody
@@ -61,7 +64,10 @@ __all__ = (
     "LobbyInvalidationType",
     "Member",
     "MemberKind",
+    "MemberMemberSettingsType0",
     "MemberSeatSettingsType0",
+    "MemberSettingsBody",
+    "MemberSettingsBodyMemberSettings",
     "Problem",
     "ProblemCode",
     "ReadyBody",

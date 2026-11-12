@@ -18,6 +18,9 @@ const (
 	CodeInvalidInput        ErrorCode = "invalid_input"
 	CodeInvalidGameSettings ErrorCode = "invalid_game_settings"
 	CodeInvalidSeatSettings ErrorCode = "invalid_seat_settings"
+	// CodeInvalidMemberSettings refuses member settings that the game
+	// doesn't accept, and every value for a game that takes none.
+	CodeInvalidMemberSettings ErrorCode = "invalid_member_settings"
 	// CodeGameRequirement is a game's own refusal, from its ReadyGate. The
 	// error's Type names the game's problem.
 	CodeGameRequirement ErrorCode = "game_requirement"

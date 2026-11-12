@@ -57,6 +57,12 @@ type AddSeatRequest struct {
 	SeatSettings json.RawMessage `json:"seat_settings"`
 }
 
+// MemberSettingsRequest sets the caller's own member settings, a JSON object
+// that only the game reads, such as what plays for them.
+type MemberSettingsRequest struct {
+	MemberSettings json.RawMessage `json:"member_settings"`
+}
+
 // WatchRequest asks to watch the lobby of a game that has this join code.
 type WatchRequest struct {
 	GameKey  string `json:"game_key"`

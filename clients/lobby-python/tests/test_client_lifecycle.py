@@ -225,7 +225,7 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
     def member(kind, settings):
         return dict(id=seat, player_id=str(uuid4()), display_name="Bot (level 2)", generation=1, active=True,
                     team_id=team, ready=True, joined_at="2026-09-20T00:00:00Z", join_sequence=2,
-                    disconnected_until=None, kind=kind, seat_settings=settings)
+                    disconnected_until=None, kind=kind, seat_settings=settings, member_settings=None)
 
     async def seats(request):
         if "/seats" not in request.url.path:
@@ -259,6 +259,34 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
         "invalid_seat_settings", 422, "bot_level must be 1, 2 or 3")
     removed = await h.client.remove_seat(SCOPE, seat)
     assert removed.members == [] and seen[-1][:2] == ("DELETE", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/seats/{seat}")
+
+
+async def test_member_settings_send_your_own_settings_for_the_game(h):
+    seen = []
+
+    async def member_settings(request):
+        if not request.url.path.endswith("/member-settings"):
+            return None
+        sent = json.loads(request.content)
+        seen.append((request.method, request.url.path, sent))
+        if sent["member_settings"].get("bot", {}).get("kind") == "uploaded":
+            return httpx.Response(422, json={"code": "invalid_member_settings", "status": 422, "title": "Unprocessable Entity",
+                                             "detail": "kind must be localhost or default"})
+        body = snapshot(5)
+        body["members"] = [dict(id=str(uuid4()), player_id=str(uuid4()), display_name="Alice", generation=1, active=True,
+                                team_id=None, ready=False, joined_at="2026-09-20T00:00:00Z", join_sequence=1,
+                                disconnected_until=None, kind="human", seat_settings=None, member_settings=sent["member_settings"])]
+        return httpx.Response(200, json=body)
+    h.hook = member_settings
+    await h.join()
+    chosen = await h.client.set_member_settings(SCOPE, {"bot": {"kind": "default", "level": 2}})
+    assert chosen.lobby.version == 5 and chosen.members[0].member_settings.to_dict() == {"bot": {"kind": "default", "level": 2}}
+    assert seen[0] == ("PUT", f"/lobby/v1/games/quiz-demo/lobbies/{SCOPE.lobby_id}/member-settings",
+                       {"member_settings": {"bot": {"kind": "default", "level": 2}}})
+    with pytest.raises(LobbyError) as invalid:
+        await h.client.set_member_settings(SCOPE, {"bot": {"kind": "uploaded"}})
+    assert (invalid.value.code, invalid.value.status, invalid.value.detail) == (
+        "invalid_member_settings", 422, "kind must be localhost or default")
 
 
 async def test_change_settings_sends_the_teams_and_the_games_settings(h):

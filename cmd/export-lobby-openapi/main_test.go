@@ -47,6 +47,7 @@ func TestExportPublicOperations(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/reopen":                      "reopenLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats":                       "addLobbySeat",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/seats/{seat_id}":             "removeLobbySeat",
+		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/member-settings":             "setLobbyMemberSettings",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  "leaveLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   "heartbeatLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": "releaseLobbyLease",

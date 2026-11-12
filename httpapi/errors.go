@@ -13,7 +13,7 @@ type Problem struct {
 	Detail string `json:"detail"`
 	// TeamIDs lists the teams the error is about.
 	TeamIDs []string         `json:"team_ids,omitempty" doc:"The teams the error is about. For empty_teams, the teams that still need a player, in team order."`
-	Code    domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,empty_teams,stale_membership,idempotency_conflict,invalid_input,invalid_game_settings,invalid_seat_settings,game_requirement,game_running,watcher_kicked,watchers_full,unavailable,internal_error"`
+	Code    domain.ErrorCode `json:"code" enum:"unauthenticated,not_found,not_host,lobby_full,team_full,phase_conflict,not_ready,empty_teams,stale_membership,idempotency_conflict,invalid_input,invalid_game_settings,invalid_seat_settings,invalid_member_settings,game_requirement,game_running,watcher_kicked,watchers_full,unavailable,internal_error"`
 	// Type is the game's problem type of game_requirement.
 	Type string `json:"type,omitempty" doc:"For game_requirement, the game's own problem type, a URI that the game documents, such as one meaning a player has yet to choose something in the game's API. Absent for every other code."`
 	// cause is the error the problem answers. Responses leave it out, but the
@@ -43,7 +43,7 @@ func problemFor(errorValue error) error {
 		status, detail = http.StatusConflict, errorValue.Error()
 	case domain.CodeInvalidInput:
 		status, detail = http.StatusUnprocessableEntity, "invalid input"
-	case domain.CodeInvalidGameSettings, domain.CodeInvalidSeatSettings:
+	case domain.CodeInvalidGameSettings, domain.CodeInvalidSeatSettings, domain.CodeInvalidMemberSettings:
 		// Validators write their messages for the client.
 		status, detail = http.StatusUnprocessableEntity, errorValue.Error()
 	case domain.CodeGameRequirement:
