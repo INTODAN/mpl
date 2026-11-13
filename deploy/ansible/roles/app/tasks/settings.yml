@@ -1,0 +1,54 @@
+---
+# The deployment's settings and its tenants, checked before anything changes
+# on the VM. deploy/test_vm_templates.py runs it too.
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - deploy_domain is defined
+      - deploy_domain is ansible.builtin.match('^[a-z0-9.-]+\.[a-z]+$')
+      - lobby_url is defined
+      - lobby_url is ansible.builtin.match('^https://[a-z0-9.-]+/?$')
+      - centrifugo_proxy_url is defined
+      - centrifugo_proxy_url is ansible.builtin.match('^https://[^/<>]+/?$')
+      - vm_compose_project is ansible.builtin.match('^[a-z0-9][a-z0-9_-]*$')
+      - tenants | length > 0
+    fail_msg: >-
+      Copy deploy/vm.example.yml to deploy/local/vm.yml and set deploy_domain (lowercase, e.g.
+      example.org), lobby_url (https://lobby.<domain>, `scripts/aws.sh output lobby_url`),
+      centrifugo_proxy_url (the address Centrifugo's proxy calls go to, see deploy/README.md) and at
+      least one tenant: the lobby needs a game to start.
+    quiet: true
+
+- name: Check each tenant
+  vars:
+    app_expected_secret_env: "{{ app_game_secret_env_prefix ~ (item.key | default('') | upper | replace('-', '_')) }}"
+  ansible.builtin.assert:
+    that:
+      - item.key is defined and item.key is ansible.builtin.match('^[a-z0-9]+(-[a-z0-9]+)*$')
+      - item.database is defined and item.database is ansible.builtin.match('^[a-z_][a-z0-9_]{0,62}$')
+      - item.role is defined and item.role is ansible.builtin.match('^[a-z_][a-z0-9_]{0,62}$')
+      - item.database not in [lobby_database, 'postgres', 'template0', 'template1']
+      - item.role not in [lobby_app_role, postgres_admin_role, 'postgres']
+      - item.origins is defined and item.origins | length > 0
+      - item.origins | reject('ansible.builtin.match', '^https://[a-z0-9.-]+(:[0-9]+)?$') | list | length == 0
+      - item.lobby_game is defined and item.lobby_game is mapping
+      - item.lobby_game.key | default('') == item.key
+      - item.lobby_game.secret_env | default('') == app_expected_secret_env
+    fail_msg: >-
+      Tenant {{ item.key | default('?') }}: needs a key of lowercase letters, digits and hyphens, a database
+      and a role of lowercase letters, digits and underscores that aren't the lobby's, Postgres's or the
+      admin role's, origins as https://host, and lobby_game, its LOBBY_GAMES entry, with the same key and
+      secret_env {{ app_expected_secret_env }} (deploy/README.md, "Tenants").
+    quiet: true
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "{{ item.key | default('?') }}"
+
+- name: Check that no two tenants share a key, a database or a role
+  ansible.builtin.assert:
+    that:
+      - tenants | map(attribute='key') | unique | length == tenants | length
+      - tenants | map(attribute='database') | unique | length == tenants | length
+      - tenants | map(attribute='role') | unique | length == tenants | length
+    fail_msg: Each tenant needs its own key, database and role.
+    quiet: true

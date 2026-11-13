@@ -1,0 +1,86 @@
+---
+# Renders the VM deploy's templates and computed settings on this machine,
+# with the settings that deploy/test_vm_templates.py passes, without a VM.
+# It runs the deploy's own settings checks first. Secrets are generated into
+# the deploy_local_dir that the test passes. Usage, from deploy/ansible:
+#
+#   ansible-playbook -i localhost, -c local tests/render.yml \
+#     -e @tests/sample-vm.yml -e deploy_local_dir=<dir> -e render_dir=<dir>
+- name: Render the VM deploy's templates
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+    - ../roles/app/defaults/main.yml
+    - ../roles/app/vars/main.yml
+  vars:
+    ansible_managed: Ansible managed
+    app_postgres_config_checksum: postgres-checksum
+    app_centrifugo_config_checksum: centrifugo-checksum
+    app_templates: ../roles/app/templates
+  tasks:
+    - name: Check the settings and the tenants
+      ansible.builtin.import_tasks: ../roles/app/tasks/settings.yml
+
+    - name: Create the output directories
+      ansible.builtin.file:
+        path: "{{ render_dir }}/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [vm, admin-grants, create-database, tenants]
+
+    - name: Render the VM's files
+      ansible.builtin.template:
+        src: "{{ app_templates }}/{{ item }}.j2"
+        dest: "{{ render_dir }}/vm/{{ item }}"
+        mode: "0600"
+      loop:
+        - pg_hba.conf
+        - centrifugo-config.toml
+        - centrifugo.env
+        - db.env
+        - compose.yaml
+        - admin-role.sql
+        - backup.env
+        - mpl-backup.service
+        - mpl-backup.timer
+        - lobby.env
+
+    - name: Render each database's grants
+      ansible.builtin.template:
+        src: "{{ app_templates }}/admin-grants.sql.j2"
+        dest: "{{ render_dir }}/admin-grants/{{ item.database }}.sql"
+        mode: "0600"
+      loop: "{{ app_databases }}"
+
+    - name: Render each database's creation
+      vars:
+        app_created: "{{ item }}"
+        app_created_password: password-of-{{ item.role }}
+      ansible.builtin.template:
+        src: "{{ app_templates }}/create-database.sql.j2"
+        dest: "{{ render_dir }}/create-database/{{ item.database }}.sql"
+        mode: "0600"
+      loop: "{{ app_databases }}"
+
+    - name: Render each tenant's settings
+      vars:
+        app_tenant_password: >-
+          {{ lookup('ansible.builtin.password', app_tenant_secrets_dir ~ '/' ~ tenant.key ~ '/postgres_password',
+             length=48, chars=['ascii_letters', 'digits']) }}
+      ansible.builtin.template:
+        src: "{{ app_templates }}/tenant.env.j2"
+        dest: "{{ render_dir }}/tenants/{{ tenant.key }}.env"
+        mode: "0600"
+      loop: "{{ tenants }}"
+      loop_control:
+        loop_var: tenant
+
+    - name: Write the computed settings
+      ansible.builtin.copy:
+        content: >-
+          {{ {'app_databases': app_databases, 'app_secret_files': app_secret_files,
+              'app_websocket_origins': app_websocket_origins, 'app_tenant_origins': app_tenant_origins,
+              'vm_app_dir': vm_app_dir, 'app_backup_settings_dir': app_backup_settings_dir} | to_nice_json }}
+        dest: "{{ render_dir }}/computed.json"
+        mode: "0600"

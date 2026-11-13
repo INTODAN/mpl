@@ -1,0 +1,55 @@
+-- Lets the admin MCP server's read-only role (adminmcp/) read one database,
+-- the lobby's or a tenant's, after admin-role.sql.j2 created the role, but
+-- never all of lobby_sessions. It runs in that database in one transaction,
+-- so the role can never read all of lobby_sessions, not even between the
+-- statements below. Plain SQL without psql commands.
+
+-- pg_logical_emit_message writes WAL that a rollback doesn't undo, so a loop
+-- of them could fill the VM's disk even from a read-only transaction.
+-- Everyone may call it by default, and nothing in the lobby does, so it is
+-- revoked from PUBLIC, in every signature this PostgreSQL version has. The
+-- superuser keeps it.
+DO $$
+DECLARE
+  emit_message regprocedure;
+BEGIN
+  FOR emit_message IN SELECT oid::regprocedure FROM pg_proc WHERE proname = 'pg_logical_emit_message' LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', emit_message);
+  END LOOP;
+END
+$$;
+GRANT USAGE ON SCHEMA public TO "{{ postgres_admin_role }}";
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{{ postgres_admin_role }}";
+{% if not (item.lobby | default(false)) %}
+
+-- A tenant's tables are the game's own, so the role may read the tables that
+-- later migrations create too.
+ALTER DEFAULT PRIVILEGES FOR ROLE "{{ item.role }}" IN SCHEMA public
+  GRANT SELECT ON TABLES TO "{{ postgres_admin_role }}";
+{% endif %}
+
+-- Sessions without bearer_hash, the digest of each guest's credential. A
+-- tenant's database may still hold the lobby's tables from before the lobby
+-- had its own database, so this runs there too. Revoking the table's SELECT
+-- also revokes its column grants, so the columns are granted again after it.
+{% if item.lobby | default(false) %}
+--
+-- In the lobby's database, default privileges let the role read tables that
+-- later migrations create. They are only set once lobby_sessions exists: set
+-- before, they would let the role read all of it once the first migration
+-- created it. The VM deploy runs the lobby's migrations before this, so on a
+-- new VM the table exists. A restore leaves no grants, and every VM deploy
+-- and restore runs this again.
+{% endif %}
+DO $$
+BEGIN
+  IF to_regclass('public.lobby_sessions') IS NOT NULL THEN
+    REVOKE SELECT ON public.lobby_sessions FROM "{{ postgres_admin_role }}";
+    GRANT SELECT (id, player_id, created_at, expires_at) ON public.lobby_sessions TO "{{ postgres_admin_role }}";
+{% if item.lobby | default(false) %}
+    ALTER DEFAULT PRIVILEGES FOR ROLE "{{ item.role }}" IN SCHEMA public
+      GRANT SELECT ON TABLES TO "{{ postgres_admin_role }}";
+{% endif %}
+  END IF;
+END
+$$;

@@ -1,0 +1,82 @@
+---
+# Daily database backups to S3 (deploy/README.md, "Backups"). A systemd timer
+# runs files/mpl-backup every day at app_backup_time, UTC. It dumps every
+# database, the lobby's and each tenant's, and uploads the dumps with the
+# upload-only key that Terraform made (deploy/terraform/backups.tf). The
+# deploy also backs up once, so a wrong key or bucket fails here instead of
+# at night. The backup's names are its own: on a VM taken over, a backup that
+# ran before keeps running beside it, untouched, until the cutover removes it.
+- name: Install the AWS SDK for Python
+  ansible.builtin.apt:
+    name: python3-boto3
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the backup's settings directory
+  ansible.builtin.file:
+    path: "{{ app_backup_settings_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# The upload-only key, readable only by root.
+- name: Write the backup's settings
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: "{{ app_backup_settings_dir }}/backup.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install the backup script
+  ansible.builtin.copy:
+    src: mpl-backup
+    dest: /usr/local/sbin/mpl-backup
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the backup's service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - mpl-backup.service
+    - mpl-backup.timer
+
+- name: Back the databases up every day
+  ansible.builtin.systemd_service:
+    name: mpl-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# A oneshot service: starting it waits for the backup and fails if it does. A
+# VM that a move left behind, or a database without tables, is skipped.
+- name: Back the databases up now
+  when: app_backup_now | bool
+  block:
+    - name: Run the backup
+      ansible.builtin.systemd_service:
+        name: mpl-backup.service
+        state: started
+  rescue:
+    - name: Read the backup's log
+      ansible.builtin.command:
+        argv: [journalctl, --unit, mpl-backup.service, --lines, "20", --no-pager, --output, cat]
+      register: app_backup_log
+      changed_when: false
+      failed_when: false
+
+    - name: Explain the failed backup
+      ansible.builtin.fail:
+        msg: >-
+          The database backup failed. Its log: {{ app_backup_log.stdout_lines | default([]) | join(' | ') }}.
+          If the upload was refused, run scripts/aws.sh apply, which writes the key to
+          deploy/local/secrets/database_backups.json, and deploy again (deploy/README.md, "Backups").

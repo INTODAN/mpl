@@ -1,0 +1,35 @@
+---
+# What each tenant needs from the lobby and the VM: its database's address
+# and credentials, the lobby's URL, its shared secret, and Centrifugo's API
+# and key, which games publish with (games are trusted). scripts/vm.sh
+# publishes the files to the deploy bucket under mpl/tenants/<key>/, where
+# the game's own deploy reads them (deploy/README.md, "Tenants").
+- name: Create each tenant's settings directory
+  ansible.builtin.file:
+    path: "{{ deploy_tenants_dir }}/{{ item.key }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "{{ item.key }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Write each tenant's settings
+  ansible.builtin.template:
+    src: tenant.env.j2
+    dest: "{{ deploy_tenants_dir }}/{{ tenant.key }}/tenant.env"
+    mode: "0600"
+  vars:
+    app_tenant_password: >-
+      {{ lookup('ansible.builtin.password', app_tenant_secrets_dir ~ '/' ~ tenant.key ~ '/postgres_password',
+         length=48, chars=['ascii_letters', 'digits']) }}
+  loop: "{{ tenants }}"
+  loop_control:
+    loop_var: tenant
+    label: "{{ tenant.key }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  no_log: true

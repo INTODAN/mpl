@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# Dumps {{ app_databases | map(attribute='database') | join(', ') }} and uploads
+# the dumps to S3 (deploy/README.md, "Backups"). Its log: journalctl -u mpl-backup
+[Unit]
+Description=Back up the VM's databases to S3
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ vm_app_dir }}
+EnvironmentFile={{ app_backup_settings_dir }}/backup.env
+ExecStart=/usr/local/sbin/mpl-backup
+NoNewPrivileges=true
+PrivateTmp=true

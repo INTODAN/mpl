@@ -1,0 +1,24 @@
+-- Creates one of the databases and the role that owns it, or resets the
+-- role's password: the lobby's own, or a tenant's. It runs only for a role
+-- that can't log in with its password. Schema migrations are not run here;
+-- the lobby's migrate command and each tenant's own do that. Owning the
+-- database gives the role CREATE on it, which a migration runner may need.
+SELECT format('CREATE ROLE %I LOGIN', '{{ app_created.role }}')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ app_created.role }}')
+\gexec
+
+-- An existing role keeps its LOGIN or NOLOGIN. Moving to a new VM locks the old
+-- VM's roles out (dump.yml), and only app_unlock_after_move lets them in again.
+ALTER ROLE "{{ app_created.role }}"
+  WITH NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  PASSWORD '{{ app_created_password }}';
+{% if app_unlock_after_move | bool %}
+
+ALTER ROLE "{{ app_created.role }}" LOGIN;
+{% endif %}
+
+SELECT format('CREATE DATABASE %I OWNER %I', '{{ app_created.database }}', '{{ app_created.role }}')
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ app_created.database }}')
+\gexec
+
+ALTER DATABASE "{{ app_created.database }}" OWNER TO "{{ app_created.role }}";

@@ -1,0 +1,5 @@
+---
+# A 1 GB Lightsail instance runs Postgres and Centrifugo; swap absorbs spikes.
+base_swap_file: /swapfile
+base_swap_size_mb: 1024
+base_swappiness: 10

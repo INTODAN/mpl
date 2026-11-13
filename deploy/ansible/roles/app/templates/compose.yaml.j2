@@ -1,0 +1,76 @@
+# {{ ansible_managed }}
+# Postgres and Centrifugo on the VM. The lobby and its tenants run on Lambda.
+name: {{ vm_compose_project }}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "{{ app_log_max_size }}"
+    max-file: "{{ app_log_max_files }}"
+
+services:
+  db:
+    image: {{ app_postgres_image }}
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/{{ vm_compose_project }}/postgres/pg_hba.conf
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/{{ vm_compose_project }}/postgres/tls/server.crt
+      - -c
+      - ssl_key_file=/etc/{{ vm_compose_project }}/postgres/tls/server.key
+      # Close connections whose Lambda environment was frozen or killed
+      # within minutes, instead of the kernel's two hours.
+      - -c
+      - tcp_keepalives_idle={{ app_postgres_tcp_keepalives_idle }}
+      - -c
+      - tcp_keepalives_interval={{ app_postgres_tcp_keepalives_interval }}
+      - -c
+      - tcp_keepalives_count={{ app_postgres_tcp_keepalives_count }}
+    env_file: db.env
+    labels:
+      # Recreates the container when a mounted file changes.
+      {{ vm_compose_project }}.config-checksum: "{{ app_postgres_config_checksum }}"
+    volumes:
+      # PostgreSQL 18 stores data under /var/lib/postgresql/18/docker.
+      - postgres_data:/var/lib/postgresql
+      - ./postgres:/etc/{{ vm_compose_project }}/postgres:ro
+      - ./dumps:/dumps
+    ports:
+      - "{{ app_postgres_published_port }}:5432"
+    healthcheck:
+      # Over TCP, so the temporary server that initializes the database
+      # doesn't count as ready.
+      test: ["CMD", "pg_isready", "--host", "127.0.0.1", "--username", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+
+  centrifugo:
+    image: {{ app_centrifugo_image }}
+    restart: unless-stopped
+    command: ["centrifugo", "--config", "/etc/centrifugo/config.toml"]
+    env_file: centrifugo.env
+    labels:
+      {{ vm_compose_project }}.config-checksum: "{{ app_centrifugo_config_checksum }}"
+    volumes:
+      - ./centrifugo/config.toml:/etc/centrifugo/config.toml:ro
+      # The image's /centrifugo belongs to its user (uid 1000), and a new named
+      # volume inherits that, so autocert can write its certificate cache.
+      - centrifugo_autocert:/centrifugo
+    ports:
+      - "{{ app_centrifugo_published_port }}:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+
+volumes:
+  postgres_data:
+  centrifugo_autocert:
