@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/INTODAN/mpl/httpapi"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
-	"islandBattles/lobby/httpapi"
 )
 
 const (

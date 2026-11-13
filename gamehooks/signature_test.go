@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/gamehooks"
+	"github.com/INTODAN/mpl/gamehooks"
 )
 
 var secret = []byte(strings.Repeat("s", gamehooks.MinSecretBytes))

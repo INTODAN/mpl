@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/internal/testutil"
-	"islandBattles/lobby/postgres"
-	"islandBattles/lobby/realtime"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/internal/testutil"
+	"github.com/INTODAN/mpl/postgres"
+	"github.com/INTODAN/mpl/realtime"
 
 	"gorm.io/gorm"
 )

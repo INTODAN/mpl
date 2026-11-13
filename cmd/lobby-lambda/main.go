@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"islandBattles/lobby/app"
+	"github.com/INTODAN/mpl/app"
 
 	"github.com/aws/aws-lambda-go/lambdaurl"
 )

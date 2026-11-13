@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 
 	"gorm.io/gorm"
 )

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func TestDefaultRetention(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"islandBattles/lobby/app"
+	"github.com/INTODAN/mpl/app"
 )
 
 func environment(extra map[string]string) func(string) (string, bool) {

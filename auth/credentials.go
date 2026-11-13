@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"strings"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func encodeBearer(random []byte) string {

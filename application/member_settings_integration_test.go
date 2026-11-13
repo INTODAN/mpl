@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // choiceSettingsGame stands in for a game whose people choose something in

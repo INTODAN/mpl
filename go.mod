@@ -1,4 +1,4 @@
-module islandBattles/lobby
+module github.com/INTODAN/mpl
 
 go 1.25.0
 

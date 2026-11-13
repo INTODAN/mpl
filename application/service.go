@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type Service struct {

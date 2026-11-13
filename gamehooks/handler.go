@@ -11,7 +11,7 @@ import (
 	"path"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // HandlerOption changes a hooks handler.

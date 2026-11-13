@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func expiryFixture(now time.Time) domain.Aggregate {

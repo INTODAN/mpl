@@ -40,10 +40,10 @@ type lobbySnapshot struct {
 }
 
 func main() {
-	apiURL := flag.String("api-url", "http://localhost:8888/lobby/v1", "public lobby API base URL")
+	apiURL := flag.String("api-url", "http://localhost:8890/lobby/v1", "public lobby API base URL")
 	displayName := flag.String("name", "Guest", "guest display name (and default lobby name)")
 	joinCode := flag.String("join-code", "", "join an existing lobby with this code")
-	gameKey := flag.String("game-key", "island-battles", "registered game key")
+	gameKey := flag.String("game-key", "mock-game", "registered game key, as the lobby's LOBBY_GAMES names it")
 	flag.Parse()
 
 	rootContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

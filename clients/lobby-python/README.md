@@ -34,11 +34,11 @@ It needs Python 3.14 or newer. The wheel contains both import packages: `lobby_c
 The client requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/).
 A running host application exposing the lobby API, PostgreSQL, and Centrifugo are required for the live example. The host configures its database and transport credentials; clients need only the public API URL. See the [component guide](../../README.md) and [live acceptance setup](../../integration/README.md).
 
-From the lobby component root (`lobby/` in the monorepo):
+From the repository root:
 
 ```sh
-UV_CACHE_DIR=/tmp/island-lobby-uv-cache uv sync --project clients/lobby-python --locked
-UV_CACHE_DIR=/tmp/island-lobby-uv-cache uv run --project clients/lobby-python/tools --locked \
+UV_CACHE_DIR=/tmp/lobby-uv-cache uv sync --project clients/lobby-python --locked
+UV_CACHE_DIR=/tmp/lobby-uv-cache uv run --project clients/lobby-python/tools --locked \
   python clients/lobby-python/scripts/generate.py --check
 ```
 The terminal example requires a POSIX terminal because it uses
@@ -47,11 +47,11 @@ first terminal, then use the join code printed there in a second terminal:
 
 ```sh
 uv run --project clients/lobby-python --locked python clients/lobby-python/examples/lobby_cli.py \
-  --base-url http://localhost:8890 --session-file /tmp/lobby-alice.json \
+  --base-url http://localhost:8890 --game-key mock-game --session-file /tmp/lobby-alice.json \
   --new-session Alice --create Demo
 
 uv run --project clients/lobby-python --locked python clients/lobby-python/examples/lobby_cli.py \
-  --base-url http://localhost:8890 --session-file /tmp/lobby-bob.json \
+  --base-url http://localhost:8890 --game-key mock-game --session-file /tmp/lobby-bob.json \
   --new-session Bob --join PRINTED_CODE
 ```
 
@@ -59,6 +59,8 @@ The first invocation creates an identity and retains only `player_id`,
 `access_token`, and `expires_at` in the owner-only session file. The file is
 never overwritten: use a new path for a new identity. A join must use the same
 `--game-key` and printed join code; the client never guesses a lobby by name.
+`--game-key` is a key from the lobby's `LOBBY_GAMES`, `mock-game` by default
+(Island Battles, for example, is `island-battles`).
 Without `--new-session`, the existing file is loaded explicitly. A missing,
 unreadable, or malformed file is an error, and an expired credential requires
 an explicitly created new session. There is no automatic identity recovery
@@ -88,15 +90,15 @@ Expected conflicts such as `lobby_full`, `team_full`, `not_ready`,
 A game can also refuse `ready`, or `start`, until a player does something in the
 game's own API: the failure is `game_requirement`, printed with the game's message.
 Island Battles refuses until the player has set a bot in their member settings
-with `set_member_settings` (see the [backend README](../../../backend/README.md#choosing-a-bot));
+with `set_member_settings` (see the [backend README](https://github.com/INTODAN/island-battles-go/blob/main/backend/README.md#choosing-a-bot));
 a game without that rule, such as `--game-key mock-game` against the live suite's mock game, plays without it. An
 expired credential or lost membership explains that an explicit new session or
 join is required. Create uses one UUID request id for the process lifetime;
 the CLI never retries it with a new id or mints another guest after a network
 failure.
 
-If the API is unreachable, verify the base URL includes the backend's lobby
-API address and that the PostgreSQL/backend/Centrifugo services are running.
+If the API is unreachable, verify that the base URL is the lobby's address and
+that the lobby, PostgreSQL and Centrifugo are running.
 The [live acceptance suite](../../integration/README.md) uses
 PostgreSQL 18, Centrifugo 6.9.6 and a supplied host application, including two CLI
 processes, transport interruption, history loss and snapshot reconciliation.

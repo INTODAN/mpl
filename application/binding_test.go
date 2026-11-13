@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type bindingReader struct {

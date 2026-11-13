@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"islandBattles/lobby/frontend"
+	"github.com/INTODAN/mpl/frontend"
 )
 
 func quizGame() frontend.Game {

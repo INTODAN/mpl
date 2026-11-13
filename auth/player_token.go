@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 // PlayerTokens issues the player tokens that games verify with the lobby's

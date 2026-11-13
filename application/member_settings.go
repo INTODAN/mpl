@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // SetMemberSettings sets the caller's own member settings, a JSON object that

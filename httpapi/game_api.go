@@ -9,9 +9,9 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
 )
 
 // GameSecrets returns the shared secret of a game that the lobby calls over
@@ -71,7 +71,7 @@ type authorizeWatchInput struct {
 // (gamehooks.Sign); one that doesn't verify with the secret of the game key in
 // its path is refused with 401, so a game reaches only its own lobbies. The
 // game API is not part of the player API: hosts register it on an API of its
-// own, whose OpenAPI document is lobby/api/game-api.openapi.json.
+// own, whose OpenAPI document is api/game-api.openapi.json.
 func RegisterGameAPI(api huma.API, games domain.GameAPI, secrets GameSecrets) {
 	specification := api.OpenAPI()
 	if specification.Components.SecuritySchemes == nil {

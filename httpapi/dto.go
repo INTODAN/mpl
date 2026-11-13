@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/playertoken"
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/playertoken"
 )
 
 type CreateSessionInput struct {

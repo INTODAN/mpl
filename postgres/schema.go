@@ -26,7 +26,7 @@ var migrationFiles embed.FS
 
 // Migrations returns the versioned lobby schema, recorded in
 // lobby_schema_migrations. Change the schema by adding the next numbered file
-// to lobby/postgres/migrations; never edit an applied one.
+// to postgres/migrations; never edit an applied one.
 func Migrations() MigrationSet {
 	files, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {

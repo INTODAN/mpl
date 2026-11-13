@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // ChangeSettings replaces a waiting lobby's game settings and teams. Only the

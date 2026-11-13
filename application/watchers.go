@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // Watch lets anyone with a guest session and the lobby's join code watch the

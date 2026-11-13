@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
 )
 
 // botSeat stands in for a game's seat validator: a seat takes a bot level

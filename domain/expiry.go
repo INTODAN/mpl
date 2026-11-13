@@ -3,7 +3,7 @@ package domain
 import (
 	"time"
 
-	"islandBattles/lobby/internal/optional"
+	"github.com/INTODAN/mpl/internal/optional"
 )
 
 // NormalizeExpired derives visible connection state from durable current-generation

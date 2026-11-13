@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type Problem struct {

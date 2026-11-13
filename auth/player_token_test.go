@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/auth"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/auth"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 const playerID = "4f7c0a2e-58c4-4a51-9d2e-3c1f0f1d2a3b"

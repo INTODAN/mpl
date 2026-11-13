@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sort"
 
-	"islandBattles/lobby/internal/optional"
+	"github.com/INTODAN/mpl/internal/optional"
 )
 
 // DeepCopy detaches every slice/pointer and normalizes nil lists to empty lists.

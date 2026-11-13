@@ -1,0 +1,6 @@
+version: "2"
+
+issues:
+  # Report every finding, not only the first few of each kind.
+  max-issues-per-linter: 0
+  max-same-issues: 0

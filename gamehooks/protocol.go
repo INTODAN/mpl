@@ -14,7 +14,7 @@ package gamehooks
 import (
 	"encoding/json"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // The hooks a game serves under its hooks URL.

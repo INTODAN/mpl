@@ -6,7 +6,7 @@ import (
 	"errors"
 	"slices"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // GameBinding authorizes each request before invoking game-specific persistence.

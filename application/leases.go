@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/internal/optional"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/internal/optional"
 )
 
 func (service *Service) Heartbeat(ctx context.Context, principal domain.Principal, scope domain.Scope, request domain.HeartbeatRequest) (domain.HeartbeatResult, error) {

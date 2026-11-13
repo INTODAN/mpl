@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/internal/testutil"
-	lobbypostgres "islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/internal/testutil"
+	lobbypostgres "github.com/INTODAN/mpl/postgres"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

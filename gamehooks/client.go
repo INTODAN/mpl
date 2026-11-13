@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // Client calls one game's hooks, at its hooks URL, for the lobby. Each call

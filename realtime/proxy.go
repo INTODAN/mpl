@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/INTODAN/mpl/domain"
 	"github.com/go-chi/chi/v5"
-	"islandBattles/lobby/domain"
 )
 
 const SubscribePath = "/internal/lobby/centrifugo/subscribe"

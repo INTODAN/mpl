@@ -1,0 +1,157 @@
+# Releases the lobby, started by hand from main (README.md, "Releases").
+# Merging to main releases nothing, and nothing else starts this workflow.
+#
+# Starting it is the approval: only people with write access can, only from
+# main. It runs the checks, then tags the commit vX.Y.Z (the version that
+# `go get github.com/INTODAN/mpl@vX.Y.Z` resolves), creates the GitHub release,
+# and publishes the Python client `mpl-lobby-client` at the same version to
+# PyPI. A failed check leaves no tag, no release and nothing on PyPI.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to release, vX.Y.Z, higher than every earlier release. The first is v0.3.0, which continues the lobby's versions from INTODAN/island-battles-go."
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# One release at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Fails on any other ref, or on a version that isn't new, so the refusal
+  # shows in the run before anything else runs.
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      # All tags, to compare the version with the earlier releases.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check the ref and the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::A release starts only from main, not from ${GITHUB_REF}. Nothing was tagged or published."
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::The version must look like v1.2.3, not ${VERSION}."
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::The tag $VERSION exists already."
+            exit 1
+          fi
+          latest="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          if [[ -n "$latest" && "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]]; then
+            echo "::error::$VERSION is not higher than the latest release, $latest."
+            exit 1
+          fi
+          echo "Releasing $VERSION (the latest release is ${latest:-none})." >>"$GITHUB_STEP_SUMMARY"
+
+  check:
+    needs: guard
+    uses: ./.github/workflows/checks.yml
+
+  release:
+    needs: [guard, check]
+    runs-on: ubuntu-24.04
+    # The only job that writes to the repository.
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # An annotated tag on the commit that was checked. The module is at the
+      # repository's root, so the plain tag is what `go get` resolves.
+      - name: Tag the release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Create the GitHub release
+        run: |
+          previous="$(git tag --list 'v*' --merged "$GITHUB_SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$VERSION" | sort -V | tail -n 1 || true)"
+          start=()
+          [[ -z "$previous" ]] || start=(--notes-start-tag "$previous")
+          gh release create "$VERSION" --verify-tag --title "$VERSION" --generate-notes "${start[@]}" \
+            --notes "Go: go get github.com/INTODAN/mpl@$VERSION. Python: pip install mpl-lobby-client==${VERSION#v}."
+
+  # Publishes the Python client at the release's version, after the tag and the
+  # GitHub release exist, so a PyPI version never lacks its tag. A failure
+  # here fails only this job and the run, visibly; the tag and the release
+  # stay. Fix the cause and re-run this job alone: `skip-existing` makes a
+  # re-run skip the files a partial run uploaded.
+  # Trusted publishing: no PyPI token exists. The PyPI publisher names this
+  # repository, this workflow and the environment `pypi` (README.md, "Releases").
+  publish-python:
+    needs: release
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mpl-lobby-client/
+    permissions:
+      contents: read
+      # Only the publish step uses it; PyPI exchanges this token for an upload token.
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+
+      # The version comes from the tag and is set in this run's working copy
+      # only, never committed. PyPI wants PEP 440, so `v0.3.0` becomes `0.3.0`.
+      - name: Set the release version
+        working-directory: clients/lobby-python
+        run: uv version --frozen "${VERSION#v}"
+
+      # The wheel ships both import packages, the wrapper and the generated
+      # HTTP SDK; there is no separate distribution for the SDK.
+      - name: Build the package
+        run: |
+          v="${VERSION#v}"
+          uv build clients/lobby-python --out-dir "$RUNNER_TEMP/dist"
+          test -f "$RUNNER_TEMP/dist/mpl_lobby_client-${v}-py3-none-any.whl"
+          test -f "$RUNNER_TEMP/dist/mpl_lobby_client-${v}.tar.gz"
+          test "$(ls "$RUNNER_TEMP/dist" | wc -l)" -eq 2
+          contents="$(python3 -m zipfile -l "$RUNNER_TEMP/dist/mpl_lobby_client-${v}-py3-none-any.whl")"
+          for package in lobby_client lobby_api_client; do
+            grep -q "^${package}/__init__.py " <<<"$contents"
+          done
+          ls -l "$RUNNER_TEMP/dist"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ runner.temp }}/dist
+          skip-existing: true
+
+  # Says why nothing was released. The failed job above is the cause.
+  not_released:
+    needs: [guard, check, release]
+    if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "::error::The release was not made: a step above failed or was cancelled. No package was published. A tag and a GitHub release exist only if the release job itself failed after tagging: look for the tag before starting again. Fix the cause and start the release again."
+          exit 1

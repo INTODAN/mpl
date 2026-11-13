@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
-	"islandBattles/lobby/realtime"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
+	"github.com/INTODAN/mpl/realtime"
 )
 
 func (fixture *serviceFixture) watch(t *testing.T, principal domain.Principal) domain.WatchAccess {

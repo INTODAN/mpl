@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 
 	"github.com/centrifugal/gocent/v3"
 )

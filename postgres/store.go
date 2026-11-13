@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"

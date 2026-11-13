@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/frontend"
-	"islandBattles/lobby/gamehooks"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/frontend"
+	"github.com/INTODAN/mpl/gamehooks"
 )
 
 func environment(values map[string]string) func(string) (string, bool) {

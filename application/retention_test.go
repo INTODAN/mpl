@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // fakeRetentionStore records each pass and returns the queued results.

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/INTODAN/mpl/domain"
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby/domain"
 )
 
 type principalContextKey struct{}

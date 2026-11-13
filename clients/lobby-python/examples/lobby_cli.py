@@ -131,7 +131,7 @@ def save_session(path: Path, session: object) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Connect to a generic lobby from a POSIX terminal.")
     parser.add_argument("--base-url", required=True, help="Lobby API base URL")
-    parser.add_argument("--game-key", default="island-battles")
+    parser.add_argument("--game-key", default="mock-game", help="Game key, as the lobby's LOBBY_GAMES names it (default: mock-game, the live suite's mock game)")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--create", metavar="NAME", help="create a lobby with this display name")
     mode.add_argument("--join", metavar="CODE", help="join the printed lobby code")

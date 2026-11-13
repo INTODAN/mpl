@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func teamDefinitions(names ...string) []domain.TeamDefinition {

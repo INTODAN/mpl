@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/auth"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/internal/testutil"
-	lobbypostgres "islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/auth"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/internal/testutil"
+	lobbypostgres "github.com/INTODAN/mpl/postgres"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

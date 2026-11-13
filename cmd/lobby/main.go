@@ -1,6 +1,6 @@
 // Command lobby serves the lobby on its own with net/http, for local
 // development and live tests. It reads the lobby's LOBBY_* environment
-// (lobby/README.md, "Running the lobby"), listens on LOBBY_HTTP_ADDR, :8890
+// (README.md, "Running the lobby"), listens on LOBBY_HTTP_ADDR, :8890
 // by default, and brings the lobby's schema up to date before it listens,
 // which a local server can do safely: migrations run under an advisory lock.
 // The AWS Lambda host of the same lobby is cmd/lobby-lambda.
@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"islandBattles/lobby/app"
-	lobbypostgres "islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/app"
+	lobbypostgres "github.com/INTODAN/mpl/postgres"
 )
 
 // LocalMaxOpenConnections is this host's default pool limit, which

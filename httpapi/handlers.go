@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type handlers struct {

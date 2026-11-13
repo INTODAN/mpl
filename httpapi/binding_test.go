@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
 )
 
 type gameBindingReader struct{ err error }

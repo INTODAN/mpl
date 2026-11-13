@@ -5,8 +5,8 @@ package realtime
 import (
 	"context"
 	"errors"
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type Authorizer struct {

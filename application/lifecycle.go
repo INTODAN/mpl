@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func (service *Service) Start(ctx context.Context, principal domain.Principal, scope domain.Scope) (domain.Snapshot, error) {

@@ -124,7 +124,7 @@ def main() -> int:
             command(runtime, "exec", database_name, "psql", "-h", "127.0.0.1", "-U", "lobby", "-d", "lobby",
                     "-c", "CREATE DATABASE game", stdout=subprocess.DEVNULL)
         environment = os.environ.copy()
-        # The lobby's own settings (lobby/README.md, "Running the lobby").
+        # The lobby's own settings (README.md, "Running the lobby").
         environment.update({
             "LOBBY_DATABASE_URL": database_url,
             "LOBBY_HTTP_ADDR": f"127.0.0.1:{lobby_port}",

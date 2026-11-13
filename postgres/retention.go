@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

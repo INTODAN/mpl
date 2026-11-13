@@ -1,0 +1,163 @@
+# The repository's checks, the same ones README.md lists under Commands for a
+# person's machine ("Checks on every pull request"). They run on every pull
+# request to main, and the release workflow calls them with
+# `uses: ./.github/workflows/checks.yml` before it tags.
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress. A call
+# from another workflow has its own group, because the caller's run id differs.
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # go.mod names the version.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      # Installs the binary only. The next step runs the README's command.
+      # Keep this version in step with the one the README names.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          install-only: true
+
+      - name: golangci-lint
+        run: golangci-lint run --timeout=5m ./...
+
+      # `go fmt` rewrites files. gofmt -l lists the files that need formatting,
+      # and the step fails if there are any.
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt (run: go fmt ./...):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # The database tests start disposable PostgreSQL containers through
+      # Testcontainers, with the Docker that the runner has. They include the
+      # mock game's integration tests, which play the lobby against the mock
+      # game over real HTTP servers (mockgame/integration_test.go).
+      - name: go test
+        run: go test ./...
+
+  api-contract:
+    name: API contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: clients/lobby-python/tools/uv.lock
+
+      - name: Lobby OpenAPI documents and event schema are current
+        run: go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --game-api-output api/game-api.openapi.json --check
+
+      - name: Generated Python models are current
+        run: uv run --project clients/lobby-python/tools --locked python clients/lobby-python/scripts/generate.py --check
+
+  python:
+    name: Python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # The generation tests run the OpenAPI exporter, so they need Go too.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # uv installs the Python 3.14 that the project requires.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            clients/lobby-python/uv.lock
+            clients/lobby-python/tools/uv.lock
+
+      - name: Python client tests
+        run: uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
+
+  js:
+    name: JS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      # The page is plain modules with no package.json and no dependencies.
+      # `node --test <directory>` fails on Node 22, so the files are named.
+      - name: node --test
+        run: node --test frontend/*.test.mjs
+
+  live:
+    name: Live (mock game)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # uv installs the Python 3.14 that the client requires.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: clients/lobby-python/uv.lock
+
+      # The runner builds the lobby, its migrate command and the mock game,
+      # starts disposable PostgreSQL and Centrifugo containers on the runner's
+      # Docker, and runs the live suite in integration/ against them. The
+      # script's own Go cache would start cold, so it gets setup-go's.
+      - name: Live tests with the mock game
+        run: |
+          GOCACHE="$(go env GOCACHE)" ./scripts/test-acceptance.sh --mock-game
+
+      # A failed run keeps its logs in a /tmp/lobby-acceptance-* directory.
+      - name: Upload the logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lobby-acceptance-logs
+          path: /tmp/lobby-acceptance-*
+          if-no-files-found: ignore
+          retention-days: 7

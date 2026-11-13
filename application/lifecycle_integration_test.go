@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func TestSelectLastTeamSeatConcurrent(t *testing.T) {

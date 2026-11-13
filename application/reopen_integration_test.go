@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // roundsGame stands in for a game that plays one game per lobby round. It

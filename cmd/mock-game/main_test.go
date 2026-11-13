@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/mockgame"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
+	"github.com/INTODAN/mpl/mockgame"
 )
 
 var secret = strings.Repeat("s", 32)
