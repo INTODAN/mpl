@@ -2,12 +2,16 @@
 // as a choice the game requires before the player gets ready. It calls the
 // game's API through the page, which adds the player's credential, only for
 // same-origin paths under the game's room API prefix for the shown lobby, and
-// only with GET or PUT.
+// only with GET, PUT, POST or DELETE.
 
 import { relayURL } from "./relay.mjs";
 import { fetchRetrying, retryWaitBudgetMs, serverBusyMessage } from "./throttle.mjs";
 
-export const roomMethods = ["GET", "PUT"];
+export const roomMethods = ["GET", "PUT", "POST", "DELETE"];
+// A throttled request is sent again only when sending it twice does no harm:
+// GET reads, PUT sets a value and DELETE removes one. A POST may create
+// something, so it is never sent again.
+const repeatableRoomMethods = ["GET", "PUT", "DELETE"];
 // How long the page waits for a whole response.
 export const roomTimeoutMilliseconds = 8000;
 
@@ -16,7 +20,7 @@ export const roomTimeoutMilliseconds = 8000;
 // Error that says why when it refuses the request, or can't get an answer.
 export async function roomRequest({ method = "GET", path, body }, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, sleep, random }) {
   if (!roomMethods.includes(method)) throw new Error(`method must be one of ${roomMethods.join(", ")}`);
-  if (method === "GET" && body !== undefined) throw new Error("a GET request has no body");
+  if ((method === "GET" || method === "DELETE") && body !== undefined) throw new Error(`a ${method} request has no body`);
   if (typeof credential !== "string" || !credential) throw new Error("the page has no player session");
   let url;
   try {
@@ -29,10 +33,9 @@ export async function roomRequest({ method = "GET", path, body }, { prefix, lobb
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), roomTimeoutMilliseconds + retryWaitBudgetMs);
   try {
-    // GET and PUT only read or set a value, so a throttled one is sent again.
     const response = await fetchRetrying(fetch, url, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: controller.signal,
-    }, { repeatable: true, sleep, random });
+    }, { repeatable: repeatableRoomMethods.includes(method), sleep, random });
     if (response.status === 429) return { status: 429, body: { status: 429, detail: serverBusyMessage } };
     const type = response.headers.get("Content-Type") || "";
     const json = /^application\/(problem\+)?json\b/.test(type);

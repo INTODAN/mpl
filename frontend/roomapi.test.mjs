@@ -32,6 +32,27 @@ test("sends GET and PUT under the room prefix with the credential", async () => 
   assert.equal(calls[1].init.redirect, "error");
 });
 
+test("sends POST and DELETE under the room prefix with the credential", async () => {
+  const { calls, options } = context();
+  const created = await roomRequest({ method: "POST", path: `/quiz/${lobbyID}/players/uploads`, body: { name: "x" } }, options);
+  assert.equal(created.status, 200);
+  const empty = await roomRequest({ method: "POST", path: `/quiz/${lobbyID}/players/uploads/1/complete` }, options);
+  assert.equal(empty.status, 200);
+  await roomRequest({ method: "DELETE", path: `/quiz/${lobbyID}/players/uploads/1` }, options);
+  assert.deepEqual(calls.map((call) => [call.init.method, call.init.body, call.init.headers.Authorization]), [
+    ["POST", '{"name":"x"}', "Bearer secret"], ["POST", undefined, "Bearer secret"], ["DELETE", undefined, "Bearer secret"],
+  ]);
+});
+
+test("sends a throttled GET, PUT or DELETE again, but never a POST", async () => {
+  for (const [method, attempts] of [["GET", 4], ["PUT", 4], ["DELETE", 4], ["POST", 1]]) {
+    const { calls, options } = context(() => new Response("", { status: 429 }));
+    const answer = await roomRequest({ method, path: `/quiz/${lobbyID}/players/x` }, { ...options, sleep: async () => {}, random: () => 0 });
+    assert.equal(answer.status, 429, method);
+    assert.equal(calls.length, attempts, method);
+  }
+});
+
 test("answers a problem with its status and body", async () => {
   const { options } = context(() => new Response('{"detail":"no"}', { status: 409, headers: { "Content-Type": "application/problem+json" } }));
   assert.deepEqual(await roomRequest({ method: "PUT", path: `/quiz/${lobbyID}/players/choice`, body: {} }, options), { status: 409, body: { detail: "no" } });
@@ -42,9 +63,10 @@ test("answers a problem with its status and body", async () => {
 test("refuses other methods, paths and lobbies without fetching", async () => {
   const { calls, options } = context();
   const refused = [
-    [{ method: "POST", path: `/quiz/${lobbyID}/players/choice` }, /method/],
-    [{ method: "DELETE", path: `/quiz/${lobbyID}/players/choice` }, /method/],
+    [{ method: "PATCH", path: `/quiz/${lobbyID}/players/choice` }, /method/],
+    [{ method: "HEAD", path: `/quiz/${lobbyID}/players/choice` }, /method/],
     [{ method: "GET", path: `/quiz/${lobbyID}/players/choice`, body: {} }, /no body/],
+    [{ method: "DELETE", path: `/quiz/${lobbyID}/players/choice`, body: {} }, /no body/],
     [{ path: `/quiz/${lobbyID}/data/x` }, /refused/],
     [{ path: "/quiz/another-lobby/players/choice" }, /refused/],
     [{ path: `/quiz/${lobbyID}/players/../../admin` }, /refused/],
