@@ -1065,8 +1065,9 @@ async function loadRoomPanel(game) {
 
 // The room module's seatOptions lists the seats that the host can add to a
 // team, such as the game's bot levels: {label, choices: [{label, settings,
-// input}]}, where a choice's optional input {name, label, placeholder} asks
-// the host for a text that goes into settings[name].
+// input, disabled}]}, where a choice's optional input {name, label,
+// placeholder} asks the host for a text that goes into settings[name], and a
+// choice with disabled: true is shown greyed out and can't be chosen.
 async function loadSeatOptions(load, epoch, lobbyID) {
   try {
     const options = await load({ lobbyID, request: roomRequester(lobbyID) });
@@ -1100,9 +1101,15 @@ function showSeatControls(shown) {
       const row = element("div", "seat-row", "");
       row.dataset.teamId = team.id;
       const select = document.createElement("select");
-      select.append(...options.choices.map((choice, index) => new Option(choice.label, String(index))));
-      const previous = options.choices.findIndex((choice) => choice.label === kept.get(team.id)?.label);
+      select.append(...options.choices.map((choice, index) => {
+        const option = new Option(choice.label, String(index));
+        option.disabled = choice.disabled === true;
+        return option;
+      }));
+      const previous = options.choices.findIndex((choice) => choice.label === kept.get(team.id)?.label && choice.disabled !== true);
+      const first = options.choices.findIndex((choice) => choice.disabled !== true);
       if (previous >= 0) select.value = String(previous);
+      else if (first >= 0) select.value = String(first);
       const label = element("label", "", team.name);
       label.append(select);
       // A choice with an input asks for its text next to the select.
@@ -1124,6 +1131,7 @@ function showSeatControls(shown) {
       add.type = "button";
       add.addEventListener("click", () => action(async () => {
         const choice = options.choices[Number(select.value)];
+        if (!choice || choice.disabled === true) throw new Error("Choose a bot that can be added.");
         const settings = { ...choice.settings };
         if (choice.input) {
           const value = text.value.trim();
