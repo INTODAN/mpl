@@ -190,7 +190,9 @@ class PublishesLobbyTest(unittest.TestCase):
 
 class UsageTest(unittest.TestCase):
     def test_refuses_an_unknown_mode(self):
-        self.assertEqual(check_deploy_plan.main(["publishes-backend"]), 2)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(check_deploy_plan.main(["publishes-backend"]), 2)
+        self.assertIn("Usage", stderr.getvalue())
 
 
 if __name__ == "__main__":

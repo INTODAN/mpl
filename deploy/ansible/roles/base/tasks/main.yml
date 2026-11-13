@@ -1,0 +1,130 @@
+---
+# Docker Engine and Compose come from Ubuntu's archive, so unattended-upgrades
+# keeps them patched together with the rest of the system.
+- name: Install Docker, the Compose plugin and unattended upgrades
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+      - unattended-upgrades
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install security updates automatically
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+# live-restore keeps Postgres and Centrifugo running when an upgrade restarts
+# the Docker daemon, so WebSocket clients aren't disconnected.
+- name: Keep containers running while the Docker daemon restarts
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ {'live-restore': true} | ansible.builtin.to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Start Docker now and at boot
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+
+# Restart Docker with the new settings before any container starts.
+- name: Apply Docker's settings
+  ansible.builtin.meta: flush_handlers
+
+- name: Add a swap file
+  when: base_swap_size_mb | int > 0
+  block:
+    - name: Create the swap file
+      ansible.builtin.command:
+        argv: [fallocate, --length, "{{ base_swap_size_mb }}M", "{{ base_swap_file }}"]
+        creates: "{{ base_swap_file }}"
+
+    - name: Restrict the swap file to root
+      ansible.builtin.file:
+        path: "{{ base_swap_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Check whether the swap file is formatted
+      ansible.builtin.command:
+        argv: [blkid, --match-token, TYPE=swap, "{{ base_swap_file }}"]
+      register: base_swap_signature
+      changed_when: false
+      failed_when: false
+
+    - name: Format the swap file
+      ansible.builtin.command:
+        argv: [mkswap, "{{ base_swap_file }}"]
+      when: base_swap_signature.rc != 0
+      changed_when: true
+
+    - name: List the active swap
+      ansible.builtin.command:
+        argv: [swapon, --show=NAME, --noheadings]
+      register: base_active_swap
+      changed_when: false
+
+    - name: Enable the swap file
+      ansible.builtin.command:
+        argv: [swapon, "{{ base_swap_file }}"]
+      when: base_swap_file not in base_active_swap.stdout_lines
+      changed_when: true
+
+    - name: Enable the swap file at boot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^{{ base_swap_file | ansible.builtin.regex_escape }}\s'
+        line: "{{ base_swap_file }} none swap sw 0 0"
+
+    - name: Prefer RAM over swap
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-{{ vm_compose_project }}.conf
+        content: "vm.swappiness = {{ base_swappiness }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Apply sysctl settings
+
+# The deploy user owns the Compose project. It is in the docker group, so it
+# can run `docker compose` in vm_app_dir without sudo.
+- name: Create the deploy user
+  ansible.builtin.user:
+    name: "{{ vm_deploy_user }}"
+    groups: [docker]
+    append: true
+    shell: /bin/bash
+  register: base_deploy_user
+
+- name: Look up the login user's home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ ansible_user }}"
+
+- name: Create the deploy user's SSH directory
+  ansible.builtin.file:
+    path: "{{ base_deploy_user.home }}/.ssh"
+    state: directory
+    owner: "{{ vm_deploy_user }}"
+    group: "{{ vm_deploy_user }}"
+    mode: "0700"
+
+- name: Let the login user's SSH keys log in as the deploy user
+  ansible.builtin.copy:
+    src: "{{ ansible_facts.getent_passwd[ansible_user][4] }}/.ssh/authorized_keys"
+    remote_src: true
+    dest: "{{ base_deploy_user.home }}/.ssh/authorized_keys"
+    owner: "{{ vm_deploy_user }}"
+    group: "{{ vm_deploy_user }}"
+    mode: "0600"

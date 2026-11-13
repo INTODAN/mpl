@@ -1,0 +1,86 @@
+---
+# Commands run in the Compose project directory on the VM.
+app_db_exec: [docker, compose, exec, -T, db]
+# psql as the `postgres` superuser, through the container's local socket.
+app_superuser_psql: "{{ app_db_exec + ['psql', '--no-psqlrc', '--username', 'postgres'] }}"
+# psql as a database's own role over TCP, the way the Lambdas connect. The
+# password arrives on stdin, so it never appears in a command line, an
+# environment variable that sudo logs, or `ps`. The trailing `psql` is the
+# script's $0.
+app_role_psql:
+  - docker
+  - compose
+  - exec
+  - -T
+  - db
+  - sh
+  - -c
+  - read -r PGPASSWORD && export PGPASSWORD && exec psql --no-psqlrc "$@"
+  - psql
+app_role_ssl_query: SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()
+# The admin MCP server's read-only role connects the same way, and must not
+# be able to read lobby_sessions.bearer_hash in any database.
+app_admin_check_query: >-
+  SELECT ssl AND (to_regclass('public.lobby_sessions') IS NULL
+  OR NOT has_column_privilege('public.lobby_sessions', 'bearer_hash', 'SELECT'))
+  FROM pg_stat_ssl WHERE pid = pg_backend_pid()
+
+# The databases on the VM, each with the role that owns it and connects to
+# it: the lobby's own, then each tenant's. Each entry has the database, the
+# role and, for the lobby, the file of its role's password; a tenant's is
+# app_tenant_secrets_dir/<key>/postgres_password. Dumps and restores read the
+# names alone, so they never read the passwords, whose lookups would generate
+# a missing one.
+app_tenant_secrets_dir: "{{ deploy_secrets_dir }}/tenants"
+app_lobby_database_entry:
+  key: ""
+  database: "{{ lobby_database }}"
+  role: "{{ lobby_app_role }}"
+  password_file: "{{ deploy_secrets_dir }}/postgres_lobby_password"
+  lobby: true
+app_databases: "{{ [app_lobby_database_entry] + tenants }}"
+# The database that a dump or a restore is of.
+app_database_selected: "{{ app_databases | selectattr('database', 'equalto', app_database) | first }}"
+
+# The variable that holds a tenant's shared secret, by its key: the one its
+# lobby_game's secret_env must name. island-battles gives
+# LOBBY_GAME_SECRET_ISLAND_BATTLES.
+app_game_secret_env_prefix: LOBBY_GAME_SECRET_
+# Browsers' origins: the tenants' sites may call the lobby's player API
+# (LOBBY_ALLOWED_ORIGINS), and they and the lobby page may open Centrifugo
+# connections, with each tenant's further websocket_origins, such as a
+# desktop app's.
+app_tenant_origins: "{{ tenants | map(attribute='origins') | flatten | unique }}"
+app_websocket_origins: >-
+  {{ ([app_lobby_origin] + app_tenant_origins
+      + (tenants | map(attribute='websocket_origins', default=[]) | flatten)) | unique }}
+
+# Written when a move locks the roles out of this VM's databases (dump.yml).
+# Deploys and restores refuse a VM that has it.
+app_moved_away_marker: "{{ vm_app_dir }}/moved-away"
+# The backup's bucket and upload-only AWS key. Terraform makes them, and
+# scripts/aws.sh apply writes them here; the deploy can't generate them.
+app_database_backups_file: "{{ deploy_secrets_dir }}/database_backups.json"
+app_database_backups: "{{ lookup('ansible.builtin.file', app_database_backups_file) | ansible.builtin.from_json }}"
+# The backup's own settings, script and units. Their names don't depend on
+# the Compose project, so a VM taken over keeps the backup that ran before,
+# whose names are its own, until the cutover removes it.
+app_backup_settings_dir: /etc/mpl-backup
+# The files the deploy reads its secrets from (group_vars/all.yml, the tenants'
+# and the Postgres TLS files in main.yml). Missing ones are only generated on
+# request.
+app_secret_files: >-
+  {{ [deploy_secrets_dir ~ '/postgres_superuser_password',
+      deploy_secrets_dir ~ '/postgres_lobby_password',
+      deploy_secrets_dir ~ '/postgres_admin_password',
+      deploy_secrets_dir ~ '/centrifugo_api_key',
+      deploy_secrets_dir ~ '/connection_token_hmac_secret',
+      deploy_secrets_dir ~ '/lobby_proxy_secret',
+      deploy_secrets_dir ~ '/lobby_player_token_key',
+      app_postgres_tls_dir ~ '/server.key',
+      app_postgres_tls_dir ~ '/server.crt']
+     + (tenants | map(attribute='key') | product(['postgres_password', 'game_secret']) | map('join', '/')
+        | map('regex_replace', '^', app_tenant_secrets_dir ~ '/') | list) }}
+# The repository on the developer machine, where the VM deploy runs the
+# lobby's migrate command.
+app_repository_root: "{{ (playbook_dir ~ '/../..') | ansible.builtin.realpath }}"

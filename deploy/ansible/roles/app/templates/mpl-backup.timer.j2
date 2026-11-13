@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Backs the databases up once a day. Persistent catches up on a run that the
+# VM missed while it was off.
+[Unit]
+Description=Back up the VM's databases every day
+
+[Timer]
+OnCalendar=*-*-* {{ app_backup_time }}:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

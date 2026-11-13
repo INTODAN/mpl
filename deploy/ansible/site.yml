@@ -1,0 +1,15 @@
+---
+# Turns a fresh Ubuntu 24.04 Lightsail instance into the Postgres and Centrifugo
+# host of the lobby and its tenants, or updates an existing one, a VM taken
+# over included. Safe to re-run. Usage: scripts/vm.sh deploy <ip>
+- name: Deploy Postgres and Centrifugo to the VM
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Check the settings and DNS before changing anything
+      ansible.builtin.import_role:
+        name: app
+        tasks_from: preflight
+  roles:
+    - base
+    - app

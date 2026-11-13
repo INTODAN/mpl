@@ -1,0 +1,9 @@
+---
+# Collections the VM playbooks use. scripts/vm.sh installs them into
+# deploy/ansible/.collections (gitignored) on first use. The leading dot keeps
+# the Go files inside the collections out of `go vet ./...` and the other Go tools.
+collections:
+  - name: community.crypto
+    version: 3.5.1
+  - name: community.docker
+    version: 5.4.0

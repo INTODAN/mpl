@@ -1,0 +1,12 @@
+---
+# Dumps one of the VM's databases to deploy/local/dumps/: the lobby's, or a
+# tenant's with -e app_database=<name>. Usage: scripts/vm.sh dump <ip>
+- name: Dump one of the VM's databases
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Dump the database and copy it to the developer machine
+      ansible.builtin.import_role:
+        name: app
+        tasks_from: dump

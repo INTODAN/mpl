@@ -1,0 +1,33 @@
+---
+# The settings deploy/test_vm_templates.py renders the templates with: a VM
+# taken over from a game that ran it, with that game and a second one as
+# tenants.
+deploy_domain: example.org
+lobby_url: https://lobby.example.org/
+centrifugo_proxy_url: https://game-backend.lambda-url.eu-central-1.on.aws/
+vm_compose_project: example-game
+vm_app_dir: /opt/example-game
+postgres_admin_role: example_game_admin
+tenants:
+  - key: example-game
+    database: example_game
+    role: example_game
+    origins: [https://game.example.org]
+    websocket_origins: [tauri://localhost, http://tauri.localhost]
+    lobby_game:
+      key: example-game
+      name: Example Game
+      hooks_url: https://game.example.org/lobby-hooks
+      secret_env: LOBBY_GAME_SECRET_EXAMPLE_GAME
+      frontend:
+        origin: https://game.example.org
+        result_url: https://game.example.org/result/{lobby_id}
+  - key: second-game
+    database: second_game
+    role: second_game
+    origins: [https://second.example.org, https://game.example.org]
+    lobby_game:
+      key: second-game
+      name: Second Game
+      hooks_url: https://second.example.org/hooks
+      secret_env: LOBBY_GAME_SECRET_SECOND_GAME

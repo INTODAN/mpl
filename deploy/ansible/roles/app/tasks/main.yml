@@ -1,0 +1,287 @@
+---
+- name: Create the Compose project directories
+  ansible.builtin.file:
+    path: "{{ vm_app_dir }}/{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "", owner: "{{ vm_deploy_user }}", mode: "0750" }
+    - { path: centrifugo, owner: "{{ vm_deploy_user }}", mode: "0755" }
+    - { path: postgres, owner: "{{ vm_deploy_user }}", mode: "0755" }
+    - { path: postgres/tls, owner: "{{ vm_deploy_user }}", mode: "0755" }
+    # Dumps hold player data, so only root can read them.
+    - { path: dumps, owner: root, mode: "0700" }
+
+- name: Generate the Postgres TLS certificate on the developer machine
+  delegate_to: localhost
+  run_once: true
+  become: false
+  block:
+    - name: Create the Postgres TLS directory
+      ansible.builtin.file:
+        path: "{{ app_postgres_tls_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate the Postgres TLS key
+      community.crypto.openssl_privatekey:
+        path: "{{ app_postgres_tls_dir }}/server.key"
+        type: ECC
+        curve: secp256r1
+        mode: "0600"
+
+    - name: Generate the Postgres certificate signing request
+      community.crypto.openssl_csr:
+        path: "{{ app_postgres_tls_dir }}/server.csr"
+        privatekey_path: "{{ app_postgres_tls_dir }}/server.key"
+        common_name: "{{ vm_hostname }}"
+        subject_alt_name: ["DNS:{{ vm_hostname }}"]
+        extended_key_usage: [serverAuth]
+        mode: "0600"
+
+    - name: Self-sign the Postgres certificate
+      community.crypto.x509_certificate:
+        path: "{{ app_postgres_tls_dir }}/server.crt"
+        csr_path: "{{ app_postgres_tls_dir }}/server.csr"
+        privatekey_path: "{{ app_postgres_tls_dir }}/server.key"
+        provider: selfsigned
+        selfsigned_not_after: "{{ app_postgres_tls_valid_for }}"
+        mode: "0644"
+
+- name: Install the Postgres TLS certificate
+  ansible.builtin.copy:
+    src: "{{ app_postgres_tls_dir }}/server.crt"
+    dest: "{{ vm_app_dir }}/postgres/tls/server.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  register: app_postgres_certificate_file
+
+# Postgres refuses a key that others can read. 70 is the postgres user in the
+# Alpine image.
+- name: Install the Postgres TLS key
+  ansible.builtin.copy:
+    src: "{{ app_postgres_tls_dir }}/server.key"
+    dest: "{{ vm_app_dir }}/postgres/tls/server.key"
+    owner: "70"
+    group: "70"
+    mode: "0600"
+  register: app_postgres_key_file
+
+- name: Configure Postgres client authentication
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ vm_app_dir }}/postgres/pg_hba.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  register: app_pg_hba_file
+
+- name: Configure Centrifugo
+  ansible.builtin.template:
+    src: centrifugo-config.toml.j2
+    dest: "{{ vm_app_dir }}/centrifugo/config.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: app_centrifugo_config_file
+
+- name: Write the containers' secrets
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ vm_app_dir }}/{{ item }}"
+    owner: "{{ vm_deploy_user }}"
+    group: "{{ vm_deploy_user }}"
+    mode: "0600"
+  loop: [db.env, centrifugo.env]
+  no_log: true
+
+- name: Write the Compose project
+  vars:
+    app_postgres_config_checksum: >-
+      {{ [app_pg_hba_file, app_postgres_certificate_file, app_postgres_key_file]
+         | map(attribute='checksum', default='') | join(',') | ansible.builtin.hash('sha1') }}
+    app_centrifugo_config_checksum: "{{ app_centrifugo_config_file.checksum | default('') }}"
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ vm_app_dir }}/compose.yaml"
+    owner: "{{ vm_deploy_user }}"
+    group: "{{ vm_deploy_user }}"
+    mode: "0644"
+
+- name: Start Postgres and Centrifugo and wait until they are healthy
+  community.docker.docker_compose_v2:
+    project_src: "{{ vm_app_dir }}"
+    project_name: "{{ vm_compose_project }}"
+    state: present
+    pull: "{{ app_pull }}"
+    remove_orphans: true
+    wait: true
+    wait_timeout: 180
+
+- name: Check whether each database's role can log in over TLS
+  ansible.builtin.command:
+    argv: "{{ app_role_psql + ['--tuples-only', '--no-align', app_conninfo ~ ' sslmode=require', '--command', app_role_ssl_query] }}"
+    chdir: "{{ vm_app_dir }}"
+    stdin: "{{ lookup('ansible.builtin.password', app_password_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  vars:
+    app_conninfo: host=127.0.0.1 port=5432 dbname={{ item.database }} user={{ item.role }}
+    app_password_file: "{{ item.password_file | default(app_tenant_secrets_dir ~ '/' ~ item.key ~ '/postgres_password') }}"
+  loop: "{{ app_databases }}"
+  loop_control:
+    label: "{{ item.database }}"
+  no_log: true
+  register: app_database_login
+  changed_when: false
+  failed_when: false
+
+# The lobby's database and each tenant's. A role that logs in already keeps
+# its password, so a VM taken over with its secrets changes nothing here. The
+# SQL goes through stdin, so the password never appears in a command line.
+- name: Create the roles and databases that can't log in yet
+  ansible.builtin.command:
+    argv: "{{ app_superuser_psql + ['--dbname', 'postgres', '--set', 'ON_ERROR_STOP=1', '--quiet'] }}"
+    chdir: "{{ vm_app_dir }}"
+    stdin: "{{ lookup('ansible.builtin.template', 'create-database.sql.j2') }}"
+  vars:
+    app_created: "{{ app_database_check.item }}"
+    app_password_file: >-
+      {{ app_created.password_file | default(app_tenant_secrets_dir ~ '/' ~ app_created.key ~ '/postgres_password') }}
+    app_created_password: "{{ lookup('ansible.builtin.password', app_password_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  loop: "{{ app_database_login.results }}"
+  loop_control:
+    loop_var: app_database_check
+    label: "{{ app_database_check.item.database }}"
+  when: app_database_check.stdout != 't'
+  changed_when: true
+  no_log: true
+
+- name: Check that each database's role logs in over TLS
+  ansible.builtin.command:
+    argv: "{{ app_role_psql + ['--tuples-only', '--no-align', app_conninfo ~ ' sslmode=require', '--command', app_role_ssl_query] }}"
+    chdir: "{{ vm_app_dir }}"
+    stdin: "{{ lookup('ansible.builtin.password', app_password_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  vars:
+    app_conninfo: host=127.0.0.1 port=5432 dbname={{ item.database }} user={{ item.role }}
+    app_password_file: "{{ item.password_file | default(app_tenant_secrets_dir ~ '/' ~ item.key ~ '/postgres_password') }}"
+  loop: "{{ app_databases }}"
+  loop_control:
+    label: "{{ item.database }}"
+  no_log: true
+  register: app_database_login_after_setup
+  changed_when: false
+  failed_when: false
+
+- name: Stop unless each database's role logs in
+  vars:
+    app_databases_refused: >-
+      {{ app_database_login_after_setup.results | rejectattr('stdout', 'equalto', 't')
+         | map(attribute='item.database') | list }}
+  ansible.builtin.assert:
+    that:
+      - app_databases_refused | length == 0
+    fail_msg: >-
+      The roles of {{ app_databases_refused | join(', ') }} can't log in over TLS. If a role was locked
+      out by a move (`ALTER ROLE ... NOLOGIN`) and you want this VM to serve the Lambdas again, pass
+      -e app_unlock_after_move=true. Otherwise read `docker compose logs db` in {{ vm_app_dir }}.
+    quiet: true
+
+# The lobby's schema, from this machine with the lobby's migrate command, as
+# the lobby deploy migrates. It runs before the admin role's grants, which
+# only let the role read the lobby's tables once lobby_sessions exists. It
+# connects to the VM being deployed by its address, because vm.<domain> may
+# still point at another VM, such as during a move. The tenants migrate their
+# own databases.
+- name: Bring the lobby's schema up to date
+  ansible.builtin.command:
+    argv: [go, run, ./cmd/migrate]
+    chdir: "{{ app_repository_root }}"
+  environment:
+    LOBBY_DATABASE_URL: >-
+      postgres://{{ lobby_app_role }}:{{ lobby_app_password }}@{{ inventory_hostname }}:{{ app_postgres_published_port }}/{{ lobby_database }}?sslmode=require
+  delegate_to: localhost
+  become: false
+  no_log: true
+  # The command doesn't say whether it applied a migration; most deploys
+  # find nothing to do.
+  changed_when: false
+
+- name: Set up the admin MCP server's read-only role
+  ansible.builtin.include_tasks: admin_role.yml
+
+# The roles log in again, so this VM serves the Lambdas.
+- name: Remove the moved-away marker
+  ansible.builtin.file:
+    path: "{{ app_moved_away_marker }}"
+    state: absent
+  when: app_unlock_after_move | bool
+
+- name: Check that Postgres refuses each database's role without TLS
+  ansible.builtin.command:
+    argv: "{{ app_role_psql + [app_conninfo ~ ' sslmode=disable', '--command', 'SELECT 1'] }}"
+    chdir: "{{ vm_app_dir }}"
+    stdin: "{{ lookup('ansible.builtin.password', app_password_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  vars:
+    app_conninfo: host=127.0.0.1 port=5432 dbname={{ item.database }} user={{ item.role }}
+    app_password_file: "{{ item.password_file | default(app_tenant_secrets_dir ~ '/' ~ item.key ~ '/postgres_password') }}"
+  loop: "{{ app_databases }}"
+  loop_control:
+    label: "{{ item.database }}"
+  no_log: true
+  register: app_database_plain_login
+  changed_when: false
+  failed_when: app_database_plain_login.rc == 0 or 'no encryption' not in app_database_plain_login.stderr
+
+- name: Check Centrifugo's API through https://vm.<domain>
+  when: app_check_public_tls | bool and inventory_hostname == vm_static_ip
+  delegate_to: localhost
+  become: false
+  block:
+    - name: Call Centrifugo's info method with the API key
+      ansible.builtin.uri:
+        url: "https://{{ vm_hostname }}/api/info"
+        method: POST
+        headers:
+          X-API-Key: "{{ centrifugo_api_key }}"
+        body_format: json
+        body: {}
+        status_code: 200
+      register: app_centrifugo_info
+      until: app_centrifugo_info is succeeded
+      retries: 12
+      delay: 5
+      no_log: true
+
+    - name: Check that Centrifugo's API refuses calls without the API key
+      ansible.builtin.uri:
+        url: "https://{{ vm_hostname }}/api/info"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: 401
+  rescue:
+    - name: Explain the failed TLS check
+      ansible.builtin.fail:
+        msg: >-
+          https://{{ vm_hostname }}/api/info didn't answer with a valid certificate, or didn't
+          require the API key. Check that the Lightsail firewall opens 443, that CAA records on the
+          domain allow letsencrypt.org, and read `docker compose logs centrifugo` in {{ vm_app_dir }}
+          on the VM.
+
+- name: Write the lobby Lambda's settings to the developer machine
+  ansible.builtin.template:
+    src: lobby.env.j2
+    dest: "{{ deploy_local_dir }}/lobby.env"
+    mode: "0600"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  no_log: true
+
+- name: Write each tenant's settings to the developer machine
+  ansible.builtin.include_tasks: tenants.yml
+
+- name: Back every database up every day
+  ansible.builtin.include_tasks: backups.yml

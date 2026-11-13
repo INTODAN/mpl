@@ -1,0 +1,102 @@
+---
+# Shared by every VM playbook. The deployment's own settings (the domain, the
+# lobby's URL, Centrifugo's proxy target and the tenants) come from
+# deploy/local/vm.yml, which scripts/vm.sh passes with -e. See
+# deploy/vm.example.yml.
+
+# Lightsail's Ubuntu images log in as `ubuntu`, with passwordless sudo.
+ansible_user: ubuntu
+
+# Gitignored directory on the developer machine for the settings, the generated
+# secrets, the Lambda's settings, the tenants' settings and database dumps.
+deploy_local_dir: "{{ (playbook_dir ~ '/../local') | ansible.builtin.realpath }}"
+deploy_secrets_dir: "{{ deploy_local_dir }}/secrets"
+deploy_dumps_dir: "{{ deploy_local_dir }}/dumps"
+# What each tenant needs from the lobby and the VM, one directory per tenant.
+# scripts/vm.sh publishes it to the deploy bucket under mpl/tenants/.
+deploy_tenants_dir: "{{ deploy_local_dir }}/tenants"
+
+# The single DNS record of the VM: an A record from vm.<domain> to the
+# static IP.
+vm_hostname: "vm.{{ deploy_domain }}"
+# The address vm_hostname must resolve to. It defaults to the VM being deployed.
+# When preparing a replacement VM before the static IP moves to it, pass the
+# static IP here instead.
+vm_static_ip: "{{ inventory_hostname }}"
+
+# The Compose project on the VM: its name, which names its containers and
+# volumes, and its directory. A VM taken over keeps the ones it has, set in
+# vm.yml: another name would start a second, empty Postgres.
+vm_compose_project: mpl
+vm_app_dir: "/opt/{{ vm_compose_project }}"
+vm_deploy_user: deploy
+
+postgres_port: 5432
+# The lobby's own database and the role it connects as. The role owns the
+# database but is not a superuser. The `postgres` superuser only connects
+# through the container's local socket.
+lobby_database: lobby
+lobby_app_role: lobby
+# The read-only role that the admin MCP server (adminmcp/) connects as, from
+# the operator's machine. It may read every table of every database on the
+# VM, but not lobby_sessions.bearer_hash.
+postgres_admin_role: lobby_admin
+
+# The games whose database lives on the VM and who publish to its Centrifugo:
+# the tenants. Each one gets its database, the role that owns it, a generated
+# password and a shared secret for the lobby's hooks, and its settings in
+# deploy/local/tenants/<key>/tenant.env (deploy/README.md, "Tenants"):
+#
+#   tenants:
+#     - key: example-game          # the game's key in the lobby
+#       database: example_game     # its database and role on the VM
+#       role: example_game
+#       origins:                   # its sites, which may call the lobby and
+#         - https://game.example.org  # open Centrifugo connections
+#       websocket_origins: []      # further origins for Centrifugo only
+#       lobby_game: {...}          # its LOBBY_GAMES entry (README.md)
+tenants: []
+
+# Secrets are generated once on the developer machine and reused on every deploy
+# and on every replacement VM, so issued connection tokens stay valid. Letters
+# and digits only, so they are safe in URLs, env files and TOML. A VM taken over
+# gets the secrets it runs with copied here first (deploy/README.md).
+postgres_superuser_password: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/postgres_superuser_password',
+     length=48, chars=['ascii_letters', 'digits']) }}
+lobby_app_password: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/postgres_lobby_password',
+     length=48, chars=['ascii_letters', 'digits']) }}
+postgres_admin_password: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/postgres_admin_password',
+     length=48, chars=['ascii_letters', 'digits']) }}
+# Games publish with it too: games are trusted.
+centrifugo_api_key: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/centrifugo_api_key',
+     length=48, chars=['ascii_letters', 'digits']) }}
+connection_token_hmac_secret: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/connection_token_hmac_secret',
+     length=64, chars=['ascii_letters', 'digits']) }}
+lobby_proxy_secret: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/lobby_proxy_secret',
+     length=48, chars=['ascii_letters', 'digits']) }}
+# The lobby's player token key: an Ed25519 seed of 32 bytes in base64url. 43
+# letters and digits are a valid base64url encoding of 32 bytes, with about
+# 256 bits of randomness. Only the Lambda reads it.
+lobby_player_token_key: >-
+  {{ lookup('ansible.builtin.password', deploy_secrets_dir ~ '/lobby_player_token_key',
+     length=43, chars=['ascii_letters', 'digits']) }}
+# The key's ID, named in each token's header, comes from the key, so a new key
+# gets a new ID.
+lobby_player_token_key_id: "{{ (lobby_player_token_key | ansible.builtin.hash('sha256'))[:12] }}"
+# Keys that still verify tokens but no longer sign, as kid:seed, during a
+# rotation (deploy/README.md, "Rotating the player token key"). Pass them with
+# -e for 15 minutes after the new key starts signing.
+lobby_player_token_previous_keys: []
+# LOBBY_PLAYER_TOKEN_KEYS: the key that signs first, then the previous ones.
+lobby_player_token_keys: >-
+  {{ ([lobby_player_token_key_id ~ ':' ~ lobby_player_token_key] + lobby_player_token_previous_keys) | join(',') }}
+# Each tenant's secrets are in deploy/local/secrets/tenants/<key>/: the
+# password of its database's role, postgres_password, and the shared secret
+# that the lobby signs its hook calls with and the game its game API calls,
+# game_secret. The tasks look them up there (roles/app/vars/main.yml).

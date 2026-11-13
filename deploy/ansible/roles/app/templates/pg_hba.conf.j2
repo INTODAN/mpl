@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# TYPE   DATABASE                USER                    ADDRESS     METHOD
+
+# `docker compose exec db ...` on the VM: dumps, restores and role setup.
+local    all                     all                                 trust
+
+# The Lambdas, over the internet: TLS and a password only, and only for each
+# database's own role: the lobby's, and each tenant's.
+{% for database in app_databases %}
+hostssl  {{ database.database }}  {{ database.role }}  0.0.0.0/0   scram-sha-256
+hostssl  {{ database.database }}  {{ database.role }}  ::/0        scram-sha-256
+{% endfor %}
+
+# The admin MCP server on the operator's machine, the same way, with its
+# read-only role, to every database. Everything else is rejected.
+{% for database in app_databases %}
+hostssl  {{ database.database }}  {{ postgres_admin_role }}  0.0.0.0/0   scram-sha-256
+hostssl  {{ database.database }}  {{ postgres_admin_role }}  ::/0        scram-sha-256
+{% endfor %}

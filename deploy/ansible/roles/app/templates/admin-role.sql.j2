@@ -1,0 +1,24 @@
+-- Creates the read-only role that the admin MCP server connects as
+-- (adminmcp/), or resets its password, and lets it connect to every
+-- database: the lobby's and each tenant's. What it may read in each is
+-- granted there, by admin-grants.sql.j2. Plain SQL without psql commands.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_admin_role }}') THEN
+    CREATE ROLE "{{ postgres_admin_role }}" LOGIN;
+  END IF;
+END
+$$;
+
+ALTER ROLE "{{ postgres_admin_role }}"
+  WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  PASSWORD '{{ postgres_admin_password }}';
+
+-- The admin server sets both for its own sessions. The role keeps them for
+-- any other client, such as psql.
+ALTER ROLE "{{ postgres_admin_role }}" SET default_transaction_read_only = on;
+ALTER ROLE "{{ postgres_admin_role }}" SET statement_timeout = '5s';
+
+{% for database in app_databases %}
+GRANT CONNECT ON DATABASE "{{ database.database }}" TO "{{ postgres_admin_role }}";
+{% endfor %}

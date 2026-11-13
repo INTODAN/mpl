@@ -1,0 +1,79 @@
+---
+# Both images publish amd64 and arm64 builds. Pull newer patch releases with
+# `scripts/vm.sh deploy <ip> -e app_pull=always`.
+app_postgres_image: docker.io/library/postgres:18-alpine
+app_centrifugo_image: docker.io/centrifugo/centrifugo:v6.9.6
+app_pull: missing
+
+# Host ports. The Lightsail firewall opens 22, 443 and Postgres
+# (deploy/terraform/vm.tf).
+app_postgres_published_port: "{{ postgres_port }}"
+app_centrifugo_published_port: 443
+
+# Where players and games reach the lobby: lobby_url in vm.yml, such as
+# https://lobby.example.org. The lobby page is served from there, so
+# Centrifugo accepts its connections.
+app_lobby_origin: "{{ lobby_url | regex_replace('/+$', '') }}"
+# Where Centrifugo's subscribe and sub-refresh proxy calls go:
+# centrifugo_proxy_url in vm.yml, an origin that serves
+# /internal/lobby/centrifugo/. While a game still runs the lobby in its own
+# process, it is that game's address, the one Centrifugo calls today; the
+# cutover switches it to the lobby's Function URL, `scripts/aws.sh output
+# function_url` (deploy/README.md, "The cutover"). A proxy call can push with
+# a retry (about 1.2 s, see centrifugo/centrifugo-config.toml), and on Lambda
+# it can also wait for a cold start and a new TLS connection to Postgres.
+app_centrifugo_proxy_origin: "{{ centrifugo_proxy_url | regex_replace('/+$', '') }}"
+app_centrifugo_proxy_timeout: 10s
+
+# Optional contact address for the Let's Encrypt account.
+app_letsencrypt_email: ""
+
+# TCP keepalives for Postgres's connections. A frozen or killed Lambda
+# environment never closes its connections, and Linux's defaults only notice
+# a dead peer after about two hours, so such connections would pile up against
+# max_connections. With these, Postgres probes a connection after 60 idle
+# seconds and closes it after 6 unanswered probes 10 seconds apart: 2 minutes
+# in all. A live idle connection answers the probes and stays open, so pooled
+# connections aren't affected, unlike with idle_session_timeout.
+app_postgres_tcp_keepalives_idle: 60
+app_postgres_tcp_keepalives_interval: 10
+app_postgres_tcp_keepalives_count: 6
+
+# The Postgres certificate is self-signed and generated once on the developer
+# machine, so a replacement VM presents the same certificate.
+app_postgres_tls_dir: "{{ deploy_secrets_dir }}/postgres-tls"
+app_postgres_tls_valid_for: +3650d
+
+# Docker log rotation for both containers.
+app_log_max_size: 10m
+app_log_max_files: 5
+
+# After deploying, call Centrifugo's API through https://vm.<domain>. The first
+# TLS connection also makes Centrifugo request its certificate. The check only
+# runs when the VM being deployed is the one vm.<domain> points at.
+app_check_public_tls: true
+
+# The first deploy generates the secrets in deploy/local/secrets/. Every later
+# deploy refuses to run without them, because new ones would replace the live
+# VM's passwords and keys. That includes a new tenant's, so adding a tenant
+# needs it once too.
+app_generate_secrets: false
+
+# Dumping for a move locks every database's role out of the old VM's
+# database first, so nothing written after the dump is lost. The lock stays
+# through redeploys until app_unlock_after_move lifts it.
+app_dump_lock_writes: false
+app_unlock_after_move: false
+
+# The database that `scripts/vm.sh dump` and `restore` work on: the lobby's,
+# or a tenant's.
+app_database: "{{ lobby_database }}"
+
+# Restoring a dump refuses to overwrite a database that already has tables.
+# When told to, it first dumps the database it replaces to deploy/local/dumps/.
+app_restore_replace_existing: false
+
+# The daily backup of every database to S3 (tasks/backups.yml), in UTC, as
+# HH:MM. The deploy also backs up once at the end, unless told not to.
+app_backup_time: "02:00"
+app_backup_now: true

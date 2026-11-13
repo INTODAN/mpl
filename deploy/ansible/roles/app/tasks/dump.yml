@@ -1,0 +1,109 @@
+---
+# Dumps a database on the VM and copies the dump to the developer machine:
+# the lobby's, or with -e app_database=<name> a tenant's. Pass
+# -e app_dump_file=<path> to choose where it goes.
+- name: Check the database to dump
+  ansible.builtin.assert:
+    that:
+      - app_database in (app_databases | map(attribute='database'))
+    fail_msg: "app_database must be one of {{ app_databases | map(attribute='database') | join(', ') }}, not {{ app_database }}."
+    quiet: true
+
+- name: Choose the dump's path on the developer machine
+  ansible.builtin.set_fact:
+    app_dump_local_path: >-
+      {{ app_dump_file | default(deploy_dumps_dir ~ '/' ~ app_database ~ '-'
+         ~ now(utc=true, fmt='%Y%m%dT%H%M%SZ') ~ '.dump', true) }}
+
+- name: Create the dumps directory on the developer machine
+  ansible.builtin.file:
+    path: "{{ app_dump_local_path | ansible.builtin.dirname }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+# When moving to a new VM, nothing may write after the dump. Locking every
+# database's role out stops the Lambdas without touching AWS: their requests
+# fail until vm.<domain> points at the new VM. The marker keeps the lock
+# through redeploys, until `scripts/vm.sh deploy <ip> -e app_unlock_after_move=true`.
+- name: Lock the Lambdas out of the databases
+  when: app_dump_lock_writes | bool
+  block:
+    - name: Mark the VM as moved away from
+      ansible.builtin.copy:
+        dest: "{{ app_moved_away_marker }}"
+        content: |
+          The Lambdas were locked out of this VM's databases at {{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}
+          to move its data to another VM. See "Moving to a new VM" in deploy/README.md.
+        owner: root
+        group: root
+        mode: "0644"
+        force: false
+
+    # Waits up to 5 seconds for each connection to exit, so none is still
+    # writing when the dump starts. Every database's role is locked out,
+    # whichever one this dumps.
+    - name: Stop the Lambdas from writing to the databases
+      ansible.builtin.command:
+        argv: "{{ app_superuser_psql + ['--dbname', 'postgres', '--set', 'ON_ERROR_STOP=1', '--quiet', '--tuples-only'] }}"
+        chdir: "{{ vm_app_dir }}"
+        # The admin MCP server's read-only role is locked out too, so nobody
+        # reads the old VM's data by mistake. A deploy that unlocks the VM
+        # lets both log in again.
+        stdin: |
+          {% for app_locked in app_databases %}
+          DO $$
+          BEGIN
+            IF EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ app_locked.role }}') THEN
+              ALTER ROLE "{{ app_locked.role }}" NOLOGIN;
+            END IF;
+          END
+          $$;
+          {% endfor %}
+          DO $$
+          BEGIN
+            IF EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_admin_role }}') THEN
+              ALTER ROLE "{{ postgres_admin_role }}" NOLOGIN;
+            END IF;
+          END
+          $$;
+          SELECT count(pg_terminate_backend(pid, 5000)) FROM pg_stat_activity
+            WHERE usename IN ('{{ app_databases | map(attribute='role') | join("', '") }}', '{{ postgres_admin_role }}');
+      changed_when: true
+
+# Custom format is compressed and lets pg_restore run in one transaction.
+# Ownership and grants are left out; the restore makes the database's role
+# the owner of everything.
+- name: Dump the database
+  ansible.builtin.command:
+    argv: >-
+      {{ app_db_exec + ['pg_dump', '--username', 'postgres', '--dbname', app_database,
+         '--format', 'custom', '--no-owner', '--no-privileges',
+         '--file', '/dumps/' ~ (app_dump_local_path | ansible.builtin.basename)] }}
+    chdir: "{{ vm_app_dir }}"
+  changed_when: true
+
+- name: Copy the dump to the developer machine
+  ansible.builtin.fetch:
+    src: "{{ vm_app_dir }}/dumps/{{ app_dump_local_path | ansible.builtin.basename }}"
+    dest: "{{ app_dump_local_path }}"
+    flat: true
+    fail_on_missing: true
+
+# Dumps hold player data.
+- name: Make the dump readable only by you
+  ansible.builtin.file:
+    path: "{{ app_dump_local_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Remove the dump from the VM
+  ansible.builtin.file:
+    path: "{{ vm_app_dir }}/dumps/{{ app_dump_local_path | ansible.builtin.basename }}"
+    state: absent
+
+- name: Show where the dump is
+  ansible.builtin.debug:
+    msg: "Dumped {{ app_database }} from {{ inventory_hostname }} to {{ app_dump_local_path }}"

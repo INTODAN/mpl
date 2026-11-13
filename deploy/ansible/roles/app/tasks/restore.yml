@@ -1,0 +1,165 @@
+---
+# Restores a dump from the developer machine into one of the VM's databases:
+# the lobby's, or with -e app_database=<name> a tenant's. The VM must already
+# be deployed, and nothing may write to the database meanwhile.
+- name: Check the dump to restore
+  ansible.builtin.assert:
+    that:
+      - app_dump_file is defined
+      - app_dump_file is ansible.builtin.file
+      - app_database in (app_databases | map(attribute='database'))
+    fail_msg: >-
+      Pass -e app_dump_file=<path> with a dump made by dump.yml, and -e app_database=<name> with one of
+      {{ app_databases | map(attribute='database') | join(', ') }} when it isn't the lobby's.
+    quiet: true
+
+- name: Look for the moved-away marker
+  ansible.builtin.stat:
+    path: "{{ app_moved_away_marker }}"
+    get_checksum: false
+  register: app_restore_moved_away_marker
+
+# The VM a move copied its data from is never the one to restore into. This
+# also catches swapped `move-data` arguments.
+- name: Stop unless the VM still serves the databases
+  ansible.builtin.assert:
+    that:
+      - not app_restore_moved_away_marker.stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }} was moved away from ({{ app_moved_away_marker }}), so it isn't the VM to
+      restore into. Check the IP addresses, or unlock it first with
+      `scripts/vm.sh deploy <ip> -e app_unlock_after_move=true`.
+    quiet: true
+
+- name: Choose the dump's path on the VM
+  ansible.builtin.set_fact:
+    app_restore_remote_name: "{{ app_dump_file | ansible.builtin.basename }}"
+
+- name: Restore the dump
+  block:
+    - name: Copy the dump to the VM
+      ansible.builtin.copy:
+        src: "{{ app_dump_file }}"
+        dest: "{{ vm_app_dir }}/dumps/{{ app_restore_remote_name }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: List the dump's contents
+      ansible.builtin.command:
+        argv: "{{ app_db_exec + ['pg_restore', '--list', '/dumps/' ~ app_restore_remote_name] }}"
+        chdir: "{{ vm_app_dir }}"
+      register: app_restore_dump_contents
+      changed_when: false
+
+    # An empty dump would leave the database empty, for example after dumping
+    # the new VM instead of the old one.
+    - name: Stop unless the dump has tables
+      vars:
+        app_restore_dump_tables: "{{ app_restore_dump_contents.stdout_lines | select('search', ' TABLE (?!DATA )') | list }}"
+      ansible.builtin.assert:
+        that:
+          - app_restore_dump_tables | length > 0
+        fail_msg: "{{ app_dump_file }} has no tables. Check that it was dumped from the right VM."
+        quiet: true
+
+    - name: Count the tables in the database
+      ansible.builtin.command:
+        argv: >-
+          {{ app_superuser_psql + ['--dbname', app_database, '--tuples-only', '--no-align', '--command',
+             "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')"] }}
+        chdir: "{{ vm_app_dir }}"
+      register: app_restore_table_count
+      changed_when: false
+
+    - name: Stop unless the database is empty
+      ansible.builtin.assert:
+        that:
+          - app_restore_table_count.stdout | int == 0 or app_restore_replace_existing | bool
+        fail_msg: >-
+          {{ app_database }} on {{ inventory_hostname }} isn't empty (tables: {{ app_restore_table_count.stdout }}).
+          Pass -e app_restore_replace_existing=true to drop it and restore the dump in its place.
+        quiet: true
+
+    - name: Keep a copy of the database being replaced
+      when: app_restore_table_count.stdout | int > 0
+      block:
+        - name: Choose the replaced database's dump name
+          ansible.builtin.set_fact:
+            app_restore_backup_name: >-
+              {{ app_database }}-{{ inventory_hostname }}-before-restore-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}.dump
+
+        - name: Create the dumps directory on the developer machine
+          ansible.builtin.file:
+            path: "{{ deploy_dumps_dir }}"
+            state: directory
+            mode: "0700"
+          delegate_to: localhost
+          become: false
+
+        - name: Dump the database being replaced
+          ansible.builtin.command:
+            argv: >-
+              {{ app_db_exec + ['pg_dump', '--username', 'postgres', '--dbname', app_database,
+                 '--format', 'custom', '--no-owner', '--no-privileges', '--file', '/dumps/' ~ app_restore_backup_name] }}
+            chdir: "{{ vm_app_dir }}"
+          changed_when: true
+
+        - name: Copy the replaced database to the developer machine
+          ansible.builtin.fetch:
+            src: "{{ vm_app_dir }}/dumps/{{ app_restore_backup_name }}"
+            dest: "{{ deploy_dumps_dir }}/{{ app_restore_backup_name }}"
+            flat: true
+            fail_on_missing: true
+
+        - name: Make the replaced database's dump readable only by you
+          ansible.builtin.file:
+            path: "{{ deploy_dumps_dir }}/{{ app_restore_backup_name }}"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+
+        - name: Remove the replaced database's dump from the VM
+          ansible.builtin.file:
+            path: "{{ vm_app_dir }}/dumps/{{ app_restore_backup_name }}"
+            state: absent
+
+        - name: Show where the replaced database is
+          ansible.builtin.debug:
+            msg: "Saved the database being replaced to {{ deploy_dumps_dir }}/{{ app_restore_backup_name }}"
+
+        - name: Drop and recreate the database
+          ansible.builtin.command:
+            argv: "{{ app_superuser_psql + ['--dbname', 'postgres', '--set', 'ON_ERROR_STOP=1', '--quiet'] }}"
+            chdir: "{{ vm_app_dir }}"
+            stdin: |
+              DROP DATABASE "{{ app_database }}" WITH (FORCE);
+              CREATE DATABASE "{{ app_database }}" OWNER "{{ app_database_selected.role }}";
+          changed_when: true
+
+    # --role makes the database's role the owner of everything restored. A
+    # single transaction leaves the database empty if anything fails.
+    - name: Restore the dump in one transaction
+      ansible.builtin.command:
+        argv: >-
+          {{ app_db_exec + ['pg_restore', '--username', 'postgres', '--dbname', app_database,
+             '--role', app_database_selected.role, '--no-owner', '--no-privileges', '--single-transaction', '--exit-on-error',
+             '/dumps/' ~ app_restore_remote_name] }}
+        chdir: "{{ vm_app_dir }}"
+      changed_when: true
+
+    - name: Update the planner statistics
+      ansible.builtin.command:
+        argv: "{{ app_db_exec + ['vacuumdb', '--username', 'postgres', '--dbname', app_database, '--analyze-only', '--quiet'] }}"
+        chdir: "{{ vm_app_dir }}"
+      changed_when: false
+
+    # The dump holds no grants, so the admin role reads nothing until it gets
+    # them again.
+    - name: Grant the admin MCP server's read-only role read access again
+      ansible.builtin.include_tasks: admin_role.yml
+  always:
+    - name: Remove the dump from the VM
+      ansible.builtin.file:
+        path: "{{ vm_app_dir }}/dumps/{{ app_restore_remote_name }}"
+        state: absent

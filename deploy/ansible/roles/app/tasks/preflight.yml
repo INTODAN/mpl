@@ -1,0 +1,134 @@
+---
+# Runs before anything changes on the VM.
+- name: Check the settings and the tenants
+  ansible.builtin.import_tasks: settings.yml
+
+# The password lookups would silently generate any missing secret. On a live VM
+# that resets each role's password and replaces Centrifugo's keys, so missing
+# secrets are only generated when asked for, on the first deploy.
+- name: Look for the secrets on the developer machine
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  loop: "{{ app_secret_files }}"
+  register: app_secret_file_status
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Stop unless the secrets exist or the first deploy may generate them
+  vars:
+    app_missing_secret_files: "{{ app_secret_file_status.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
+  ansible.builtin.assert:
+    that:
+      - app_missing_secret_files | length == 0 or app_generate_secrets | bool
+    fail_msg: >-
+      Missing secrets: {{ app_missing_secret_files | join(', ') }}. Deploying without them would replace
+      the live VM's passwords and keys. Push deploy/local/ to the deploy bucket from the machine that has them,
+      or, for a VM taken over, copy the secrets it runs with (deploy/README.md). Only for a first deploy, a new
+      tenant, or after losing the secrets for good, pass -e app_generate_secrets=true.
+    quiet: true
+  run_once: true
+
+- name: Look for the backup's key on the developer machine
+  ansible.builtin.stat:
+    path: "{{ app_database_backups_file }}"
+    get_checksum: false
+  register: app_database_backups_file_status
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Stop unless the backup's key exists
+  ansible.builtin.assert:
+    that:
+      - app_database_backups_file_status.stat.exists
+      - app_backup_time is ansible.builtin.match('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+    fail_msg: >-
+      The daily database backup needs {{ app_database_backups_file }}, with the backups bucket and its
+      upload-only key, and app_backup_time as HH:MM in UTC. Run scripts/aws.sh apply, which creates the
+      bucket and writes the file, then deploy again (deploy/README.md, "Backups").
+    quiet: true
+  run_once: true
+
+- name: Look for the moved-away marker
+  ansible.builtin.stat:
+    path: "{{ app_moved_away_marker }}"
+    get_checksum: false
+  register: app_moved_away_marker_status
+
+# A move locked the roles out of this VM. Deploying it must not let the
+# Lambdas write here again, or those writes would be lost.
+- name: Stop unless the VM still serves the databases
+  ansible.builtin.assert:
+    that:
+      - not app_moved_away_marker_status.stat.exists or app_unlock_after_move | bool
+    fail_msg: >-
+      {{ inventory_hostname }} was moved away from: a dump for a move locked the roles out of its
+      databases ({{ app_moved_away_marker }}). Deploy the VM the static IP points at instead. To let
+      the Lambdas use this VM again, for example after a failed move, pass -e app_unlock_after_move=true.
+    quiet: true
+
+# A VM taken over keeps its Compose project: a deploy under another name would
+# start a second Postgres, without the data, beside the one that runs. Docker
+# may not be installed yet on a new VM, which then has no containers.
+- name: List the containers that publish Postgres's and Centrifugo's ports
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --all
+      - --filter
+      - publish={{ app_postgres_published_port }}
+      - --filter
+      - publish={{ app_centrifugo_published_port }}
+      - --format
+      - json
+  register: app_published_containers
+  changed_when: false
+  failed_when: false
+
+- name: Stop unless those containers belong to this Compose project
+  vars:
+    app_container_lines: "{{ app_published_containers.stdout_lines | default([]) if app_published_containers.rc == 0 else [] }}"
+    app_foreign_containers: >-
+      {{ app_container_lines | map('ansible.builtin.from_json')
+         | rejectattr('Labels', 'search', '(^|,)com\.docker\.compose\.project=' ~ (vm_compose_project | regex_escape) ~ '(,|$)')
+         | map(attribute='Names') | list }}
+  ansible.builtin.assert:
+    that:
+      - app_foreign_containers | length == 0
+    fail_msg: >-
+      The containers {{ app_foreign_containers | join(', ') }} publish Postgres's or Centrifugo's port but aren't
+      in the Compose project {{ vm_compose_project }}. When taking over a running VM, set vm_compose_project and
+      vm_app_dir in vm.yml to the ones it runs with (deploy/README.md, "Taking over a running VM").
+    quiet: true
+
+- name: Check that the VM runs Ubuntu 24.04 or newer
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version is ansible.builtin.version('24.04', '>=')
+    fail_msg: "Expected Ubuntu 24.04 or newer, found {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}."
+    quiet: true
+
+# Let's Encrypt allows only a few failed validations per hostname per hour, so
+# Centrifugo must not ask for a certificate before the A record is right.
+- name: Resolve the VM's hostname
+  ansible.builtin.command:
+    argv: [getent, ahostsv4, "{{ vm_hostname }}"]
+  register: app_vm_hostname_lookup
+  changed_when: false
+  failed_when: false
+
+- name: Stop unless the VM's hostname points at the static IP
+  vars:
+    app_vm_hostname_addresses: "{{ app_vm_hostname_lookup.stdout_lines | map('split') | map('first') | unique | list }}"
+  ansible.builtin.assert:
+    that:
+      - vm_static_ip in app_vm_hostname_addresses
+    fail_msg: >-
+      {{ vm_hostname }} resolves to [{{ app_vm_hostname_addresses | join(', ') }}], not {{ vm_static_ip }}.
+      Add or fix its A record (deploy/README.md) and wait until it resolves.
+      When preparing a replacement VM, pass -e vm_static_ip=<static IP>.
+    quiet: true
