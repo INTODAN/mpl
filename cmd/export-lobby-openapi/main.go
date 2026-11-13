@@ -1,5 +1,6 @@
 // Command export-lobby-openapi writes the player-facing lobby OpenAPI
-// document without constructing any production infrastructure.
+// document, the invalidation event schema and the game API's own OpenAPI
+// document, without constructing any production infrastructure.
 package main
 
 import (
@@ -20,8 +21,9 @@ import (
 )
 
 const (
-	apiTitle   = "Generic Lobby API"
-	apiVersion = "1.0.0"
+	apiTitle     = "Generic Lobby API"
+	gameAPITitle = "Generic Lobby Game API"
+	apiVersion   = "1.0.0"
 
 	eventSchemaRefPrefix = "#/components/schemas/"
 	eventDefsRefPrefix   = "#/$defs/"
@@ -30,6 +32,7 @@ const (
 type artifact struct {
 	openapi []byte
 	events  []byte
+	gameAPI []byte
 }
 
 func main() {
@@ -44,6 +47,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 	output := flags.String("output", "", "write OpenAPI JSON to PATH instead of stdout")
 	eventsOutput := flags.String("events-output", "", "write the standalone invalidation JSON Schema to PATH")
+	gameAPIOutput := flags.String("game-api-output", "", "write the game API's OpenAPI JSON to PATH")
 	check := flags.Bool("check", false, "check explicit output files without writing them")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -51,11 +55,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
 	}
-	if *check && *output == "" && *eventsOutput == "" {
-		return errors.New("--check requires --output and/or --events-output")
+	if *check && *output == "" && *eventsOutput == "" && *gameAPIOutput == "" {
+		return errors.New("--check requires --output, --events-output and/or --game-api-output")
 	}
-	if *output != "" && *eventsOutput != "" && filepath.Clean(*output) == filepath.Clean(*eventsOutput) {
-		return errors.New("--output and --events-output must name different files")
+	named := map[string]bool{}
+	for _, path := range []string{*output, *eventsOutput, *gameAPIOutput} {
+		if path == "" {
+			continue
+		}
+		if named[filepath.Clean(path)] {
+			return errors.New("--output, --events-output and --game-api-output must name different files")
+		}
+		named[filepath.Clean(path)] = true
 	}
 
 	result, err := buildArtifacts()
@@ -63,17 +74,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("export lobby OpenAPI: %w", err)
 	}
 	if *check {
-		return checkArtifacts(*output, result.openapi, *eventsOutput, result.events)
+		return checkArtifacts(*output, result.openapi, *eventsOutput, result.events, *gameAPIOutput, result.gameAPI)
 	}
 
 	// Prepare all destinations before renaming any of them. This makes a bad
 	// second destination unable to replace a valid first artifact.
-	files := make([]pendingFile, 0, 2)
+	files := make([]pendingFile, 0, 3)
 	if *output != "" {
 		files = append(files, pendingFile{path: *output, contents: result.openapi})
 	}
 	if *eventsOutput != "" {
 		files = append(files, pendingFile{path: *eventsOutput, contents: result.events})
+	}
+	if *gameAPIOutput != "" {
+		files = append(files, pendingFile{path: *gameAPIOutput, contents: result.gameAPI})
 	}
 	if err := writeArtifacts(files); err != nil {
 		return err
@@ -90,14 +104,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 // registering routes, so nil ports are sufficient and no deployment settings
 // are needed for this offline command.
 func buildArtifacts() (artifact, error) {
-	router := chi.NewRouter()
-	config := huma.DefaultConfig(apiTitle, apiVersion)
-	// The exporter is not a server. Avoid adding Huma's documentation routes to
-	// the player contract while retaining its normal schema generation hooks.
-	config.OpenAPIPath = ""
-	config.DocsPath = ""
-	config.SchemasPath = ""
-	api := humachi.New(router, config)
+	api := newAPI(apiTitle)
 	httpapi.Register(api, nil, nil, nil, nil)
 
 	openapi, err := prettyJSONFrom(api.OpenAPI())
@@ -108,7 +115,24 @@ func buildArtifacts() (artifact, error) {
 	if err != nil {
 		return artifact{}, fmt.Errorf("marshal event schema: %w", err)
 	}
-	return artifact{openapi: openapi, events: events}, nil
+	gameAPI := newAPI(gameAPITitle)
+	httpapi.RegisterGameAPI(gameAPI, nil, nil)
+	gameAPIDocument, err := prettyJSONFrom(gameAPI.OpenAPI())
+	if err != nil {
+		return artifact{}, fmt.Errorf("marshal game API OpenAPI: %w", err)
+	}
+	return artifact{openapi: openapi, events: events, gameAPI: gameAPIDocument}, nil
+}
+
+// newAPI is an API that only documents. The exporter is not a server, so it
+// adds none of Huma's documentation routes to the contract, while keeping
+// its normal schema generation hooks.
+func newAPI(title string) huma.API {
+	config := huma.DefaultConfig(title, apiVersion)
+	config.OpenAPIPath = ""
+	config.DocsPath = ""
+	config.SchemasPath = ""
+	return humachi.New(chi.NewRouter(), config)
 }
 
 func prettyJSONFrom(value any) ([]byte, error) {
@@ -231,7 +255,7 @@ func rewriteAndCollectRefs(value any, needed map[string]bool) error {
 	return nil
 }
 
-func checkArtifacts(output string, openapi []byte, eventsOutput string, events []byte) error {
+func checkArtifacts(output string, openapi []byte, eventsOutput string, events []byte, gameAPIOutput string, gameAPI []byte) error {
 	for _, expected := range []struct {
 		path string
 		data []byte
@@ -239,6 +263,7 @@ func checkArtifacts(output string, openapi []byte, eventsOutput string, events [
 	}{
 		{output, openapi, "OpenAPI"},
 		{eventsOutput, events, "event schema"},
+		{gameAPIOutput, gameAPI, "game API OpenAPI"},
 	} {
 		if expected.path == "" {
 			continue

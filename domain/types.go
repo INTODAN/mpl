@@ -55,6 +55,11 @@ type Lobby struct {
 	// retention pass counts the maximum age from it. It is not part of the
 	// public snapshot.
 	RoundStartedAt time.Time `json:"-"`
+	// BoundRound is the last round whose game the game's StartGame hook
+	// confirmed, or 0 for none. A started lobby whose BoundRound is behind
+	// its Round has no game yet, so a new start request calls the hook again.
+	// It is not part of the public snapshot.
+	BoundRound int64 `json:"-"`
 }
 
 func (room Lobby) Scope() Scope { return Scope{GameKey: room.GameKey, LobbyID: room.ID} }

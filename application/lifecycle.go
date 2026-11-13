@@ -101,7 +101,47 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
+	if game.StartGame != nil && aggregate.Lobby.Phase == domain.PhaseStarted && aggregate.Lobby.BoundRound != aggregate.Lobby.Round {
+		if aggregate, err = service.startGame(ctx, game, scope, aggregate); err != nil {
+			return domain.Snapshot{}, err
+		}
+	}
 	return service.snapshot(aggregate, principal.PlayerID)
+}
+
+// startGame asks the game to create the game of a started lobby's round,
+// after the start has committed, so the game never runs while the room is
+// locked. Once the game confirms, the lobby records the round as bound, and
+// later start requests return the lobby without asking again. When the game
+// fails, the lobby stays started and the request fails with
+// game_unavailable; the host's next start request asks again, so the game
+// must bind idempotently by lobby and round.
+func (service *Service) startGame(ctx context.Context, game domain.GameRegistration, scope domain.Scope, started domain.Aggregate) (domain.Aggregate, error) {
+	snapshot, err := domain.BuildGameSnapshot(started)
+	if err != nil {
+		return domain.Aggregate{}, err
+	}
+	snapshot.StartRules = game.StartRules
+	round := started.Lobby.Round
+	gameID, err := game.StartGame(ctx, snapshot)
+	if err == nil && gameID == "" {
+		err = errors.New("the game named no game")
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return domain.Aggregate{}, ctx.Err()
+		}
+		return domain.Aggregate{}, &domain.Error{Code: domain.CodeGameUnavailable, Message: domain.ErrGameUnavailable.Message, Cause: err}
+	}
+	return service.runMutation(ctx, scope, func(aggregate *domain.Aggregate, _ time.Time) (domain.Change, error) {
+		// A lobby reopened meanwhile plays another round, which its next
+		// start binds.
+		if aggregate.Lobby.Phase != domain.PhaseStarted || aggregate.Lobby.Round != round || aggregate.Lobby.BoundRound == round {
+			return domain.Change{}, nil
+		}
+		aggregate.Lobby.BoundRound = round
+		return domain.Change{PrivateChanged: true}, nil
+	})
 }
 
 // errRoundMoved tells Reopen that the lobby is no longer in the round whose

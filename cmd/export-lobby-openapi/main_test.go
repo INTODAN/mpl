@@ -196,6 +196,66 @@ func TestCheckModeAndWriteFailure(t *testing.T) {
 	}
 }
 
+// The game API is a document of its own, signed rather than bearer
+// authenticated, and checked like the others.
+func TestExportTheGameAPIOnItsOwn(t *testing.T) {
+	result, err := buildArtifacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	decodeJSON(t, result.gameAPI, &document)
+	paths := document["paths"].(map[string]any)
+	want := map[string]string{
+		"/lobby/v1/game-api/games/{game_key}/lobbies/{lobby_id}":                 "get getGameLobby",
+		"/lobby/v1/game-api/games/{game_key}/lobbies/{lobby_id}/authorize-watch": "post authorizeGameWatch",
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("game API paths = %v", paths)
+	}
+	for path, operation := range want {
+		method, identifier, _ := strings.Cut(operation, " ")
+		found, ok := paths[path].(map[string]any)[method].(map[string]any)
+		if !ok || found["operationId"] != identifier {
+			t.Fatalf("%s %s is missing", method, path)
+		}
+		security, _ := json.Marshal(found["security"])
+		if string(security) != `[{"LobbySignature":[]}]` {
+			t.Fatalf("%s security = %s", identifier, security)
+		}
+		assertResponse(t, paths, path, method, "401")
+	}
+	schemes := document["components"].(map[string]any)["securitySchemes"].(map[string]any)
+	if _, ok := schemes["LobbyBearer"]; ok || schemes["LobbySignature"] == nil {
+		t.Fatalf("security schemes = %v", schemes)
+	}
+	var public map[string]any
+	decodeJSON(t, result.openapi, &public)
+	for path := range public["paths"].(map[string]any) {
+		if strings.Contains(path, "game-api") {
+			t.Fatalf("the player document has %s", path)
+		}
+	}
+
+	directory := t.TempDir()
+	gameAPIPath := filepath.Join(directory, "game-api.openapi.json")
+	if err := run([]string{"--game-api-output", gameAPIPath}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--check", "--game-api-output", gameAPIPath}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("matching check failed: %v", err)
+	}
+	if err := os.WriteFile(gameAPIPath, []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--check", "--game-api-output", gameAPIPath}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("changed check unexpectedly passed")
+	}
+	if err := run([]string{"--output", gameAPIPath, "--game-api-output", gameAPIPath}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
+		t.Fatal("one file for two documents was accepted")
+	}
+}
+
 func assertResponse(t *testing.T, paths map[string]any, path, method, status string) {
 	t.Helper()
 	operation := paths[path].(map[string]any)[method].(map[string]any)

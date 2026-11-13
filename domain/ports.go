@@ -42,6 +42,17 @@ type Application interface {
 type WatchAuthorizer interface {
 	AuthorizeWatch(context.Context, Principal, Scope) error
 }
+
+// GameAPI is what a game reads from the lobby over the signed game API, in
+// place of SnapshotReader and WatchAuthorizer, which need the lobby in the
+// game's process. GameSnapshot returns the lobby as the game sees it
+// (BuildGameSnapshot), or ErrNotFound. AuthorizeGameWatch checks that a
+// player may watch the lobby, as AuthorizeWatch does: ErrWatcherKicked for a
+// watcher the host kicked, ErrNotFound for anyone else.
+type GameAPI interface {
+	GameSnapshot(context.Context, Scope) (Snapshot, error)
+	AuthorizeGameWatch(ctx context.Context, scope Scope, playerID string) error
+}
 type Clock interface{ Now() time.Time }
 type IdentifierSource interface {
 	UUID() (string, error)

@@ -165,20 +165,7 @@ func (service *Service) AuthorizeWatch(ctx context.Context, principal domain.Pri
 	if err := validatePrincipal(principal); err != nil {
 		return err
 	}
-	if err := service.policy.ValidateScope(scope); err != nil {
-		return domain.ErrNotFound
-	}
-	aggregate, err := service.store.Read(ctx, scope)
-	if err != nil {
-		return err
-	}
-	if domain.CanWatch(&aggregate, principal.PlayerID) {
-		return nil
-	}
-	if watcher := domain.FindWatcher(&aggregate, principal.PlayerID); watcher != nil {
-		return domain.ErrWatcherKicked
-	}
-	return domain.ErrNotFound
+	return service.AuthorizeGameWatch(ctx, scope, principal.PlayerID)
 }
 
 var _ domain.WatchAuthorizer = (*Service)(nil)

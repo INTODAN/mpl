@@ -46,8 +46,8 @@ func validScope(scope domain.Scope) error {
 	return domain.ValidateUUID(scope.LobbyID)
 }
 func roomRecord(room domain.Lobby) RoomRecord {
-	return RoomRecord{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: string(room.Phase), Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, NextJoinSequence: room.NextJoinSequence, GameSettings: room.GameSettings, LastConnectedAt: room.LastConnectedAt, RoundStartedAt: room.RoundStartedAt}
+	return RoomRecord{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: string(room.Phase), Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, NextJoinSequence: room.NextJoinSequence, GameSettings: room.GameSettings, LastConnectedAt: room.LastConnectedAt, RoundStartedAt: room.RoundStartedAt, BoundRound: room.BoundRound}
 }
 func domainRoom(room RoomRecord) domain.Lobby {
-	return domain.Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: domain.Phase(room.Phase), Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: json.RawMessage(room.GameSettings), NextJoinSequence: room.NextJoinSequence, LastConnectedAt: room.LastConnectedAt, RoundStartedAt: room.RoundStartedAt}
+	return domain.Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: domain.Phase(room.Phase), Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: json.RawMessage(room.GameSettings), NextJoinSequence: room.NextJoinSequence, LastConnectedAt: room.LastConnectedAt, RoundStartedAt: room.RoundStartedAt, BoundRound: room.BoundRound}
 }

@@ -42,6 +42,7 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 	}
 
 	refused("a round changed while the lobby waits", func(aggregate *domain.Aggregate) { aggregate.Lobby.Round++ })
+	refused("a round bound while the lobby waits", func(aggregate *domain.Aggregate) { aggregate.Lobby.BoundRound = 1 })
 	refused("a round start changed while the lobby waits", func(aggregate *domain.Aggregate) {
 		aggregate.Lobby.RoundStartedAt = aggregate.Lobby.RoundStartedAt.Add(time.Hour)
 	})
@@ -51,6 +52,16 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 	if rows := storeCount(t, fixture.db, &postgres.StartRosterRecord{}); rows != 1 {
 		t.Fatalf("roster rows = %d, want 1", rows)
 	}
+	// The game confirms the round that the started lobby plays, and only
+	// that one.
+	refused("another round bound", func(aggregate *domain.Aggregate) { aggregate.Lobby.BoundRound = 2 })
+	if err := transact(func(aggregate *domain.Aggregate) { aggregate.Lobby.BoundRound = 1 }); err != nil {
+		t.Fatal(err)
+	}
+	if bound := readStore(t, fixture).Lobby.BoundRound; bound != 1 {
+		t.Fatalf("bound round = %d, want 1", bound)
+	}
+	refused("a bound round moved back", func(aggregate *domain.Aggregate) { aggregate.Lobby.BoundRound = 0 })
 	refused("a roster emptied while started", func(aggregate *domain.Aggregate) { aggregate.StartRoster = domain.StartRoster{} })
 	refused("a round changed while started", func(aggregate *domain.Aggregate) { aggregate.Lobby.Round++ })
 	refused("a round start changed while started", func(aggregate *domain.Aggregate) {
@@ -83,7 +94,7 @@ func TestStoreEmptiesTheRosterOnlyWhenTheLobbyReopens(t *testing.T) {
 	if !reopened.Lobby.RoundStartedAt.Equal(reopenedAt) {
 		t.Fatalf("reopened lobby's round started at %v, want %v", reopened.Lobby.RoundStartedAt, reopenedAt)
 	}
-	if reopened.Lobby.Phase != domain.PhaseWaiting || reopened.Lobby.Round != 2 || len(reopened.StartRoster) != 0 {
+	if reopened.Lobby.Phase != domain.PhaseWaiting || reopened.Lobby.Round != 2 || len(reopened.StartRoster) != 0 || reopened.Lobby.BoundRound != 1 {
 		t.Fatalf("reopened lobby = phase %s, round %d, roster %v", reopened.Lobby.Phase, reopened.Lobby.Round, reopened.StartRoster)
 	}
 	if rows := storeCount(t, fixture.db, &postgres.StartRosterRecord{}); rows != 0 {

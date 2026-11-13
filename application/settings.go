@@ -33,7 +33,7 @@ func (service *Service) ChangeSettings(ctx context.Context, principal domain.Pri
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
-	settings, err := service.policy.ValidateGameSettings(ctx, scope.GameKey, request.GameSettings, teams)
+	settings, err := service.policy.ValidateGameSettings(ctx, scope.GameKey, scope.LobbyID, request.GameSettings, teams)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}

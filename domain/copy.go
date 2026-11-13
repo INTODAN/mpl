@@ -57,6 +57,19 @@ func BuildSnapshot(aggregate Aggregate, playerID string) (Snapshot, error) {
 	if member == nil || !member.Active {
 		return Snapshot{}, ErrNotFound
 	}
+	snapshot, err := BuildGameSnapshot(aggregate)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot.MembershipGeneration = member.Generation
+	return snapshot, nil
+}
+
+// BuildGameSnapshot is the snapshot that a lobby's game reads, through the
+// start hook or the game API: the view of every member, with no player
+// behind it, so MembershipGeneration is 0. Callers apply deadline
+// normalization first, as for BuildSnapshot.
+func BuildGameSnapshot(aggregate Aggregate) (Snapshot, error) {
 	channel, err := RoomChannel(aggregate.Lobby.Scope())
 	if err != nil {
 		return Snapshot{}, err
@@ -80,7 +93,7 @@ func BuildSnapshot(aggregate Aggregate, playerID string) (Snapshot, error) {
 		}
 		return detached.Teams[first].Order < detached.Teams[second].Order
 	})
-	return Snapshot{Lobby: detached.Lobby, Teams: detached.Teams, Members: members, StartRoster: detached.StartRoster, MembershipGeneration: member.Generation, Channel: channel, WatcherCount: WatcherCount(detached.Watchers)}, nil
+	return Snapshot{Lobby: detached.Lobby, Teams: detached.Teams, Members: members, StartRoster: detached.StartRoster, Channel: channel, WatcherCount: WatcherCount(detached.Watchers)}, nil
 }
 
 // WatcherCount counts the watchers who may watch.

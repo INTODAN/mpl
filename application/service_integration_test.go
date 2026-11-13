@@ -115,7 +115,7 @@ func integrationID(t *testing.T) string {
 // quizSettings stands in for a game's settings validator. It accepts an
 // optional rounds count from 1 to 10 and an optional teams count that must
 // match the lobby's teams, and nothing else.
-func quizSettings(_ context.Context, settings json.RawMessage, teams []domain.TeamDefinition) error {
+func quizSettings(_ context.Context, _ string, settings json.RawMessage, teams []domain.TeamDefinition) error {
 	var decoded struct {
 		Rounds *int `json:"rounds"`
 		Teams  *int `json:"teams"`

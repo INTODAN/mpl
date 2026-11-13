@@ -31,7 +31,7 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 	if domain.ValidateUUID(request.TeamID) != nil || (request.RequestID != "" && domain.ValidateUUID(request.RequestID) != nil) {
 		return domain.Snapshot{}, domain.ErrInvalidInput
 	}
-	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, request.SeatSettings)
+	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, scope.LobbyID, request.SeatSettings)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}

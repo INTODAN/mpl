@@ -260,6 +260,10 @@ func seedRoom(t *testing.T, db *gorm.DB, playerID, gameKey, joinCode string) lob
 	if !db.Migrator().HasColumn(&lobbypostgres.RoomRecord{}, "round_started_at") {
 		omitted = append(omitted, "RoundStartedAt")
 	}
+	// And bound_round, which migration 0011 added.
+	if !db.Migrator().HasColumn(&lobbypostgres.RoomRecord{}, "bound_round") {
+		omitted = append(omitted, "BoundRound")
+	}
 	if err := db.Omit(omitted...).Create(&room).Error; err != nil {
 		t.Fatal(err)
 	}

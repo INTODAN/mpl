@@ -380,7 +380,7 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	seed := func(code string, roomCapacity int, teamNames ...string) (lobbypostgres.RoomRecord, []legacyTeamRecord) {
 		room := roomFor(player.ID, "island-battles", code)
 		room.Capacity = roomCapacity
-		if err := db.Omit("Round", "RoundStartedAt").Create(&room).Error; err != nil {
+		if err := db.Omit("Round", "RoundStartedAt", "BoundRound").Create(&room).Error; err != nil {
 			t.Fatal(err)
 		}
 		teams := make([]legacyTeamRecord, len(teamNames))

@@ -9,7 +9,9 @@ lobby/
   application/        Membership commands, teams, leases, binding, and publishing
   auth/               Guest credentials and connection tokens
   postgres/           Persistence and versioned schema migrations
-  httpapi/            HTTP routes and DTOs
+  httpapi/            HTTP routes and DTOs, the player API and the game API
+  gamehooks/          Signed HTTP hooks and game API client for games in other services
+  mockgame/           A mock game over HTTP, for the lobby's own tests
   adminmcp/           Read-only MCP tools for operators' questions about lobbies
   frontend/           Temporary browser playground and embedded asset handler
   realtime/           Centrifugo authorization and the push publisher
@@ -28,7 +30,7 @@ All commands in this README run from this directory:
 ```sh
 GOWORK=off go test ./...
 GOWORK=off go vet ./...
-go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --check
+go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --game-api-output api/game-api.openapi.json --check
 uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
 ```
 
@@ -80,9 +82,9 @@ DefaultPolicy(games ...GameRegistration) Policy
 (Policy).Validate() error
 (Policy).Game(string) (GameRegistration, error)
 (Policy).ValidateGame(string) error
-(Policy).ValidateGameSettings(context.Context, string, json.RawMessage, []TeamDefinition) (json.RawMessage, error)
+(Policy).ValidateGameSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage, teams []TeamDefinition) (json.RawMessage, error)
 NormalizeGameSettings(json.RawMessage) (json.RawMessage, error)
-(Policy).ValidateSeatSettings(context.Context, string, json.RawMessage) (json.RawMessage, string, error)
+(Policy).ValidateSeatSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage) (json.RawMessage, string, error)
 NormalizeSeatSettings(json.RawMessage) (json.RawMessage, error)
 (Member).IsSeat() bool
 (Policy).ValidateScope(Scope) error
@@ -111,6 +113,7 @@ FindLease(*Aggregate, string, int64, string) *Lease
 (Aggregate).DeepCopy() Aggregate
 MergeChanges(...Change) Change
 BuildSnapshot(Aggregate, string) (Snapshot, error)
+BuildGameSnapshot(Aggregate) (Snapshot, error)
 ```
 
 A team holds one member, a person or a seat, so a lobby holds as many members as it has teams. `ValidateTeamDefinitions` accepts 2 to 16 teams with unique names; a create request chooses no capacity, and `Lobby.Capacity` is the number of teams. `TeamTaken` reports whether an active member is on a team, which makes selecting it or adding a seat to it fail with `team_full`, and `LobbyFull` whether the lobby has as many active members as teams, which makes a join or a new seat fail with `lobby_full`. A start with two members on one team, which only a lobby created before this rule can have, fails with `not_ready`.
@@ -124,13 +127,14 @@ Policy defaults are explicit: `DefaultPolicy(registrations...)` supplies 15s hea
 The host declares each game with a `GameRegistration`. The lobby applies its fields without knowing the game, and a zero field keeps the default behavior, so new declarations are added as new fields:
 
 - `Key` is the canonical game key.
-- `ValidateSettings` checks the optional `game_settings` object of a create or settings-change request against the request's validated teams, so a game can require settings that fit the lobby, such as a map with one starting position per team. A nil validator means the game takes no settings and accepts only `{}`.
+- `ValidateSettings` checks the optional `game_settings` object of a create or settings-change request against the request's validated teams, `func(ctx, lobbyID string, settings json.RawMessage, teams []TeamDefinition) error`, with an empty lobby ID while the lobby is being created, so a game can require settings that fit the lobby, such as a map with one starting position per team. A nil validator means the game takes no settings and accepts only `{}`.
 - `StartRules` adds start conditions to the default ones: at least two members, at least one of them a person, each with a team, ready and connected, or `not_ready`. With `EveryTeamNeedsMember`, a start with an empty team fails with `empty_teams`, whose `team_ids` list the empty teams in team order. Snapshots carry the game's rules as `start_rules`, so clients can explain why the lobby can't start yet.
 - `Retention` overrides the policy's `LobbyRetention`, the idle period and the maximum age after which the game's lobbies are deleted. The maximum age runs from the start of the lobby's current round: its creation, or the last time it was reopened. Each zero period keeps the default.
 - `ReadyGate` lets the game keep members from getting ready, and a lobby from starting, until they meet a condition of the game's own, such as a choice in their [member settings](#member-settings). The lobby calls it with the lobby's ID before the transaction of a ready request with `ready: true` or a start, so a game that reads its own data reads it without the room's lock held, and runs the `ReadyCheck` it returns inside the transaction: for the member getting ready (one `ReadyMember`, `atStart` false), after the lobby's own checks (active member, waiting phase, a team), and once for the whole start roster (every member's ID, display name and member settings, `atStart` true), after the start rules, so the game can name the members who must act in a refusal that the host sees. Each `ReadyMember` carries the member's `Settings`, their member settings or nil, so a game that decides from them reads nothing and returns its check at once. The check returns nil or `GameRequirement(problemType, message)`, which fails the request with 409 `game_requirement`, whose `type` is the game's problem type URI and whose `detail` is the game's message for the player. A gate or check that can't decide reports `unavailable`. Data the gate reads itself is read before the lock, so a member must keep meeting a condition on it once they do while the lobby waits; member settings come from inside the transaction. Clearing readiness never asks the gate. A nil gate adds no condition.
 - `GameOver` tells whether the game of a lobby round has ended, `func(ctx, lobbyID string, round int64) (bool, error)`, so that a member can [reopen the lobby](#playing-again-in-the-same-lobby) for another game. The lobby calls it before the transaction of a reopen request, like the ready gate. A game that has ended must stay ended. A game should report a round whose start never created a game as over, so the lobby can't be stuck. A check that can't run returns the context's error or one wrapping `ErrUnavailable`. A nil check means the game's lobbies play one game: reopening fails with `phase_conflict`.
-- `ValidateSeat` lets the host add [seats that no person plays](#seats-that-no-person-plays), such as the game's bot, and checks each seat's `seat_settings`. It receives the settings as a canonical object and returns the seat's display name, such as `Bot (level 2)`. A rejection becomes `invalid_seat_settings` with the validator's message; a validator that can't run returns the context's error or one wrapping `ErrUnavailable`. A nil validator means the game has no seats, and every seat is refused with `invalid_seat_settings`.
+- `ValidateSeat` lets the host add [seats that no person plays](#seats-that-no-person-plays), such as the game's bot, and checks each seat's `seat_settings`, `func(ctx, lobbyID string, settings json.RawMessage) (string, error)`. It receives the settings as a canonical object and returns the seat's display name, such as `Bot (level 2)`. A rejection becomes `invalid_seat_settings` with the validator's message; a validator that can't run returns the context's error or one wrapping `ErrUnavailable`. A nil validator means the game has no seats, and every seat is refused with `invalid_seat_settings`.
 - `ValidateMemberSettings` lets each person set their own [member settings](#member-settings) for the game, such as what plays for them, `func(ctx, lobbyID string, settings json.RawMessage) error`. It receives the settings as a canonical object; a rejection becomes `invalid_member_settings` with the validator's message, and a validator that can't run returns the context's error or one wrapping `ErrUnavailable`. A nil validator means the game takes no member settings, and every value is refused with `invalid_member_settings`.
+- `StartGame` creates the game of a started lobby's round, `func(ctx, snapshot Snapshot) (gameID string, err error)`. The lobby calls it right after a start commits, outside the transaction, with the snapshot as the game reads it (`BuildGameSnapshot`, with the game's start rules), and records the round as bound (`Lobby.BoundRound`, column `lobby_rooms.bound_round`, not in the public snapshot). Any error, or an empty game ID, fails the start request with 502 `game_unavailable`, and the lobby stays started; the host's next start request on a started lobby whose round isn't bound calls it again, and once it is bound, start requests return the snapshot without calling it. So the game must bind idempotently by lobby and round. A nil `StartGame` calls nothing: the game binds its own way, such as through `application.GameBinding` (see [Binding a game to a started lobby](#binding-a-game-to-a-started-lobby)). [Binding a game over HTTP](#binding-a-game-over-http) describes the games that set it.
 
 `ValidateGameSettings` first canonicalizes the settings with `NormalizeGameSettings`: one compact JSON object with sorted keys and at most `MaxGameSettingsBytes`, and `{}` when the request had none. The validator receives that canonical object and the request's teams in order, after they pass `ValidateTeamDefinitions`. A rejection becomes `invalid_game_settings` with the validator's message as the client-facing detail, and the create request fails without writes. A validator that can't run returns the context's error or one wrapping `ErrUnavailable`. The lobby stores the canonical object with the room, includes it in the create fingerprint and returns it as `lobby.game_settings` in every snapshot, including the started snapshot a game binding receives. The host can [change the settings and the teams](#changing-a-lobbys-settings) while the lobby waits; the same validator checks the new settings against the new teams.
 
@@ -248,6 +252,79 @@ binding, err := application.NewGameBinding("quiz-demo", lobbyService,
 `quizStore.Bind` owns the game's schema, result type, and translation of lobby teams into game state. It must atomically create or return the same game for the lobby round; PostgreSQL integrations can use `BindOnce` for that orchestration. It must not start external side effects inside the transaction. No game rows are created by the normal lobby start operation.
 
 Island Battles connects these helpers through `backend/lobbyadapter`, with game-specific persistence in `backend/dal/lobby_binding.go` and model migration in `backend/dependencies/database.go`. The adapter uses the actual model types directly, without re-exporting aliases. It translates team order to numeric simulation colors and validates that persisted mappings match on replay. Generic lobby code does not import the backend or assume numeric game IDs or team colors.
+
+## Binding a game over HTTP
+
+A game can run in a service of its own, in any language: the lobby calls its **hooks** over HTTP, and the game reads the lobby through the **game API**. Package `gamehooks` implements both sides for Go, and `mockgame` is a small game built on it that the lobby's integration tests play against, over real HTTP servers ([`mockgame/integration_test.go`](mockgame/integration_test.go)). A game can still be registered in the lobby's own process with Go functions, as before.
+
+### Configuration
+
+The host lists the games it calls in `LOBBY_GAMES`, a JSON array; `gamehooks.LoadGames(os.LookupEnv)` reads it:
+
+```json
+[{"key": "example-game", "name": "Example Game",
+  "hooks_url": "https://game.example.com/game/lobby-hooks",
+  "secret_env": "LOBBY_GAME_SECRET_EXAMPLE_GAME",
+  "start_rules": {"every_team_needs_member": true},
+  "retention": {"idle_period": "2h", "maximum_age": "48h"},
+  "frontend": {"result_url": "/game/{lobby_id}/result"}}]
+```
+
+- `key`, `name`, `hooks_url` and `secret_env` are required. `hooks_url` uses https, or http for a loopback host such as `127.0.0.1` in development and tests. `secret_env` names the environment variable that holds the game's shared secret, at least 32 bytes; the configuration never holds the secret itself. Unknown fields are refused.
+- `start_rules` and `retention` are fixed by the configuration, as a registration's `StartRules` and `Retention` fields are; retention periods are Go durations, and an absent one keeps the default.
+- `frontend` is the game's [frontend catalog entry](frontend/README.md), every field of `frontend.Game` but `key` and `name`, which come from the game's.
+
+Each `gamehooks.ConfiguredGame` holds the game's `Registration`, whose hooks call the game (`gamehooks.Client`), its `Frontend` entry and its `Secret`. The host adds `gamehooks.Registrations(games)` to its policy, the frontend entries to its catalog, and serves the game API with `httpapi.RegisterGameAPI(api, lobbyService, gamehooks.Secrets(games))` on a Huma API of its own, so the player API's document never lists it.
+
+### Hooks: the lobby calls the game
+
+Each hook is `POST {hooks_url}/<hook>`, with a JSON body, signed (see below), and has 5 seconds to answer.
+
+| Hook | Body | Answer | Registration field |
+|---|---|---|---|
+| `validate-settings` | `{lobby_id, settings, teams}`; `lobby_id` is absent while the lobby is being created | 204, or 422 to refuse | `ValidateSettings` |
+| `validate-seat` | `{lobby_id, settings}` | 200 `{display_name}`, or 422 | `ValidateSeat` |
+| `validate-member-settings` | `{lobby_id, settings}` | 204, or 422 | `ValidateMemberSettings` |
+| `ready-check` | `{lobby_id, members: [{player_id, display_name, settings}], at_start}` | 204, or 409 with `code` `game_requirement` | `ReadyGate` |
+| `start` | `{snapshot}`, the started lobby as `GET` on the game API returns it | 200 `{game_id}` | `StartGame` |
+| `round-ended` | `{lobby_id, round}` | 200 `{ended}` | `GameOver` |
+
+- A refusal is an `application/problem+json` body. The `detail` of a 422 becomes the detail of the lobby's `invalid_game_settings`, `invalid_seat_settings` or `invalid_member_settings`, and the `type` and `detail` of a 409 `game_requirement` reach the player unchanged. Both are shown to players, so write them for players.
+- A transport error, a timeout, a 5xx, and any answer the table doesn't allow (a 401 included) make the player's request fail with 503 `unavailable`, as when an in-process game is unavailable. The `start` hook is the exception: see below.
+- `settings` are canonical JSON objects, compact with sorted keys; a member's `settings` are null when they set none. `teams` are the request's validated teams, `[{name}]`, in order.
+- `ready-check` runs inside the transaction of the ready or start request, so it holds the lobby's row lock while it runs, and other requests to the lobby wait for it: answer it quickly, from its body. The other hooks run outside any transaction. A game can read the lobby through the game API from any hook, since the game API reads without waiting for the lock.
+- `round-ended` must answer true for a round whose start created no game, so the lobby is never stuck, and a round that ended must stay ended.
+
+### Starting idempotently
+
+1. The host's `POST …/start` commits the start: the lobby is `started`, with its frozen roster, before the game hears of it.
+2. The lobby then calls `start` with the snapshot. The game creates the game of the lobby's round, or finds the one it already created for that lobby and round, and answers its ID. It must bind idempotently by (lobby, round): a timed-out call may have succeeded, and two start requests can call it at once. `postgres.BindOnce` does this for a game on PostgreSQL.
+3. When the game confirms, the lobby records the round in `lobby_rooms.bound_round` and answers the start request with the snapshot. Later start requests return the snapshot without calling the game.
+4. When the call fails, the start request fails with 502 `game_unavailable`, and the lobby stays started. The host's next `POST …/start` calls `start` again. Nobody else's does: a start request from another member fails with `not_host` first.
+
+### Signing
+
+Every hook call and every game API request carries `Lobby-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, t + "." + method + " " + path + "." + body)>`, with the game's shared secret. `path` is the request's path as sent, without the query; `body` is the raw body, empty for a GET. For example, the secret `0123456789abcdef0123456789abcdef` signs `POST /game/lobby-hooks/start` with the body `{}` at 1700000000 as `t=1700000000,v1=3c6505b8849a6df2536beae76ee23be92057394a296d73decbd889a150d20c5d`.
+
+The receiver refuses with 401 a signature that is missing or malformed, more than 5 minutes from its clock either way, or whose HMAC differs, compared in constant time; it checks the signature before it reads anything else. In Go, `gamehooks.Sign` and `gamehooks.Verify` do this, and `gamehooks.NewHandler(secret, registration)` serves a game's hooks from the Go functions of a `domain.GameRegistration`: it verifies the path the lobby sent, so it can be mounted under any prefix, with or without `http.StripPrefix`, but not behind a proxy that rewrites the path.
+
+### Game API: the game reads the lobby
+
+Under `/lobby/v1/game-api/games/{game_key}/`, signed with that game's secret, so a game reaches only its own key; its OpenAPI document is [`api/game-api.openapi.json`](api/game-api.openapi.json). In Go, `gamehooks.NewGameAPIClient(key, lobbyURL, secret)` calls it.
+
+- `GET lobbies/{lobby_id}` returns the lobby's snapshot as the game sees it: the player API's snapshot with every member and no player behind it, so `membership_generation` is 0. It replaces the in-process `SnapshotReader`. A lobby that is gone, or another game's, is 404.
+- `POST lobbies/{lobby_id}/authorize-watch` with `{player_id}` answers 204 for an active member or a watcher the host hasn't kicked, and 403 otherwise, with the code `watcher_kicked` for a kicked watcher and `permission_denied` for anyone else. It replaces `WatchAuthorizer.AuthorizeWatch`; `GameAPIClient.AuthorizeWatch` implements that interface.
+
+### A game author's checklist
+
+- [ ] Pick a key (lowercase letters, digits and single hyphens) and a shared secret of at least 32 random bytes, and give the lobby's host the `LOBBY_GAMES` entry and the secret's environment variable.
+- [ ] Serve all six hooks under one URL, over https. Check `Lobby-Signature` on every call, before anything else, and refuse with 401.
+- [ ] Answer within 5 seconds. Return 422 with a `detail` for players to refuse settings, 409 `game_requirement` with your own problem `type` to keep a member from getting ready, and 5xx only when you can't decide.
+- [ ] Answer `ready-check` quickly, from its body: the lobby waits for it with the lobby locked.
+- [ ] Make `start` idempotent by (lobby ID, round), and answer the same `game_id` every time for a round.
+- [ ] Make `round-ended` true for a round that has no game, and keep a round ended once it is.
+- [ ] Read lobbies and authorize watchers through the signed game API, not the lobby's database.
+- [ ] Add your frontend entry (result URL, modules, links) to `frontend` in `LOBBY_GAMES`.
 
 ## Admin MCP tools
 
