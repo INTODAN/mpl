@@ -17,7 +17,7 @@ import (
 
 // botSeat stands in for a game's seat validator: a seat takes a bot level
 // from 1 to 3 and nothing else.
-func botSeat(_ context.Context, settings json.RawMessage) (string, error) {
+func botSeat(_ context.Context, _ string, settings json.RawMessage) (string, error) {
 	var decoded struct {
 		Level int    `json:"level"`
 		Name  string `json:"name"`

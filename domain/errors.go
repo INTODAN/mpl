@@ -27,7 +27,11 @@ const (
 	// CodeGameRunning refuses to reopen a started lobby whose game hasn't
 	// ended.
 	CodeGameRunning ErrorCode = "game_running"
-	CodeUnavailable ErrorCode = "unavailable"
+	// CodeGameUnavailable reports that a lobby started but its game could
+	// not create the round's game. The lobby stays started, and the host
+	// starts it again to retry.
+	CodeGameUnavailable ErrorCode = "game_unavailable"
+	CodeUnavailable     ErrorCode = "unavailable"
 	// CodeWatcherKicked refuses a watcher whom the host kicked from the lobby.
 	CodeWatcherKicked ErrorCode = "watcher_kicked"
 	// CodeWatchersFull refuses a new watcher once the lobby has
@@ -88,6 +92,7 @@ var (
 	ErrInvalidInput        = NewError(CodeInvalidInput, "invalid input")
 	ErrUnavailable         = NewError(CodeUnavailable, "service temporarily unavailable")
 	ErrGameRunning         = NewError(CodeGameRunning, "the lobby's game is still running")
+	ErrGameUnavailable     = NewError(CodeGameUnavailable, "the lobby started, but its game could not be created; start it again to retry")
 	ErrWatcherKicked       = NewError(CodeWatcherKicked, "the host removed you from this lobby's watchers")
 	ErrWatchersFull        = NewError(CodeWatchersFull, "this lobby has as many watchers as it allows")
 	ErrPermissionDenied    = NewError(CodePermissionDenied, "permission denied")

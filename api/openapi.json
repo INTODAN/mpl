@@ -642,6 +642,7 @@
               "invalid_member_settings",
               "game_requirement",
               "game_running",
+              "game_unavailable",
               "watcher_kicked",
               "watchers_full",
               "unavailable",
@@ -2361,7 +2362,7 @@
     },
     "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/start": {
       "post": {
-        "description": "Starts an eligible lobby and freezes its roster. The host can start once at least two members are present and every member has chosen a team, is ready and is connected; otherwise it fails with not_ready. The snapshot's start_rules list the game's extra conditions: with every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the empty teams. A game that requires something of each member before they get ready checks the whole roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays frozen while the lobby is started; once the game has ended, a member can reopen the lobby for another game (reopenLobby), which empties the roster for the next start.",
+        "description": "Starts an eligible lobby and freezes its roster. The host can start once at least two members are present and every member has chosen a team, is ready and is connected; otherwise it fails with not_ready. The snapshot's start_rules list the game's extra conditions: with every_team_needs_member, a lobby with an empty team fails with empty_teams, whose team_ids name the empty teams. A game that requires something of each member before they get ready checks the whole roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays frozen while the lobby is started; once the game has ended, a member can reopen the lobby for another game (reopenLobby), which empties the roster for the next start. A game that the lobby calls over HTTP creates its game for the round right after the start commits; when it can't, the start fails with 502 game_unavailable and the lobby stays started, and the host starting it again asks the game again. Starting a started lobby whose game exists returns its snapshot.",
         "operationId": "startLobby",
         "parameters": [
           {
@@ -2463,6 +2464,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Gateway"
           },
           "503": {
             "content": {

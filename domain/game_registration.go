@@ -17,8 +17,9 @@ import (
 type GameRegistration struct {
 	// Key is the canonical game key used in requests, URLs and channels.
 	Key string
-	// ValidateSettings checks the game settings of a create request. Nil means
-	// the game takes no settings and accepts only an empty object.
+	// ValidateSettings checks the game settings of a create or settings
+	// change request. Nil means the game takes no settings and accepts only an
+	// empty object.
 	ValidateSettings GameSettingsValidator
 	// StartRules adds start conditions to the lobby's default ones.
 	StartRules StartRules
@@ -41,7 +42,20 @@ type GameRegistration struct {
 	// the lobby can be reopened for its next round. Nil means the game's
 	// lobbies play one game and are never reopened.
 	GameOver GameOverCheck
+	// StartGame creates the game of a lobby's round once the lobby has
+	// committed its start, and again on a later start request while the game
+	// hasn't confirmed one. Nil means the lobby calls nothing: the game binds
+	// its own way, such as through application.GameBinding.
+	StartGame GameStarter
 }
+
+// GameStarter receives the snapshot of a lobby that has just started, as the
+// game reads it (domain.BuildGameSnapshot), and returns the ID of the game it
+// created for the lobby's round. It must bind idempotently by lobby and
+// round: a second call for the same round returns the same game. Any error is
+// reported as game_unavailable, and the lobby stays started, so that the host
+// can retry.
+type GameStarter func(ctx context.Context, snapshot Snapshot) (gameID string, err error)
 
 // GameOverCheck reports whether the game that a started lobby plays in round
 // is over. The lobby calls it with the lobby's ID before the transaction of a
@@ -56,12 +70,12 @@ type GameRegistration struct {
 type GameOverCheck func(ctx context.Context, lobbyID string, round int64) (bool, error)
 
 // SeatValidator receives the settings of a seat that the host adds, as a
-// canonical JSON object, and returns the display name that the lobby shows
+// canonical JSON object, with the lobby's ID, and returns the display name that the lobby shows
 // for the seat, such as "Bot (level 2)". To reject the settings, return an
 // error whose message is safe to show the client. To report that the check
 // itself failed, return the context's error or an error wrapping
 // ErrUnavailable.
-type SeatValidator func(ctx context.Context, settings json.RawMessage) (displayName string, err error)
+type SeatValidator func(ctx context.Context, lobbyID string, settings json.RawMessage) (displayName string, err error)
 
 // MemberSettingsValidator receives the member settings that a person sets for
 // themselves in a lobby, as a canonical JSON object, with the lobby's ID. To
@@ -183,13 +197,14 @@ func (rules StartRules) Check(teams []Team, roster StartRoster) error {
 	return &Error{Code: CodeEmptyTeams, Message: "every team needs a player before the lobby can start; empty: " + strings.Join(names, ", "), TeamIDs: ids}
 }
 
-// GameSettingsValidator receives the settings of a create request as a
-// canonical JSON object, `{}` when the request had none, with the request's
+// GameSettingsValidator receives the settings of a create or settings change
+// request as a canonical JSON object, `{}` when the request had none, with the
+// lobby's ID, empty while the lobby is being created, and the request's
 // validated teams in order, so settings can be checked against the lobby they
 // configure. To reject them, return an error whose message is safe to show the
 // client. To report that the check itself failed, return the context's error or
 // an error wrapping ErrUnavailable.
-type GameSettingsValidator func(ctx context.Context, settings json.RawMessage, teams []TeamDefinition) error
+type GameSettingsValidator func(ctx context.Context, lobbyID string, settings json.RawMessage, teams []TeamDefinition) error
 
 // EmptyGameSettings is stored for a lobby created without game settings.
 const EmptyGameSettings = "{}"
@@ -284,9 +299,10 @@ func containsNUL(value any) bool {
 }
 
 // ValidateGameSettings normalizes settings and checks them with the game's
-// validator against the lobby's validated teams. It returns the canonical
-// settings to store with the lobby.
-func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, settings json.RawMessage, teams []TeamDefinition) (json.RawMessage, error) {
+// validator against the lobby's validated teams. lobbyID is empty while the
+// lobby is being created. It returns the canonical settings to store with the
+// lobby.
+func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage, teams []TeamDefinition) (json.RawMessage, error) {
 	game, err := policy.Game(gameKey)
 	if err != nil {
 		return nil, err
@@ -301,7 +317,7 @@ func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, s
 		}
 		return canonical, nil
 	}
-	err = game.ValidateSettings(ctx, bytes.Clone(canonical), slices.Clone(teams))
+	err = game.ValidateSettings(ctx, lobbyID, bytes.Clone(canonical), slices.Clone(teams))
 	switch {
 	case err == nil:
 		return canonical, nil
@@ -316,7 +332,7 @@ func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey string, s
 // game's seat validator. It returns the canonical settings to store with the
 // seat and the seat's display name. A game without a seat validator has no
 // seats and refuses every one with CodeInvalidSeatSettings.
-func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey string, settings json.RawMessage) (json.RawMessage, string, error) {
+func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage) (json.RawMessage, string, error) {
 	game, err := policy.Game(gameKey)
 	if err != nil {
 		return nil, "", err
@@ -328,7 +344,7 @@ func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey string, s
 	if game.ValidateSeat == nil {
 		return nil, "", NewError(CodeInvalidSeatSettings, "this game has no seats that the host can add")
 	}
-	name, err := game.ValidateSeat(ctx, bytes.Clone(canonical))
+	name, err := game.ValidateSeat(ctx, lobbyID, bytes.Clone(canonical))
 	switch {
 	case err == nil:
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrUnavailable):

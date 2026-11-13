@@ -35,7 +35,7 @@ func (service *Service) Create(ctx context.Context, principal domain.Principal, 
 	if err != nil {
 		return domain.Snapshot{}, domain.ErrUnauthenticated
 	}
-	settings, err := service.policy.ValidateGameSettings(ctx, request.GameKey, request.GameSettings, request.Teams)
+	settings, err := service.policy.ValidateGameSettings(ctx, request.GameKey, "", request.GameSettings, request.Teams)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}

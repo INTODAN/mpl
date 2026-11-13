@@ -73,6 +73,11 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
         return response_500
 
+    if response.status_code == 502:
+        response_502 = Problem.from_dict(response.json())
+
+        return response_502
+
     if response.status_code == 503:
         response_503 = Problem.from_dict(response.json())
 
@@ -109,7 +114,10 @@ def sync_detailed(
     empty teams. A game that requires something of each member before they get ready checks the whole
     roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
     frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
-    another game (reopenLobby), which empties the roster for the next start.
+    another game (reopenLobby), which empties the roster for the next start. A game that the lobby calls
+    over HTTP creates its game for the round right after the start commits; when it can't, the start
+    fails with 502 game_unavailable and the lobby stays started, and the host starting it again asks the
+    game again. Starting a started lobby whose game exists returns its snapshot.
 
     Args:
         game_key (str):
@@ -153,7 +161,10 @@ def sync(
     empty teams. A game that requires something of each member before they get ready checks the whole
     roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
     frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
-    another game (reopenLobby), which empties the roster for the next start.
+    another game (reopenLobby), which empties the roster for the next start. A game that the lobby calls
+    over HTTP creates its game for the round right after the start commits; when it can't, the start
+    fails with 502 game_unavailable and the lobby stays started, and the host starting it again asks the
+    game again. Starting a started lobby whose game exists returns its snapshot.
 
     Args:
         game_key (str):
@@ -192,7 +203,10 @@ async def asyncio_detailed(
     empty teams. A game that requires something of each member before they get ready checks the whole
     roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
     frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
-    another game (reopenLobby), which empties the roster for the next start.
+    another game (reopenLobby), which empties the roster for the next start. A game that the lobby calls
+    over HTTP creates its game for the round right after the start commits; when it can't, the start
+    fails with 502 game_unavailable and the lobby stays started, and the host starting it again asks the
+    game again. Starting a started lobby whose game exists returns its snapshot.
 
     Args:
         game_key (str):
@@ -234,7 +248,10 @@ async def asyncio(
     empty teams. A game that requires something of each member before they get ready checks the whole
     roster again, and fails with game_requirement for a member who doesn't meet it. The roster stays
     frozen while the lobby is started; once the game has ended, a member can reopen the lobby for
-    another game (reopenLobby), which empties the roster for the next start.
+    another game (reopenLobby), which empties the roster for the next start. A game that the lobby calls
+    over HTTP creates its game for the round right after the start commits; when it can't, the start
+    fails with 502 game_unavailable and the lobby stays started, and the host starting it again asks the
+    game again. Starting a started lobby whose game exists returns its snapshot.
 
     Args:
         game_key (str):

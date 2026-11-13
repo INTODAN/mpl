@@ -180,6 +180,12 @@ func persistChildren(tx *gorm.DB, aggregate domain.Aggregate, create bool, origi
 // waiting in its next round with an empty roster, which the next start fills
 // again. The time the round started changes only with the round.
 func validateRoundChange(original domain.Aggregate, aggregate domain.Aggregate) error {
+	// A game confirms the game of the round that a started lobby plays, and
+	// the confirmation never moves back.
+	if aggregate.Lobby.BoundRound != original.Lobby.BoundRound &&
+		(original.Lobby.Phase != domain.PhaseStarted || aggregate.Lobby.Phase != domain.PhaseStarted || aggregate.Lobby.Round != original.Lobby.Round || aggregate.Lobby.BoundRound != aggregate.Lobby.Round) {
+		return domain.NewError(domain.CodeInvalidInput, "only the round that a started lobby plays can be bound to a game")
+	}
 	if original.Lobby.Phase == domain.PhaseStarted && aggregate.Lobby.Phase == domain.PhaseWaiting {
 		if aggregate.Lobby.Round != original.Lobby.Round+1 || len(aggregate.StartRoster) > 0 {
 			return domain.NewError(domain.CodeInvalidInput, "a reopened lobby must wait in its next round with an empty start roster")
