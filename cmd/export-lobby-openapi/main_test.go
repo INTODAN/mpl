@@ -51,6 +51,8 @@ func TestExportPublicOperations(t *testing.T) {
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership":                  "leaveLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/heartbeat":                   "heartbeatLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}": "releaseLobbyLease",
+		"/lobby/v1/player-tokens":                                                   "issuePlayerToken",
+		"/lobby/v1/jwks.json":                                                       "getLobbyPublicKeys",
 		"/lobby/v1/watches":                                                         "watchLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watch":                       "unwatchLobby",
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}/watchers":                    "listLobbyWatchers",
@@ -109,9 +111,9 @@ func TestExportSecurityAndResponses(t *testing.T) {
 				continue
 			}
 			security, hasSecurity := operation["security"]
-			if path == "/lobby/v1/sessions" {
+			if path == "/lobby/v1/sessions" || path == "/lobby/v1/jwks.json" {
 				if hasSecurity {
-					t.Fatalf("session unexpectedly has security metadata")
+					t.Fatalf("%s unexpectedly has security metadata", path)
 				}
 			} else if !hasSecurity || len(security.([]any)) != 1 {
 				t.Fatalf("%s %s missing bearer security", method, path)

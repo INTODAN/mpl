@@ -7,7 +7,8 @@ lobby/
   go.mod, go.sum       Independent Go module
   domain/             Types, ports, errors, policies, and pure state rules
   application/        Membership commands, teams, leases, binding, and publishing
-  auth/               Guest credentials and connection tokens
+  auth/               Guest credentials, connection tokens and player tokens
+  playertoken/        Player token signing and verification, which games import
   postgres/           Persistence and versioned schema migrations
   httpapi/            HTTP routes and DTOs, the player API and the game API
   gamehooks/          Signed HTTP hooks and game API client for games in other services
@@ -198,7 +199,7 @@ Anyone with a guest session and a lobby's join code can watch it without taking 
 - **No effect on the lobby.** A watcher counts toward nothing: not the lobby's capacity, a team's member, the start roster, leases, the grace period or retention. Watching doesn't mark the lobby connected, so a watched lobby is deleted when it would be without watchers, and its watcher rows with it. A watcher can't read the members' snapshot, heartbeat or get ready.
 - **Snapshots and events.** The snapshot's `watcher_count` counts the watchers who may watch. Starting to watch, leaving and kicking change it, which is a lobby change, announced with `lobby.changed`.
 - **The watch channel.** Centrifugo's `watch` namespace keeps 128 messages of history for 300 s, like the others. The subscribe and sub-refresh proxies allow `watch:<game_key>:<lobby_id>` for an active member or a watcher that the host hasn't kicked, and never for a channel of another game or lobby. The room channel stays the members'. A game publishes there with `realtime.Publisher.Publish` and `domain.WatchChannel`.
-- **Game reads.** `application.Service` implements `domain.WatchAuthorizer`: `AuthorizeWatch(ctx, principal, scope)` admits an active member or a watcher the host hasn't kicked, returns `watcher_kicked` for a kicked one and `not_found` otherwise, also for a lobby that is gone. A game uses it for the reads it opens to watchers.
+- **Game reads.** `application.Service` implements `domain.WatchAuthorizer`: `AuthorizeWatch(ctx, principal, scope)` admits an active member or a watcher the host hasn't kicked, returns `watcher_kicked` for a kicked one and `not_found` otherwise, also for a lobby that is gone. A game uses it for the reads it opens to watchers. It reads only the principal's player ID, which a [player token](#player-tokens) gives the game.
 - **Storage.** Migration 0006 adds `lobby_watchers (lobby_id, player_id, display_name, joined_at, kicked_at)`, keyed by lobby and player. The aggregate carries the rows, kicked ones included; a store refuses a mutation that removes a kicked row, and writes only the rows a mutation changed, so heartbeats write none. Both foreign keys are `ON DELETE CASCADE`, so a build that doesn't know the table can still delete lobbies and players once watcher rows exist. Retention deletes them with their lobby, and a player is deleted only once no watcher row references them.
 
 Production dependencies are `SystemClock{}` (UTC wall clock) and `CryptoIdentifiers{}` (cryptographic UUIDv4, unbiased join-code sampling, random byte slices). Their methods perform clock/random reads only when called; pure validation/copy helpers do not use them. `Bytes` rejects negative lengths without panicking.
@@ -228,9 +229,34 @@ Each room records `last_connected_at`, the last time a client created, joined, h
 
 - `postgres.NewRetentionStore(db)` implements `domain.RetentionStore`. `DeleteExpired(ctx, policy.RetentionCutoffs(now))` deletes create requests, then sessions, then lobbies, then the players they freed. Each step is its own transaction that locks at most `BatchSize` rows with `FOR UPDATE SKIP LOCKED` and deletes them, child rows before rooms. The steps are independent: one that fails is reported in the returned error, and the later steps still run. A lobby that a request holds is left for a later pass, so a pass never waits on a lobby in use, and passes on different instances don't wait on each other. It touches only lobby tables.
 - `application.NewRetention(store, clock, policy, logger)` decides when a pass runs. `RunIfDue(ctx)` runs one when `PassInterval` has passed since the last pass in this process, or right away when the last pass filled a batch, so a backlog drains a batch per request. Only one pass runs at a time per process, and other requests skip instead of waiting. A pass outlives a canceled request, has its own 5 second timeout, and logs failures instead of failing the request.
-- `httpapi.Register(api, app, authenticator, issuer, retention)` calls `RunIfDue` after each lobby request. Pass nil to delete nothing.
+- `httpapi.Register(api, app, authenticator, issuer, playerTokens, retention)` calls `RunIfDue` after each lobby request. Pass nil to delete nothing.
 
 The defaults are a batch of 50 rows of each kind and a pass interval of one minute. A pass that finds nothing costs four indexed queries, about once a minute per instance, and a full pass is four short transactions that each lock at most 50 rows, typically a few milliseconds. Retention periods are hours long, so a minute's delay doesn't matter. A backlog, such as the first pass on a database that never deleted anything, drains at 50 rows of each kind per lobby request without making any one request much slower.
+
+## Player tokens
+
+A game learns who sends a request from a **player token**: a short-lived JWT that the lobby signs and the game verifies with the lobby's public keys, without the lobby's database and without a call to the lobby per request. The guest credential stays the lobby's own: a game never sees it.
+
+- **Getting one:** a client calls `POST /lobby/v1/player-tokens` (operation `issuePlayerToken`) with its guest credential and `{"game_key": "island-battles"}`, and gets `{"token", "expires_at"}`. A `game_key` that no registered game has is `not_found`. The client sends the token to the game as `Authorization: Bearer <token>`, gets a new one at about 80 % of its life, and once more when the game answers 401.
+- **The token:** a compact JWS signed with Ed25519, header `{"alg": "EdDSA", "kid": …, "typ": "JWT"}`. Its claims are `iss`, the lobby's public URL; `sub`, the player ID; `aud`, the game key; `iat` and `exp`, Unix seconds; and `name`, the player's display name, so the game needs no name lookup. A token lasts 15 minutes, and never past its session's expiry.
+- **The keys:** the host passes `auth.NewPlayerTokens(keys, issuer, lifetime, clock, policy)` to `httpapi.Register`. `playertoken.ParseKeySet` reads the keys from `LOBBY_PLAYER_TOKEN_KEYS`, a comma-separated list of `kid:seed` pairs, where `seed` is a 32-byte Ed25519 seed in base64url without padding. The first key signs; all are published at `GET /lobby/v1/jwks.json` (operation `getLobbyPublicKeys`), a JWKS with `Cache-Control: public, max-age=300`. To rotate, put the new key first and keep the old one for 15 minutes, the longest a token lasts, then remove it. Island Battles' deploy does this as [its deploy README](../deploy/README.md#rotating-the-player-token-key) describes. `LOBBY_PLAYER_TOKEN_LIFETIME` can shorten tokens for development, from `1m` to `15m`.
+
+### Verifying players in a game
+
+A game imports the game-neutral package `playertoken`, which depends on nothing else in the lobby:
+
+```go
+keys, err := playertoken.NewJWKSSource("https://lobby.example.org/lobby/v1/jwks.json")
+verifier, err := playertoken.NewVerifier("https://lobby.example.org", keys)
+
+token, ok := playertoken.FromAuthorization(request.Header.Get("Authorization"))
+player, err := verifier.Verify(ctx, token, "quiz-demo") // player.ID, player.Name
+```
+
+`Verify` checks the header's `alg`, which must be `EdDSA` (so `none` and HS256 are refused), the signature with the key that `kid` names, `iss`, `aud` (the game's own key) and `exp`, with 30 seconds of leeway. Every failure is `playertoken.ErrInvalid`, which the game answers with 401. Any other error means the keys couldn't be read, such as an unreachable lobby; answer it with 503.
+
+- `JWKSSource` fetches the JWKS on first use and keeps it for the response's `max-age`. A token that names a `kid` it doesn't have makes it fetch again, so a new key works at once, but it fetches at most once a minute, so forged `kid`s can't flood the lobby. When a fetch fails, it keeps the keys it has.
+- While the lobby and the game run in one process, as in Island Battles, the lobby's `*playertoken.KeySet` is itself the key source: `playertoken.NewVerifier(issuer, keys)`.
 
 ## Binding a game to a started lobby
 
@@ -324,6 +350,7 @@ Under `/lobby/v1/game-api/games/{game_key}/`, signed with that game's secret, so
 - [ ] Make `start` idempotent by (lobby ID, round), and answer the same `game_id` every time for a round.
 - [ ] Make `round-ended` true for a round that has no game, and keep a round ended once it is.
 - [ ] Read lobbies and authorize watchers through the signed game API, not the lobby's database.
+- [ ] Authenticate players with [player tokens](#verifying-players-in-a-game) for your game key, verified with the lobby's JWKS, never with the guest credential.
 - [ ] Add your frontend entry (result URL, modules, links) to `frontend` in `LOBBY_GAMES`.
 
 ## Admin MCP tools

@@ -28,7 +28,7 @@ func TestLobbyRequestsEndWithARetentionPass(t *testing.T) {
 	application := &fakeApplication{}
 	retention := &countingRetention{application: application}
 	_, api := humatest.New(t, huma.DefaultConfig("Lobby", "1.0.0"))
-	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, retention)
+	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, testPlayerTokens(t), retention)
 
 	path := "/lobby/v1/games/island-battles/lobbies/" + testUUID
 	if response := api.Put(path+"/ready", "Authorization: Bearer good", map[string]any{"ready": true}); response.Code != http.StatusOK {

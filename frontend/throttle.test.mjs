@@ -72,6 +72,7 @@ test("lobby requests that create, join, start, change seats or remove watchers a
   assert.equal(isRepeatableLobbyRequest("PUT", `${path}/settings`), true);
   assert.equal(isRepeatableLobbyRequest("PUT", `${path}/member-settings`), true);
   assert.equal(isRepeatableLobbyRequest("POST", `${path}/reopen`), true);
+  assert.equal(isRepeatableLobbyRequest("POST", "/player-tokens"), true);
   assert.equal(isRepeatableLobbyRequest("POST", "/lobbies"), false);
   assert.equal(isRepeatableLobbyRequest("POST", "/memberships"), false);
   assert.equal(isRepeatableLobbyRequest("POST", `${path}/start`), false);
@@ -91,7 +92,7 @@ const origin = "https://lobby.example";
 
 test("a relayed GET is retried and then answers with the plain message", async () => {
   const data = { type: "game.request", id: 1, path: `/quiz/${lobbyID}/data/logs` };
-  const base = { prefix: "/quiz/{lobby_id}/data/", lobbyID, origin, credential: "c" };
+  const base = { prefix: "/quiz/{lobby_id}/data/", lobbyID, origin };
   const again = stub(throttled, ok);
   const done = await relayRequest(data, { ...base, ...again });
   assert.equal(done.status, 200);
@@ -104,7 +105,7 @@ test("a relayed GET is retried and then answers with the plain message", async (
 });
 
 test("a room module's GET and PUT are retried and then answer with the plain message", async () => {
-  const base = { prefix: "/quiz/{lobby_id}/players/", lobbyID, origin, credential: "c" };
+  const base = { prefix: "/quiz/{lobby_id}/players/", lobbyID, origin };
   const path = `/quiz/${lobbyID}/players/choice`;
   const again = stub(throttled, ok);
   const done = await roomRequest({ method: "PUT", path, body: { pick: 1 } }, { ...base, ...again });

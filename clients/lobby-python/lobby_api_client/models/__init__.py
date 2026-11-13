@@ -14,7 +14,14 @@ from .error_model import ErrorModel
 from .guest_session import GuestSession
 from .heartbeat_body import HeartbeatBody
 from .heartbeat_result import HeartbeatResult
+from .issue_player_token_body import IssuePlayerTokenBody
 from .join_lobby_body import JoinLobbyBody
+from .jwk import JWK
+from .jwk_alg import JWKAlg
+from .jwk_crv import JWKCrv
+from .jwk_kty import JWKKty
+from .jwk_use import JWKUse
+from .jwks import JWKS
 from .lobby import Lobby
 from .lobby_game_settings import LobbyGameSettings
 from .lobby_invalidation import LobbyInvalidation
@@ -26,6 +33,7 @@ from .member_member_settings_type_0 import MemberMemberSettingsType0
 from .member_seat_settings_type_0 import MemberSeatSettingsType0
 from .member_settings_body import MemberSettingsBody
 from .member_settings_body_member_settings import MemberSettingsBodyMemberSettings
+from .player_token import PlayerToken
 from .problem import Problem
 from .problem_code import ProblemCode
 from .ready_body import ReadyBody
@@ -56,7 +64,14 @@ __all__ = (
     "GuestSession",
     "HeartbeatBody",
     "HeartbeatResult",
+    "IssuePlayerTokenBody",
     "JoinLobbyBody",
+    "JWK",
+    "JWKAlg",
+    "JWKCrv",
+    "JWKKty",
+    "JWKS",
+    "JWKUse",
     "Lobby",
     "LobbyGameSettings",
     "LobbyInvalidation",
@@ -68,6 +83,7 @@ __all__ = (
     "MemberSeatSettingsType0",
     "MemberSettingsBody",
     "MemberSettingsBodyMemberSettings",
+    "PlayerToken",
     "Problem",
     "ProblemCode",
     "ReadyBody",

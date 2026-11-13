@@ -250,6 +250,10 @@ func TestAWatcherWhoLeavesCanWatchAgain(t *testing.T) {
 	if err := fixture.service.AuthorizeWatch(ctx, watcher, fixture.scope); err != nil {
 		t.Fatal(err)
 	}
+	// A game knows the player from a player token, without their session.
+	if err := fixture.service.AuthorizeWatch(ctx, domain.Principal{PlayerID: watcher.PlayerID}, fixture.scope); err != nil {
+		t.Fatalf("a player token's player can't read what watchers read: %v", err)
+	}
 	if err := fixture.service.AuthorizeWatch(ctx, fixture.host, fixture.scope); err != nil {
 		t.Fatalf("a member can't read what watchers read: %v", err)
 	}

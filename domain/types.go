@@ -262,4 +262,11 @@ type ConnectionToken struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	WebsocketURL string    `json:"websocket_url"`
 }
+
+// PlayerToken is a short-lived signed token that tells one game who the
+// player is; see the playertoken package.
+type PlayerToken struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
 type SubscriptionAuthorization struct{ AllowedUntil time.Time }

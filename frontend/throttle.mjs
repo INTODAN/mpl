@@ -27,6 +27,8 @@ const repeatableLobbyRequests = [
   { method: "PUT", path: /\/lobbies\/[^/]+\/member-settings$/ },
   { method: "POST", path: /\/lobbies\/[^/]+\/heartbeat$/ },
   { method: "POST", path: /\/lobbies\/[^/]+\/reopen$/ },
+  // A player token stores nothing, so asking again is safe.
+  { method: "POST", path: /^\/player-tokens$/ },
 ];
 
 // isRepeatableLobbyRequest tells whether a request to the lobby API may be

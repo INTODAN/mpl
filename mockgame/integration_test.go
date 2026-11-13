@@ -100,7 +100,7 @@ func newStack(t *testing.T) *stack {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
-	httpapi.Register(newAPI(router, "Lobby"), lobbies, authentication, authentication, nil)
+	httpapi.Register(newAPI(router, "Lobby"), lobbies, authentication, authentication, nil, nil)
 	httpapi.RegisterGameAPI(newAPI(router, "Lobby game API"), lobbies, gamehooks.Secrets(games))
 	lobbyServer := httptest.NewServer(router)
 	t.Cleanup(lobbyServer.Close)

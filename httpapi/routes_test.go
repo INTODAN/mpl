@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
+	"islandBattles/lobby/auth"
 	"islandBattles/lobby/domain"
+	"islandBattles/lobby/playertoken"
 )
 
 const testUUID = "11111111-1111-4111-8111-111111111111"
@@ -27,6 +30,8 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 	}{
 		"/lobby/v1/sessions":                                                        {http.MethodPost, "createLobbySession", http.StatusCreated},
 		"/lobby/v1/connection-token":                                                {http.MethodPost, "createLobbyConnectionToken", http.StatusOK},
+		"/lobby/v1/player-tokens":                                                   {http.MethodPost, "issuePlayerToken", http.StatusOK},
+		"/lobby/v1/jwks.json":                                                       {http.MethodGet, "getLobbyPublicKeys", http.StatusOK},
 		"/lobby/v1/lobbies":                                                         {http.MethodPost, "createLobby", http.StatusCreated},
 		"/lobby/v1/memberships":                                                     {http.MethodPost, "joinLobby", http.StatusOK},
 		"/lobby/v1/games/{game_key}/lobbies/{lobby_id}":                             {http.MethodGet, "getLobby", http.StatusOK},
@@ -63,7 +68,7 @@ func TestPublicLobbyOperationContract(t *testing.T) {
 		if operation == nil || operation.OperationID != want.operationID || operation.Responses[strconvStatus(want.status)] == nil {
 			t.Fatalf("%s operation mismatch: %#v", path, operation)
 		}
-		if path != "/lobby/v1/sessions" && len(operation.Security) != 1 {
+		if public := path == "/lobby/v1/sessions" || path == "/lobby/v1/jwks.json"; public != (len(operation.Security) == 0) {
 			t.Fatalf("%s missing bearer security", path)
 		}
 	}
@@ -434,8 +439,22 @@ func newTestAPI(t *testing.T) (http.Handler, humatest.TestAPI) {
 }
 func newTestAPIWithApp(t *testing.T, application *fakeApplication) (http.Handler, humatest.TestAPI) {
 	handler, api := humatest.New(t, huma.DefaultConfig("Lobby", "1.0.0"))
-	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, nil)
+	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, testPlayerTokens(t), nil)
 	return handler, api
+}
+
+// testPlayerTokens signs for the island-battles game, with a fixed key.
+func testPlayerTokens(t *testing.T) *auth.PlayerTokens {
+	t.Helper()
+	keys, err := playertoken.ParseKeySet("test:" + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := auth.NewPlayerTokens(keys, "https://lobby.example.test", playertoken.MaxLifetime, domain.SystemClock{}, domain.DefaultPolicy(domain.GameRegistration{Key: "island-battles"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tokens
 }
 func strconvStatus(status int) string { return fmt.Sprintf("%d", status) }
 

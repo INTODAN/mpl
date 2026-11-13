@@ -15,7 +15,7 @@ import (
 	"islandBattles/lobby/domain"
 )
 
-//go:embed index.html app.js links.mjs relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor watch.mjs
+//go:embed index.html app.js links.mjs playertoken.mjs relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor watch.mjs
 var assets embed.FS
 
 // catalogPath is the file, relative to the frontend's mount point, that lists
@@ -45,13 +45,14 @@ type Game struct {
 	// lobby starts. LobbyIDPlaceholder is replaced with the lobby ID, and
 	// RoundPlaceholder, where it appears, with the lobby's round: a lobby
 	// plays one game per round, and the page loads each round's document
-	// anew. The document is fetched with the guest bearer credential.
+	// anew. The document is fetched with the player's token for the game
+	// (playertoken.mjs), never the guest credential.
 	ResultURL string `json:"result_url"`
 	// WatchResultURL optionally lets people outside the roster watch a
 	// lobby of this game, which the page then offers ("Watch a lobby"). It is
 	// the same-origin path of the HTML document a watcher sees, with
-	// LobbyIDPlaceholder as in ResultURL, fetched with the guest bearer
-	// credential. It answers 404 while the game has not started, and 403 to a
+	// LobbyIDPlaceholder as in ResultURL, fetched with the player's token for
+	// the game. It answers 404 while the game has not started, and 403 to a
 	// watcher whom the host removed. A watcher's lobby has no round to ask
 	// for, so the document is of the lobby's newest game; it tells the page
 	// with a game.reload message when a later round's game starts.
@@ -71,9 +72,9 @@ type Game struct {
 	// game_settings and teams. The frontend README describes its contract.
 	SettingsModule string `json:"settings_module,omitempty"`
 	// DataURLPrefix optionally lets the result document read the game's data.
-	// The document can't send the guest credential itself, so it asks the
-	// page with a game.request message, and the page fetches same-origin
-	// paths under this prefix with GET and the credential.
+	// The document can't send a credential itself, so it asks the page with a
+	// game.request message, and the page fetches same-origin paths under this
+	// prefix with GET and the player's token for the game.
 	// LobbyIDPlaceholder is replaced with the room's lobby ID, and the prefix
 	// ends with a slash. The frontend README describes the messages.
 	DataURLPrefix string `json:"data_url_prefix,omitempty"`
@@ -83,8 +84,8 @@ type Game struct {
 	// README describes its contract.
 	RoomModule string `json:"room_module,omitempty"`
 	// RoomAPIPrefix is the same-origin path prefix under which the room
-	// module may call the game's API with the player's credential, with GET
-	// or PUT. LobbyIDPlaceholder is replaced with the room's lobby ID, and
+	// module may call the game's API with the player's token for the game,
+	// with GET or PUT. LobbyIDPlaceholder is replaced with the room's lobby ID, and
 	// the prefix ends with a slash.
 	RoomAPIPrefix string `json:"room_api_prefix,omitempty"`
 	// Links optionally lists the game's own pages that the lobby page links
@@ -219,7 +220,7 @@ func hasDotSegment(path string) bool {
 	return false
 }
 
-// sameOriginPath accepts absolute paths only, so the guest credential that
+// sameOriginPath accepts absolute paths only, so the player token that
 // accompanies these requests never leaves the frontend's origin. Browsers drop
 // tab, line feed and carriage return from a URL before parsing it, so "/\t/host"
 // would become "//host". Every control character and space is therefore

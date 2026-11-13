@@ -10,6 +10,7 @@ type handlers struct {
 	app           domain.Application
 	authenticator domain.Authenticator
 	issuer        domain.ConnectionTokenIssuer
+	playerTokens  domain.PlayerTokenIssuer
 }
 
 func (handler handlers) session(ctx context.Context, input *CreateSessionInput) (*CreateSessionOutput, error) {
@@ -25,6 +26,26 @@ func (handler handlers) token(ctx context.Context, _ *ConnectionTokenInput) (*Co
 		return nil, problemFor(err)
 	}
 	return &ConnectionTokenOutput{Body: ConnectionToken{Token: result.Token, ExpiresAt: result.ExpiresAt, WebsocketURL: result.WebsocketURL}}, nil
+}
+func (handler handlers) playerToken(ctx context.Context, input *IssuePlayerTokenInput) (*IssuePlayerTokenOutput, error) {
+	if handler.playerTokens == nil {
+		return nil, problemFor(domain.ErrUnavailable)
+	}
+	result, err := handler.playerTokens.IssuePlayerToken(ctx, sessionFromContext(ctx), input.Body.GameKey)
+	if err != nil {
+		return nil, problemFor(err)
+	}
+	return &IssuePlayerTokenOutput{Body: PlayerToken{Token: result.Token, ExpiresAt: result.ExpiresAt}}, nil
+}
+
+// publicKeysMaxAge is how long a game may keep the lobby's public keys.
+const publicKeysMaxAge = "public, max-age=300"
+
+func (handler handlers) publicKeys(_ context.Context, _ *PublicKeysInput) (*PublicKeysOutput, error) {
+	if handler.playerTokens == nil {
+		return nil, problemFor(domain.ErrUnavailable)
+	}
+	return &PublicKeysOutput{CacheControl: publicKeysMaxAge, Body: handler.playerTokens.PublicKeys()}, nil
 }
 func sessionFromContext(ctx context.Context) domain.SessionVerification {
 	verification, _ := ctx.Value(sessionContextKey{}).(domain.SessionVerification)

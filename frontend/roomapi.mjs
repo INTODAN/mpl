@@ -1,8 +1,8 @@
 // A game's room module shows the game's own controls in a waiting room, such
 // as a choice the game requires before the player gets ready. It calls the
-// game's API through the page, which adds the player's credential, only for
-// same-origin paths under the game's room API prefix for the shown lobby, and
-// only with GET, PUT, POST or DELETE.
+// game's API through the page, which adds the player's token for the game,
+// only for same-origin paths under the game's room API prefix for the shown
+// lobby, and only with GET, PUT, POST or DELETE.
 
 import { relayURL } from "./relay.mjs";
 import { fetchRetrying, retryWaitBudgetMs, serverBusyMessage } from "./throttle.mjs";
@@ -18,17 +18,19 @@ export const roomTimeoutMilliseconds = 8000;
 // roomRequest fetches a room module's request and resolves to its status and
 // body: the parsed value for a JSON response, and null otherwise. It throws an
 // Error that says why when it refuses the request, or can't get an answer.
-export async function roomRequest({ method = "GET", path, body }, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, sleep, random }) {
+// fetch sends the request with the player's token for the game, as
+// playertoken.mjs's playerTokenFetch does.
+export async function roomRequest({ method = "GET", path, body }, { prefix, lobbyID, origin, fetch, sleep, random }) {
   if (!roomMethods.includes(method)) throw new Error(`method must be one of ${roomMethods.join(", ")}`);
   if ((method === "GET" || method === "DELETE") && body !== undefined) throw new Error(`a ${method} request has no body`);
-  if (typeof credential !== "string" || !credential) throw new Error("the page has no player session");
+  if (typeof fetch !== "function") throw new Error("the page has no player session");
   let url;
   try {
     url = relayURL(prefix, lobbyID, path, origin);
   } catch (error) {
     throw new Error(`refused: ${error.message}`);
   }
-  const headers = { Accept: "application/json", Authorization: `Bearer ${credential}` };
+  const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), roomTimeoutMilliseconds + retryWaitBudgetMs);

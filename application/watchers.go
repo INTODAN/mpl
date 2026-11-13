@@ -160,10 +160,11 @@ func (service *Service) KickWatcher(ctx context.Context, principal domain.Princi
 // AuthorizeWatch lets a game open its watcher reads to an active member or a
 // watcher the host hasn't kicked. It reads without locking the room. A
 // kicked watcher gets watcher_kicked; anyone else, and a lobby that is gone,
-// not_found.
+// not_found. A game knows its caller from a player token, which names the
+// player but not their session, so only the player ID is checked.
 func (service *Service) AuthorizeWatch(ctx context.Context, principal domain.Principal, scope domain.Scope) error {
-	if err := validatePrincipal(principal); err != nil {
-		return err
+	if domain.ValidateUUID(principal.PlayerID) != nil {
+		return domain.ErrUnauthenticated
 	}
 	return service.AuthorizeGameWatch(ctx, scope, principal.PlayerID)
 }

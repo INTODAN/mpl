@@ -149,6 +149,29 @@ async function api(path, method = "GET", body) {
   }
 }
 
+// A game's API takes a player token for that game, which the lobby issues to
+// the session (playertoken.mjs), never the guest credential. gameFetch
+// resolves to a fetch for gameKey's API that sends the token, renews it before
+// it expires and once more when the game answers 401.
+let playerTokenModule = null;
+let playerTokens = null;
+async function gameFetch(gameKey) {
+  if (!state.session) throw new Error("The page has no player session.");
+  const credential = state.session.access_token;
+  playerTokenModule ??= import("./playertoken.mjs").catch((error) => {
+    playerTokenModule = null;
+    throw error;
+  });
+  const { createPlayerTokens, playerTokenFetch } = await playerTokenModule;
+  playerTokens ??= createPlayerTokens({
+    issue: async (session, key) => {
+      if (state.session?.access_token !== session) throw new Error("The session changed.");
+      return api("/player-tokens", "POST", { game_key: key });
+    },
+  });
+  return playerTokenFetch({ tokens: playerTokens, credential, gameKey });
+}
+
 // The current round's game: its example player, its latest state and its
 // result document. A lobby plays one game per round, so the page drops them
 // when the round changes, and with the room.
@@ -597,8 +620,8 @@ async function relayGameRequest(data) {
   const round = gameEpoch;
   // The lobby whose document is shown: a watcher's, or the room's.
   const target = state.watch
-    ? { lobbyID: state.watch.lobby_id, game: games.get(state.watch.game_key), watching: true }
-    : state.room ? { lobbyID: state.room.lobby_id, game: games.get(state.room.game_key), watching: false } : null;
+    ? { lobbyID: state.watch.lobby_id, gameKey: state.watch.game_key, game: games.get(state.watch.game_key), watching: true }
+    : state.room ? { lobbyID: state.room.lobby_id, gameKey: state.room.game_key, game: games.get(state.room.game_key), watching: false } : null;
   let response;
   try {
     const { maxRelayedRequests, refuseRequest, relayRequest } = await loadRelay();
@@ -615,7 +638,7 @@ async function relayGameRequest(data) {
         // player's, and nothing when its game names none.
         response = await relayRequest(data, {
           prefix: target.watching ? watchLibrary?.watchRelayPrefix(target.game) ?? null : target.game?.data_url_prefix,
-          lobbyID, origin: location.origin, credential: state.session.access_token,
+          lobbyID, origin: location.origin, fetch: await gameFetch(target.gameKey),
         });
       } finally {
         shown.relayed--;
@@ -653,8 +676,8 @@ async function ensureGamePlayer() {
     if (previous) client.removeSubscription(previous);
     // The player follows the game of this lobby round only.
     gamePlayer = new ExamplePlayer({
-      lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id, credential: state.session.access_token,
-      subscription: client.newSubscription(channel),
+      lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id,
+      fetcher: await gameFetch(snapshot.lobby.game_key), subscription: client.newSubscription(channel),
       // Outside a demo the player submits only the turns of a localhost bot,
       // which it relays; the demo's player can be paused.
       demo: Boolean(state.demoPlayer), enabled: state.demoPlayer ? Boolean(state.demoPlayer.enabled) : true, pending: state.demoPlayer?.pending || null,
@@ -718,9 +741,8 @@ async function loadResult() {
       throw error;
     });
     const { resultURL } = await roundsModule;
-    const response = await fetch(resultURL(template, room), {
-      headers: { Authorization: `Bearer ${state.session.access_token}`, Accept: "text/html" }, signal: controller.signal,
-    });
+    const fetchGame = await gameFetch(room.game_key);
+    const response = await fetchGame(resultURL(template, room), { headers: { Accept: "text/html" }, signal: controller.signal });
     if (!response.ok) throw new Error(response.status === 404 ? "The game is being prepared. If it doesn’t appear, the host can retry starting it." : "Could not load the game. Retrying…");
     const html = await response.text();
     if (controller !== resultRequest) return;
@@ -915,9 +937,8 @@ async function loadWatchResult() {
   watchRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(watchLibrary.watchResultURL(template, watch.lobby_id), {
-      headers: { Authorization: `Bearer ${state.session.access_token}`, Accept: "text/html" }, signal: controller.signal,
-    });
+    const fetchGame = await gameFetch(watch.game_key);
+    const response = await fetchGame(watchLibrary.watchResultURL(template, watch.lobby_id), { headers: { Accept: "text/html" }, signal: controller.signal });
     if (epoch !== watchEpoch) return;
     if (response.status === 403) {
       await stopWatching({ message: watchLibrary.kickedMessage, leave: false });
@@ -971,7 +992,7 @@ function settingsModule(game) {
 }
 
 // A game's room module calls the game's API through the page, which adds the
-// player's credential. roomapi.mjs decides which requests it may send.
+// player's token for the game. roomapi.mjs decides which requests it may send.
 let roomAPIModule = null;
 async function requestForRoom(lobbyID, request) {
   if (!state.session || state.room?.lobby_id !== lobbyID) throw new Error("The page no longer shows this lobby.");
@@ -981,7 +1002,7 @@ async function requestForRoom(lobbyID, request) {
   });
   const { roomRequest } = await roomAPIModule;
   return roomRequest(request, {
-    prefix: games.get(state.room.game_key)?.room_api_prefix, lobbyID, origin: location.origin, credential: state.session.access_token,
+    prefix: games.get(state.room.game_key)?.room_api_prefix, lobbyID, origin: location.origin, fetch: await gameFetch(state.room.game_key),
   });
 }
 function roomRequester(lobbyID) {

@@ -92,6 +92,9 @@ def main() -> int:
             f"{args.env_prefix}CONNECTION_TOKEN_HMAC_SECRET": signing_key,
             f"{args.env_prefix}LOBBY_PROXY_SECRET": proxy_key,
         })
+        # The lobby's own setting: one player token key, an Ed25519 seed of
+        # 32 bytes in base64url.
+        environment.setdefault("LOBBY_PLAYER_TOKEN_KEYS", f"acceptance:{secrets.token_urlsafe(32)}")
         command("go", "build", "-o", str(temporary / "backend"), args.server_package, cwd=server_root, env=environment)
         if args.migrate_package:
             command("go", "build", "-o", str(temporary / "migrate"), args.migrate_package, cwd=server_root, env=environment)

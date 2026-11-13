@@ -3,8 +3,9 @@ import { fetchRetrying, serverBusyMessage } from "./throttle.mjs";
 // The relay fetches a game's data for its result document. The document runs
 // in a sandboxed frame with an opaque origin and no credential, so it asks the
 // page with a game.request message. The page fetches only same-origin paths
-// under the game's data URL prefix for the shown lobby, only with GET, and
-// answers with the response alone; the credential never reaches the frame.
+// under the game's data URL prefix for the shown lobby, only with GET, with
+// the player's token for the game, and answers with the response alone; the
+// token never reaches the frame.
 
 // The most requests one result document has relayed at a time. A document
 // that asks for more is refused until earlier ones finish.
@@ -106,7 +107,9 @@ async function readText(response, maxBytes) {
 // timeout_seconds, or one whose body is larger than maxBytes, has status 0, a
 // null body and an error. A message without a usable ID is ignored and
 // returns null.
-export async function relayRequest(data, { prefix, lobbyID, origin, credential, fetch = globalThis.fetch, maxBytes = maxResponseBytes, sleep, random }) {
+// fetch sends the request with the player's token for the game, as
+// playertoken.mjs's playerTokenFetch does.
+export async function relayRequest(data, { prefix, lobbyID, origin, fetch, maxBytes = maxResponseBytes, sleep, random }) {
   const id = requestID(data);
   if (data?.type !== "game.request" || id === undefined) return null;
   if (data.method !== undefined && data.method !== "GET") return refused(id, "only GET requests are relayed");
@@ -126,7 +129,7 @@ export async function relayRequest(data, { prefix, lobbyID, origin, credential, 
     // Only GET requests are relayed, so a throttled one is sent again within
     // the request's own timeout.
     const response = await fetchRetrying(fetch, url, {
-      method: "GET", headers: { Authorization: `Bearer ${credential}`, Accept: "application/json" },
+      method: "GET", headers: { Accept: "application/json" },
       redirect: "error", cache: "no-store", signal: controller.signal,
     }, { repeatable: true, sleep, random });
     if (response.status === 429) return { type: "lobby.response", id, status: 429, body: { status: 429, detail: serverBusyMessage } };

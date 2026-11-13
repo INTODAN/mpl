@@ -105,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 // are needed for this offline command.
 func buildArtifacts() (artifact, error) {
 	api := newAPI(apiTitle)
-	httpapi.Register(api, nil, nil, nil, nil)
+	httpapi.Register(api, nil, nil, nil, nil, nil)
 
 	openapi, err := prettyJSONFrom(api.OpenAPI())
 	if err != nil {

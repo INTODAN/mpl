@@ -10,13 +10,13 @@ function context(respond = () => new Response(JSON.stringify({ ok: true }), { he
   return {
     calls,
     options: {
-      prefix: "/quiz/{lobby_id}/players/", lobbyID, origin, credential: "secret",
+      prefix: "/quiz/{lobby_id}/players/", lobbyID, origin,
       fetch: async (url, init) => { calls.push({ url, init }); return respond(url, init); },
     },
   };
 }
 
-test("sends GET and PUT under the room prefix with the credential", async () => {
+test("sends GET and PUT under the room prefix through the page's fetch", async () => {
   const { calls, options } = context();
   const read = await roomRequest({ path: `/quiz/${lobbyID}/players/choices` }, options);
   assert.deepEqual(read, { status: 200, body: { ok: true } });
@@ -24,7 +24,8 @@ test("sends GET and PUT under the room prefix with the credential", async () => 
   assert.equal(saved.status, 200);
   assert.equal(calls[0].url, `${origin}/quiz/${lobbyID}/players/choices`);
   assert.equal(calls[0].init.method, "GET");
-  assert.equal(calls[0].init.headers.Authorization, "Bearer secret");
+  // The page's fetch adds the player's token; the module adds no credential.
+  assert.equal(calls[0].init.headers.Authorization, undefined);
   assert.equal(calls[0].init.body, undefined);
   assert.equal(calls[1].init.method, "PUT");
   assert.equal(calls[1].init.body, '{"pick":2}');
@@ -32,7 +33,7 @@ test("sends GET and PUT under the room prefix with the credential", async () => 
   assert.equal(calls[1].init.redirect, "error");
 });
 
-test("sends POST and DELETE under the room prefix with the credential", async () => {
+test("sends POST and DELETE under the room prefix through the page's fetch", async () => {
   const { calls, options } = context();
   const created = await roomRequest({ method: "POST", path: `/quiz/${lobbyID}/players/uploads`, body: { name: "x" } }, options);
   assert.equal(created.status, 200);
@@ -40,7 +41,7 @@ test("sends POST and DELETE under the room prefix with the credential", async ()
   assert.equal(empty.status, 200);
   await roomRequest({ method: "DELETE", path: `/quiz/${lobbyID}/players/uploads/1` }, options);
   assert.deepEqual(calls.map((call) => [call.init.method, call.init.body, call.init.headers.Authorization]), [
-    ["POST", '{"name":"x"}', "Bearer secret"], ["POST", undefined, "Bearer secret"], ["DELETE", undefined, "Bearer secret"],
+    ["POST", '{"name":"x"}', undefined], ["POST", undefined, undefined], ["DELETE", undefined, undefined],
   ]);
 });
 
@@ -74,7 +75,7 @@ test("refuses other methods, paths and lobbies without fetching", async () => {
   ];
   for (const [request, message] of refused) await assert.rejects(roomRequest(request, options), message);
   await assert.rejects(roomRequest({ path: `/quiz/${lobbyID}/players/x` }, { ...options, prefix: undefined }), /refused/);
-  await assert.rejects(roomRequest({ path: `/quiz/${lobbyID}/players/x` }, { ...options, credential: null }), /session/);
+  await assert.rejects(roomRequest({ path: `/quiz/${lobbyID}/players/x` }, { ...options, fetch: undefined }), /session/);
   assert.equal(calls.length, 0);
 });
 

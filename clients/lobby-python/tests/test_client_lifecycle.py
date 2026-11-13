@@ -289,6 +289,27 @@ async def test_member_settings_send_your_own_settings_for_the_game(h):
         "invalid_member_settings", 422, "kind must be localhost or default")
 
 
+async def test_a_player_token_is_issued_for_one_game(h):
+    seen = []
+
+    async def player_tokens(request):
+        if not request.url.path.endswith("/player-tokens"):
+            return None
+        sent = json.loads(request.content)
+        seen.append((request.method, request.url.path, request.headers["Authorization"], sent))
+        if sent["game_key"] != "island-battles":
+            return problem(404, "not_found")
+        return httpx.Response(200, json={"token": "header.claims.signature", "expires_at": "2026-09-20T00:15:00Z"})
+    h.hook = player_tokens
+    await h.join()
+    issued = await h.client.issue_player_token("island-battles")
+    assert issued.token == "header.claims.signature" and issued.expires_at.isoformat() == "2026-09-20T00:15:00+00:00"
+    assert seen[0] == ("POST", "/lobby/v1/player-tokens", "Bearer retained-secret", {"game_key": "island-battles"})
+    with pytest.raises(LobbyError) as unknown:
+        await h.client.issue_player_token("chess")
+    assert (unknown.value.code, unknown.value.status) == ("not_found", 404)
+
+
 async def test_change_settings_sends_the_teams_and_the_games_settings(h):
     seen = []
 

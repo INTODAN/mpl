@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"islandBattles/lobby/domain"
+	"islandBattles/lobby/playertoken"
 )
 
 type CreateSessionInput struct {
@@ -35,6 +36,25 @@ type ConnectionToken struct {
 	Token        string    `json:"token"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	WebsocketURL string    `json:"websocket_url" format:"uri"`
+}
+
+type IssuePlayerTokenInput struct {
+	Body IssuePlayerTokenBody `json:"-"`
+}
+type IssuePlayerTokenBody struct {
+	GameKey string `json:"game_key" pattern:"^[a-z][a-z0-9-]{0,31}$" doc:"The game whose requests the token is for, its aud claim, such as island-battles."`
+}
+type IssuePlayerTokenOutput struct {
+	Body PlayerToken `json:"-"`
+}
+type PlayerToken struct {
+	Token     string    `json:"token" doc:"A JWT signed with EdDSA (Ed25519), whose header names its key with kid. Its claims: iss, the lobby's public URL; sub, your player ID; aud, the game key; iat and exp; and name, your display name. Send it to the game as Authorization: Bearer <token>."`
+	ExpiresAt time.Time `json:"expires_at" doc:"When the token expires, its exp: at most 15 minutes after it was issued, and never after your session expires."`
+}
+type PublicKeysInput struct{}
+type PublicKeysOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         playertoken.JWKS
 }
 
 // TeamDefinition names a team of a new lobby. A team holds one member.

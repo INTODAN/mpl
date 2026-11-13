@@ -26,6 +26,7 @@ GENERATED = PROJECT / "lobby_api_client"
 EXPECTED_OPERATIONS = {
     "create_lobby_session",
     "create_lobby_connection_token",
+    "issue_player_token",
     "create_lobby",
     "join_lobby",
     "get_lobby",

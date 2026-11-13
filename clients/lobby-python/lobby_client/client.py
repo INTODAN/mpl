@@ -19,7 +19,7 @@ from centrifuge.exceptions import CentrifugeError, OperationTimeoutError
 from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
     add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_session,
-    get_lobby, heartbeat_lobby, join_lobby, leave_lobby, release_lobby_lease,
+    get_lobby, heartbeat_lobby, issue_player_token, join_lobby, leave_lobby, release_lobby_lease,
     kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, reopen_lobby, select_lobby_team,
     set_lobby_member_settings, set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
 )
@@ -27,8 +27,8 @@ from lobby_api_client.models import (
     AddSeatBody, AddSeatBodySeatSettings, ChangeSettingsBody, ChangeSettingsBodyGameSettings,
     ConnectionTokenInputBody, CreateLobbyBody,
     CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
-    JoinLobbyBody, MemberSettingsBody, MemberSettingsBodyMemberSettings,
-    ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
+    IssuePlayerTokenBody, JoinLobbyBody, MemberSettingsBody, MemberSettingsBodyMemberSettings,
+    PlayerToken, ReadyBody, SelectTeamBody, Snapshot, StartInputBody, TeamDefinition,
     WatchAccess, Watcher, WatchLobbyBody,
 )
 from lobby_api_client.types import UNSET
@@ -210,6 +210,15 @@ class LobbyClient:
     async def _connection_token(self):
         self._require_auth()
         return await self._request(create_lobby_connection_token, body=ConnectionTokenInputBody())
+
+    async def issue_player_token(self, game_key: str) -> PlayerToken:
+        """Issue a player token for one game: a short-lived JWT that the game
+        verifies with the lobby's public keys. Send it to the game's API as
+        ``Authorization: Bearer <token>`` and get a new one before
+        ``expires_at``."""
+        self._check_open()
+        self._require_auth()
+        return await self._request(issue_player_token, body=IssuePlayerTokenBody(game_key=game_key))
 
     async def _get_token(self) -> str:
         try:

@@ -15,13 +15,19 @@ const basePath = "/lobby/v1"
 
 var lobbyBearer = []map[string][]string{{"LobbyBearer": {}}}
 
-// Register installs the public lobby API. app, authenticator, issuer and
-// retention are invoked only while serving requests, so offline OpenAPI export
-// may use fakes. After each lobby request, retention runs a pass if one is
-// due; a nil retention deletes nothing.
-func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer, retention domain.RetentionRunner) {
+// Register installs the public lobby API. app, authenticator, issuer,
+// playerTokens and retention are invoked only while serving requests, so
+// offline OpenAPI export may use fakes. After each lobby request, retention
+// runs a pass if one is due; a nil retention deletes nothing.
+func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer, playerTokens domain.PlayerTokenIssuer, retention domain.RetentionRunner) {
 	registerSchemas(api)
-	handler := handlers{app: app, authenticator: authenticator, issuer: issuer}
+	handler := handlers{app: app, authenticator: authenticator, issuer: issuer, playerTokens: playerTokens}
+	// The public keys read no lobby data, so they skip the retention pass.
+	keys := huma.NewGroup(api, basePath)
+	keys.UseMiddleware(validationProblems)
+	keys.UseTransformer(BoundErrorDetails)
+	huma.Register(keys, operation(http.MethodGet, "/jwks.json", "getLobbyPublicKeys", http.StatusOK, nil, "Read the lobby's public keys",
+		"Returns the JWKS (RFC 7517) of the Ed25519 keys that verify player tokens (issuePlayerToken): the key that signs new tokens, and any previous key that still verifies tokens issued before a rotation. A key is published before it signs and kept for 15 minutes after it stops, the longest a token lasts. A game caches the keys for the response's max-age, 300 seconds, and fetches them again, at most once a minute, when a token names a kid it doesn't have."), handler.publicKeys)
 	group := huma.NewGroup(api, basePath)
 	group.UseMiddleware(validationProblems)
 	group.UseTransformer(BoundErrorDetails)
@@ -32,6 +38,10 @@ func Register(api huma.API, app domain.Application, authenticator domain.Authent
 	protected.UseMiddleware(authenticate(authenticator))
 	huma.Register(group, operation(http.MethodPost, "/sessions", "createLobbySession", http.StatusCreated, nil, "Create a guest session", "Creates one guest identity and bearer credential."), handler.session)
 	huma.Register(protected, operation(http.MethodPost, "/connection-token", "createLobbyConnectionToken", http.StatusOK, lobbyBearer, "Create a connection token", "Creates an authenticated Centrifugo connection token; it never creates or joins a lobby."), handler.token)
+	huma.Register(protected, operation(http.MethodPost, "/player-tokens", "issuePlayerToken", http.StatusOK, lobbyBearer, "Issue a player token for a game",
+		"Issues a short-lived player token for one game: a JWT signed with EdDSA (Ed25519), which the game verifies with the lobby's public keys (getLobbyPublicKeys), without the lobby's database or a call to the lobby. Its claims are iss, the lobby's public URL; sub, your player ID; aud, game_key; iat and exp; and name, your display name. "+
+			"Send it to the game's API as Authorization: Bearer <token>, where the game would otherwise need your guest credential; the lobby's own API takes only the guest credential. A token lasts at most 15 minutes, and never past your session's expiry; expires_at says when it expires. Clients get a new one before it expires, at about 80 % of its life, and once more when the game answers 401. "+
+			"A game_key that no game of this lobby has is not_found."), handler.playerToken)
 	huma.Register(protected, operation(http.MethodPost, "/lobbies", "createLobby", http.StatusCreated, lobbyBearer, "Create a lobby", "Creates a lobby with its teams, from 2 to 16 with unique names. A team holds one member, a person or a seat, so the lobby holds as many members as it has teams; its capacity in the snapshot is that number. The optional game_settings object is checked by the game now; invalid settings fail with invalid_game_settings. The lobby stores the settings without reading them and returns them in every snapshot, including the started one. The host can change them, with the teams, while the lobby waits (PUT …/settings). Repeating the same request_id and payload within the idempotency window, 24 hours by default, returns the committed snapshot. The lobby is deleted, in any phase, once nobody has been connected to it for an hour, and in any case a day after creation, unless its game sets other times."), handler.create)
 	huma.Register(protected, operation(http.MethodPost, "/memberships", "joinLobby", http.StatusOK, lobbyBearer, "Join a lobby", "Joins by game key and join code; a lobby with as many members as teams is full (lobby_full). Started lobbies allow only frozen-roster rejoin; once a member reopens the lobby after its game, it waits and anyone with the code can join again."), handler.join)
 	huma.Register(protected, operation(http.MethodGet, "/games/{game_key}/lobbies/{lobby_id}", "getLobby", http.StatusOK, lobbyBearer, "Get a lobby", "Returns the caller-authorized lobby snapshot."), handler.snapshot)

@@ -91,18 +91,18 @@ function recordingFetch(response) {
   return { calls, fetch };
 }
 
-const settings = (fetch) => ({ prefix, lobbyID: lobby, origin, credential: "secret-credential", fetch });
+const settings = (fetch) => ({ prefix, lobbyID: lobby, origin, fetch });
 
-test("a relayed request is a GET with the credential, answered with the response alone", async () => {
+test("a relayed request is a GET through the page's fetch, answered with the response alone", async () => {
   const { calls, fetch } = recordingFetch(Response.json({ lines: ["ok"] }, { status: 200 }));
   const answer = await relayRequest({ type: "game.request", id: 7, path: `/quiz/${lobby}/data/logs?round=1` }, settings(fetch));
   assert.deepEqual(answer, { type: "lobby.response", id: 7, status: 200, body: { lines: ["ok"] } });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `${origin}/quiz/${lobby}/data/logs?round=1`);
   assert.equal(calls[0].options.method, "GET");
-  assert.equal(calls[0].options.headers.Authorization, "Bearer secret-credential");
+  // The page's fetch adds the player's token; the relay adds no credential.
+  assert.equal(calls[0].options.headers.Authorization, undefined);
   assert.equal(calls[0].options.redirect, "error");
-  assert.ok(!JSON.stringify(answer).includes("secret-credential"));
 });
 
 test("error statuses, problem JSON and text bodies are passed on", async () => {
@@ -230,7 +230,7 @@ test("a packed response is limited by its unpacked size", async (context) => {
   context.after(() => server.close());
   const local = `http://127.0.0.1:${server.address().port}`;
   const path = `/quiz/${lobby}/data/demo`;
-  const settingsFor = (maxBytes) => ({ prefix, lobbyID: lobby, origin: local, credential: "secret-credential", maxBytes });
+  const settingsFor = (maxBytes) => ({ prefix, lobbyID: lobby, origin: local, fetch: globalThis.fetch, maxBytes });
   // The packed body is far below the limit, and the unpacked one above it.
   assert.ok(packed.length < 100 && unpacked.length > 1000);
   assert.deepEqual(await relayRequest({ type: "game.request", id: 1, path }, settingsFor(unpacked.length)),

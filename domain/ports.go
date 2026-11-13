@@ -3,6 +3,8 @@ package domain
 import (
 	"context"
 	"time"
+
+	"islandBattles/lobby/playertoken"
 )
 
 type Application interface {
@@ -88,6 +90,15 @@ type Authenticator interface {
 }
 type ConnectionTokenIssuer interface {
 	IssueConnectionToken(context.Context, SessionVerification) (ConnectionToken, error)
+}
+
+// PlayerTokenIssuer signs the player tokens that games verify with the
+// lobby's public keys, and publishes those keys.
+type PlayerTokenIssuer interface {
+	// IssuePlayerToken signs a token for the verified session's player and
+	// gameKey, a registered game; any other key is ErrNotFound.
+	IssuePlayerToken(ctx context.Context, verification SessionVerification, gameKey string) (PlayerToken, error)
+	PublicKeys() playertoken.JWKS
 }
 type SubscriptionAuthorizer interface {
 	// Arguments are trusted Centrifugo authenticated user UUID and canonical channel.
