@@ -13,7 +13,7 @@ enabled = false
 single_connection = false
 
 # The proxy calls go to the lobby, which runs on its own on :8890 locally
-# (lobby/cmd/lobby). A proxy call applies due expiry and pushes the result
+# (cmd/lobby). A proxy call applies due expiry and pushes the result
 # before it answers. A push that retries can take about 1.2 s, past
 # Centrifugo's 1 s default.
 [channel.proxy.subscribe]
@@ -67,7 +67,7 @@ allow_user_limited_channels = false
 join_leave = false
 force_push_join_leave = false
 
-# The backend pushes each game event once, right after its commit. History lets
+# A game pushes each of its events once, right after its commit. History lets
 # a reconnecting player recover events it missed, as on the lobby channel.
 [[channel.namespaces]]
 name = "player"

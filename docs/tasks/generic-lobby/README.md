@@ -1,6 +1,6 @@
 # Generic lobby implementation task pack
 
-This task pack records the original implementation plan. Paths and commands refer to the monorepo root unless stated otherwise; the reusable component now lives entirely under `lobby/` with its own Go module. See [the component guide](../../../README.md) for standalone commands.
+This task pack records the original implementation plan, written while the lobby was the `lobby/` directory of the [Island Battles repository](https://github.com/INTODAN/island-battles-go), whose history this repository keeps. Its paths and commands refer to that repository's root, and its module path `islandBattles/lobby` is now `github.com/INTODAN/mpl`. See [the README](../../../README.md) for this repository's commands.
 
 Prepared against commit `186a2e5` on 2026-09-20. Implementation is complete; [implementation status](implementation-status.md) records completed work, model assignments and actual test evidence. The task files contain the current specifications.
 

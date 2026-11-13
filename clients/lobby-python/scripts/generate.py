@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def export_openapi(destination: Path) -> None:
     env = os.environ.copy()
-    env.setdefault("GOCACHE", "/tmp/island-lobby-go-cache")
+    env.setdefault("GOCACHE", "/tmp/lobby-go-cache")
     subprocess.run(
         [
             "go",

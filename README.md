@@ -1,44 +1,83 @@
-# Generic lobby component
+# mpl: a generic multiplayer lobby
 
-This directory is a self-contained component of the Island Battles monorepo. It owns the Go library, API contracts, client SDKs, examples, transport configuration, documentation, and shared test tooling.
+`mpl` is a lobby service for casual multiplayer games: guest players, join codes, teams, readiness, reconnect leases, seats that the game plays, watchers, and playing again in the same lobby. A game binds to it over HTTP, with signed hooks and a signed game API, and verifies its players with short-lived player tokens. The lobby knows nothing of any game: it stores each game's settings as opaque JSON and asks the game's hooks. [Island Battles](https://github.com/INTODAN/island-battles-go) is the first game that uses it, and appears in this README only as an example.
+
+This repository holds the Go module `github.com/INTODAN/mpl`, its API contracts, the Python client `mpl-lobby-client`, the lobby page, a mock game for the lobby's own tests, transport configuration and documentation. Its history starts in the Island Battles repository, where the lobby was the `lobby/` directory.
 
 ```text
-lobby/
-  go.mod, go.sum       Independent Go module
-  domain/             Types, ports, errors, policies, and pure state rules
-  application/        Membership commands, teams, leases, binding, and publishing
-  app/                The whole lobby, built from its LOBBY_* configuration
-  auth/               Guest credentials, connection tokens and player tokens
-  playertoken/        Player token signing and verification, which games import
-  postgres/           Persistence and versioned schema migrations
-  httpapi/            HTTP routes and DTOs, the player API and the game API
-  gamehooks/          Signed HTTP hooks and game API client for games in other services
-  mockgame/           A mock game over HTTP, for the lobby's own tests
-  adminmcp/           Read-only MCP tools for operators' questions about lobbies
-  frontend/           Temporary browser playground and embedded asset handler
-  realtime/           Centrifugo authorization and the push publisher
-  internal/           Shared implementation helpers and test fixtures
-  api/                OpenAPI and event schema artifacts
-  cmd/                The lobby's local server and Lambda, the OpenAPI exporter, the mock game's server
-  clients/            Go example and Python SDK, wrapper, CLI, and generator
-  centrifugo/         Shared transport configuration
-  integration/        Live tests and configurable host runner
-  scripts/            Shared acceptance entry point
-  docs/               Architecture and implementation records
+go.mod, go.sum      The Go module github.com/INTODAN/mpl
+domain/             Types, ports, errors, policies, and pure state rules
+application/        Membership commands, teams, leases, binding, and publishing
+app/                The whole lobby, built from its LOBBY_* configuration
+auth/               Guest credentials, connection tokens and player tokens
+playertoken/        Player token signing and verification, which games import
+postgres/           Persistence and versioned schema migrations
+httpapi/            HTTP routes and DTOs, the player API and the game API
+gamehooks/          Signed HTTP hooks and game API client for games in other services
+mockgame/           A mock game over HTTP, for the lobby's own tests
+adminmcp/           Read-only MCP tools for operators' questions about lobbies
+frontend/           The lobby page, its embedded asset handler and its tests
+realtime/           Centrifugo authorization and the push publisher
+internal/           Shared implementation helpers and test fixtures
+api/                OpenAPI and event schema artifacts
+cmd/                The lobby's local server, Lambda and migrate command, the OpenAPI exporter, the mock game's server
+clients/            Go example and the Python client, its CLI and generator
+centrifugo/         Centrifugo configuration
+integration/        Live tests and the configurable runner
+scripts/            The live tests' entry point
+docs/               Architecture and implementation records
+.agents/skills/     Conventions for coding agents (see AGENTS.md)
+.github/workflows/  Checks on every pull request, and the release
 ```
 
-All commands in this README run from this directory:
+## Using the module
+
+The repository is public, so the module is go-gettable:
 
 ```sh
-GOWORK=off go test ./...
-GOWORK=off go vet ./...
-go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --game-api-output api/game-api.openapi.json --check
-uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
+go get github.com/INTODAN/mpl@vX.Y.Z
 ```
 
-Go database tests use disposable PostgreSQL containers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests run the lobby's own server, `cmd/lobby`, with the mock game or a game's host beside it; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the game host's suite.
+Go consumers import `github.com/INTODAN/mpl/domain` for contracts, `github.com/INTODAN/mpl/application` for services, `github.com/INTODAN/mpl/app` to run the whole lobby in their own process, `github.com/INTODAN/mpl/gamehooks` to serve a game's hooks and read the game API, and `github.com/INTODAN/mpl/playertoken` to verify players. There is no root Go package. A game's repository can also run the lobby from the pinned module version, for development and live tests, with `go run github.com/INTODAN/mpl/cmd/lobby` and `go run github.com/INTODAN/mpl/cmd/migrate`, and copy the API documents for its own code generators from `go list -m -f '{{.Dir}}' github.com/INTODAN/mpl`.
 
-The module path remains `islandBattles/lobby`. Go consumers import `islandBattles/lobby/domain` for contracts and `islandBattles/lobby/application` for services; there is no root Go package or compatibility alias layer. It has no dependency or filesystem replacement pointing to the parent repository. To extract it, copy this directory, verify with `GOWORK=off`, then choose the published repository's module path and update imports. The monorepo's `go.work` and root `go.mod` local replacement are consumer-side wiring only. A plain `go test ./...` at the monorepo root tests the host module; use `go test ./... ./lobby/...` there to test both modules.
+Python clients install `mpl-lobby-client` from PyPI ([its README](clients/lobby-python/README.md)).
+
+## Commands
+
+All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ with [uv](https://docs.astral.sh/uv/) for the Python client and the live tests; Node 22 for the lobby page's tests.
+
+*   **Lint/Verify (Go):** `go vet ./...` and `golangci-lint run --timeout=5m ./...` (v2.5.0, the version `checks.yml` pins)
+*   **Format:** `go fmt ./...` (`gofmt -l .` lists the files that need it)
+*   **Test (disposable PostgreSQL containers):** `go test ./...`
+*   **Check the API documents:** `go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --game-api-output api/game-api.openapi.json --check`; without `--check`, it writes them
+*   **Check the generated Python models:** `uv run --project clients/lobby-python/tools --locked python clients/lobby-python/scripts/generate.py --check`; without `--check`, it regenerates them
+*   **Python client tests:** `uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests`
+*   **Lobby page tests:** `node --test frontend/*.test.mjs`
+*   **Live tests with the mock game (Linux Docker or Podman):** `./scripts/test-acceptance.sh --mock-game` ([the acceptance runner](integration/README.md))
+
+Go database tests use disposable PostgreSQL containers through Testcontainers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests run the lobby's own server, `cmd/lobby`, with the mock game or a game's host beside it; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the game host's suite.
+
+After changing the player API, the game API or the events, export the API documents and regenerate the Python models in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
+
+### Checks on every pull request
+
+[`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs these checks on every pull request to `main`, as parallel jobs. Each shows as its own check on the pull request:
+
+| Job | Runs |
+|---|---|
+| Go | `go vet`, `golangci-lint` (pinned to the version in the workflow), a `gofmt -l` check, and `go test` with Testcontainers on the runner's Docker |
+| API contract | the API documents' `--check` and the generated Python models' `--check` |
+| Python | the Python client's tests, with `uv --locked` |
+| JS | `node --test` for the lobby page's tests in `frontend/` |
+| Live (mock game) | `./scripts/test-acceptance.sh --mock-game`: the lobby, its migrate command and the mock game against disposable PostgreSQL and Centrifugo containers |
+
+It also has a `workflow_call` trigger, so the release workflow runs the same checks with `uses: ./.github/workflows/checks.yml` before it tags. When you change the golangci-lint version in the workflow, change the one you run locally to match.
+
+## Releases
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) releases the lobby. It runs only when someone with write access starts it by hand, from `main` (`workflow_dispatch`, with the version to release, higher than every earlier one); merging to `main` releases nothing. It runs the checks, then tags the commit `vX.Y.Z`, which is the version `go get github.com/INTODAN/mpl@vX.Y.Z` resolves, creates the GitHub release, and publishes `mpl-lobby-client` at the same version to PyPI with trusted publishing, in the GitHub environment `pypi`; no PyPI token exists. Versions continue the lobby's versions from the Island Battles repository, where it was tagged `lobby/vX.Y.Z`; the first release here is `v0.3.0`.
+
+Before the first release, the PyPI project's trusted publisher must name this repository, the workflow `release.yml` and the environment `pypi`, and the environment should be limited to `main`.
 
 ## Running the lobby
 
@@ -103,7 +142,7 @@ The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for
 
 `domain/` owns records, request types, errors, policies, state helpers, and repository ports. `application/` owns commands and coordinates those contracts: `membership.go` groups create/join/snapshot, while teams, lifecycle, leases, binding, and publishing have focused files. Tests live beside the package they exercise.
 
-Application services depend on domain contracts. Auth, PostgreSQL, HTTP, and realtime adapters depend inward on the domain and, where needed, application services. Neither inner package imports an adapter, Huma/GORM/gocent, or the game backend. Shared nullable-field helpers stay private under `internal/optional`. Importing a package performs no I/O.
+Application services depend on domain contracts. Auth, PostgreSQL, HTTP, and realtime adapters depend inward on the domain and, where needed, application services. Neither inner package imports an adapter, Huma/GORM/gocent, or any game. Shared nullable-field helpers stay private under `internal/optional`. Importing a package performs no I/O.
 
 Service construction and transaction helpers live in `application`:
 
@@ -242,7 +281,7 @@ Anyone with a guest session and a lobby's join code can watch it without taking 
 
 - **Watching.** `POST /lobby/v1/watches` with `{game_key, join_code}` adds the caller's watcher row, or finds the one they have, and returns `{game_key, lobby_id, channel, member}`, where `channel` is `watch:<game_key>:<lobby_id>`. A wrong code, and a code of another game, are `not_found`. An active member gets no watcher row and keeps their member access (`member: true`). `DELETE /lobby/v1/games/{game_key}/lobbies/{lobby_id}/watch` removes the row and unsubscribes the watcher from the watch channel.
 - **Listing and kicking.** `GET …/watchers` lists the watchers that the host hasn't kicked, by display name and player ID, for the lobby's active members. `DELETE …/watchers/{player_id}` lets the host kick one, in any phase: the publisher unsubscribes them from the watch channel right after the commit, as it does a departing member from the room channel, and the join code no longer lets them watch with that session (`watcher_kicked`, 403). A kick bars that player ID, which is the guest session, not the person: a new guest session can watch again with the code, and in a waiting lobby a kicked watcher can still join as a member. A kicked watcher's row stays, and leaving doesn't clear it.
-- **Cap.** A lobby has at most `domain.MaxWatchersPerLobby` (50) watchers who may watch, kicked and departed ones not counted. A new watcher beyond it is refused with `watchers_full` (409); one who already watches finds their row as before. Change the constant in `lobby/domain/types.go` to raise or lower it; the web client's sentence and the OpenAPI text don't state the number.
+- **Cap.** A lobby has at most `domain.MaxWatchersPerLobby` (50) watchers who may watch, kicked and departed ones not counted. A new watcher beyond it is refused with `watchers_full` (409); one who already watches finds their row as before. Change the constant in `domain/types.go` to raise or lower it; the web client's sentence and the OpenAPI text don't state the number.
 - **Members aren't watchers.** An active member gets no watcher row, and a watcher who joins the lobby has their row removed in the join, so `watcher_count` and the list never count a member. A kicked row stays, and joining doesn't clear it.
 - **No effect on the lobby.** A watcher counts toward nothing: not the lobby's capacity, a team's member, the start roster, leases, the grace period or retention. Watching doesn't mark the lobby connected, so a watched lobby is deleted when it would be without watchers, and its watcher rows with it. A watcher can't read the members' snapshot, heartbeat or get ready.
 - **Snapshots and events.** The snapshot's `watcher_count` counts the watchers who may watch. Starting to watch, leaving and kicking change it, which is a lobby change, announced with `lobby.changed`.
@@ -287,7 +326,7 @@ A game learns who sends a request from a **player token**: a short-lived JWT tha
 
 - **Getting one:** a client calls `POST /lobby/v1/player-tokens` (operation `issuePlayerToken`) with its guest credential and `{"game_key": "island-battles"}`, and gets `{"token", "expires_at"}`. A `game_key` that no registered game has is `not_found`. The client sends the token to the game as `Authorization: Bearer <token>`, gets a new one at about 80 % of its life, and once more when the game answers 401.
 - **The token:** a compact JWS signed with Ed25519, header `{"alg": "EdDSA", "kid": …, "typ": "JWT"}`. Its claims are `iss`, the lobby's public URL; `sub`, the player ID; `aud`, the game key; `iat` and `exp`, Unix seconds; and `name`, the player's display name, so the game needs no name lookup. A token lasts 15 minutes, and never past its session's expiry.
-- **The keys:** the host passes `auth.NewPlayerTokens(keys, issuer, lifetime, clock, policy)` to `httpapi.Register`. `playertoken.ParseKeySet` reads the keys from `LOBBY_PLAYER_TOKEN_KEYS`, a comma-separated list of `kid:seed` pairs, where `seed` is a 32-byte Ed25519 seed in base64url without padding. The first key signs; all are published at `GET /lobby/v1/jwks.json` (operation `getLobbyPublicKeys`), a JWKS with `Cache-Control: public, max-age=300`. To rotate, put the new key first and keep the old one for 15 minutes, the longest a token lasts, then remove it. Island Battles' deploy does this as [its deploy README](../deploy/README.md#rotating-the-player-token-key) describes. `LOBBY_PLAYER_TOKEN_LIFETIME` can shorten tokens for development, from `1m` to `15m`.
+- **The keys:** the host passes `auth.NewPlayerTokens(keys, issuer, lifetime, clock, policy)` to `httpapi.Register`. `playertoken.ParseKeySet` reads the keys from `LOBBY_PLAYER_TOKEN_KEYS`, a comma-separated list of `kid:seed` pairs, where `seed` is a 32-byte Ed25519 seed in base64url without padding. The first key signs; all are published at `GET /lobby/v1/jwks.json` (operation `getLobbyPublicKeys`), a JWKS with `Cache-Control: public, max-age=300`. To rotate, put the new key first and keep the old one for 15 minutes, the longest a token lasts, then remove it. Island Battles' deploy, for example, does this as [its deploy README](https://github.com/INTODAN/island-battles-go/blob/main/deploy/README.md#rotating-the-player-token-key) describes. `LOBBY_PLAYER_TOKEN_LIFETIME` can shorten tokens for development, from `1m` to `15m`.
 
 ### Verifying players in a game
 
@@ -325,13 +364,13 @@ binding, err := application.NewGameBinding("quiz-demo", lobbyService,
 
 `quizStore.Bind` owns the game's schema, result type, and translation of lobby teams into game state. It must atomically create or return the same game for the lobby round; PostgreSQL integrations can use `BindOnce` for that orchestration. It must not start external side effects inside the transaction. No game rows are created by the normal lobby start operation.
 
-These in-process helpers remain for a game in the lobby's own process. Island Battles no longer uses them: it binds [over HTTP](#binding-a-game-over-http). Generic lobby code does not import the backend or assume numeric game IDs or team colors.
+These in-process helpers remain for a game in the lobby's own process. Island Battles no longer uses them: it binds [over HTTP](#binding-a-game-over-http). Generic lobby code imports no game and does not assume numeric game IDs or team colors.
 
 ## Binding a game over HTTP
 
 A game can run in a service of its own, in any language: the lobby calls its **hooks** over HTTP, and the game reads the lobby through the **game API**. Package `gamehooks` implements both sides for Go, and `mockgame` is a small game built on it that the lobby's integration tests play against, over real HTTP servers ([`mockgame/integration_test.go`](mockgame/integration_test.go)); [`cmd/mock-game`](cmd/mock-game/main.go) serves it for the live suite ([integration README](integration/README.md)). A game can still be registered in the lobby's own process with Go functions, as before.
 
-**Island Battles is the example HTTP game** ([backend README](../backend/README.md#binding-to-the-lobby)). Its `LOBBY_GAMES` entry is [`backend/lobbyadapter/lobby_game.json`](../backend/lobbyadapter/lobby_game.json), with `hooks_url` at the game's `/game/lobby-hooks` and its secret in `LOBBY_GAME_SECRET_ISLAND_BATTLES`. It serves its hooks with `gamehooks.NewHandler`: its settings, seat and member settings validators, a ready check that answers from the request's members unless an uploaded bot needs its package read, or, at the start, its bot seats, a `start` that binds the round's game with `BindOnce`-style idempotence, and `round-ended`. It reads lobbies and authorizes watchers with `gamehooks.GameAPIClient`, and verifies players with `playertoken`. Locally and in the live tests, the lobby runs on its own (`cmd/lobby`) and the backend reaches it at `ISLAND_BATTLES_LOBBY_URL`. In production, until the lobby is deployed on its own, the backend builds the lobby in its own process and Lambda with [`app`](#running-the-lobby), and both sides send their requests through an `http.RoundTripper` that calls the other side's `http.Handler` in memory; the requests are signed and checked as over a network.
+**Island Battles is the example HTTP game** ([its backend README](https://github.com/INTODAN/island-battles-go/blob/main/backend/README.md#binding-to-the-lobby)), in [its own repository](https://github.com/INTODAN/island-battles-go). Its `LOBBY_GAMES` entry is [`backend/lobbyadapter/lobby_game.json`](https://github.com/INTODAN/island-battles-go/blob/main/backend/lobbyadapter/lobby_game.json), with `hooks_url` at the game's `/game/lobby-hooks` and its secret in `LOBBY_GAME_SECRET_ISLAND_BATTLES`. It serves its hooks with `gamehooks.NewHandler`: its settings, seat and member settings validators, a ready check that answers from the request's members unless an uploaded bot needs its package read, or, at the start, its bot seats, a `start` that binds the round's game with `BindOnce`-style idempotence, and `round-ended`. It reads lobbies and authorizes watchers with `gamehooks.GameAPIClient`, and verifies players with `playertoken`. Locally and in the live tests, the lobby runs on its own (`cmd/lobby`) and the backend reaches it at `ISLAND_BATTLES_LOBBY_URL`. In production, until the lobby is deployed on its own, the backend builds the lobby in its own process and Lambda with [`app`](#running-the-lobby), and both sides send their requests through an `http.RoundTripper` that calls the other side's `http.Handler` in memory; the requests are signed and checked as over a network.
 
 ### Configuration
 
@@ -405,7 +444,7 @@ Under `/lobby/v1/game-api/games/{game_key}/`, signed with that game's secret, so
 
 ## Admin MCP tools
 
-`adminmcp` answers an operator's questions about lobbies and players through [Model Context Protocol](https://modelcontextprotocol.io) tools, on a server built with the official Go SDK. A game's own admin server registers them next to its game tools; Island Battles does so in [`backend/cmd/admin-mcp`](../backend/README.md#admin-mcp-server).
+`adminmcp` answers an operator's questions about lobbies and players through [Model Context Protocol](https://modelcontextprotocol.io) tools, on a server built with the official Go SDK. A game's own admin server registers them next to its game tools; Island Battles, for example, does so in [`backend/cmd/admin-mcp`](https://github.com/INTODAN/island-battles-go/blob/main/backend/README.md#admin-mcp-server).
 
 - `adminmcp.OpenDatabase(ctx, url, logger)` connects with a single connection whose sessions start with `default_transaction_read_only=on` and a 5-second `statement_timeout`. Statements always use the extended protocol, so one query is one statement. A superuser's sessions `SET ROLE pg_read_all_data`, with a warning, because a read-only transaction leaves a superuser powers such as reading server files. That is best-effort; only a role that is not a superuser makes the tools fully read-only.
 - `adminmcp.ReadOnly(ctx, db, read)` runs `read` in a read-only transaction that is always rolled back, so a `SET` in it ends with it, and then releases the session's advisory locks, which outlive the rollback. Every tool runs in one, the game's included.
@@ -413,3 +452,7 @@ Under `/lobby/v1/game-api/games/{game_key}/`, signed with that game's secret, so
 - `adminmcp.AddTools(server, db, options)` registers `overview`, `list_lobbies`, `get_lobby` and `find_players`. They read only the `lobby_*` tables, through the records in `postgres/models.go`, and never the sessions' `bearer_hash`. `Options.Games` adds the game's counts to `overview` and the linked game's ID to each lobby. A game keeps its data in a database of its own, never the lobby's, so `Games.Overview` and `Games.GameIDs` take the call's context and read the game's database themselves, such as in their own `ReadOnly` transaction.
 
 A member counts as connected while a lease of its current membership has neither expired nor been released, as `domain.NormalizeExpired` decides. The tools read this from the timestamps but never apply expiry, so they change nothing. `get_lobby` says when retention deletes the lobby at the latest, from `Options.LobbyRetention`, which defaults to `DefaultRetention()`.
+
+## Licence
+
+[MIT](LICENSE).
