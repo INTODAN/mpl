@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // DefaultTimeout bounds each hook call and each game API request.

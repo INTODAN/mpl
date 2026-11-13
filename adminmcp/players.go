@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/postgres"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

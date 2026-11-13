@@ -1,4 +1,4 @@
-// Command mock-game serves the lobby's mock game, lobby/mockgame, over HTTP,
+// Command mock-game serves the lobby's mock game, package mockgame, over HTTP,
 // so that live tests can configure a lobby host with a game that it calls
 // over HTTP, as integration/run.py --mock-game does. It reads:
 //
@@ -22,8 +22,8 @@ import (
 	"os"
 	"time"
 
-	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/mockgame"
+	"github.com/INTODAN/mpl/gamehooks"
+	"github.com/INTODAN/mpl/mockgame"
 )
 
 func main() {

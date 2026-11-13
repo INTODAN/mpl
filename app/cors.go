@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"islandBattles/lobby/gamehooks"
+	"github.com/INTODAN/mpl/gamehooks"
 )
 
 // The CORS answer to the games' sites, whose own lobby UI, such as a game's

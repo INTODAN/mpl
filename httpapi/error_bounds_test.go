@@ -11,10 +11,10 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
 )
 
 // unknownKeys is how many unknown keys the bounded-problem tests send. Before

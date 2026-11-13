@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"islandBattles/lobby/app"
-	"islandBattles/lobby/internal/testutil"
+	"github.com/INTODAN/mpl/app"
+	"github.com/INTODAN/mpl/internal/testutil"
 
 	"gorm.io/driver/postgres"
 )

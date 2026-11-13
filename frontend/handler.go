@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 //go:embed index.html app.js catalog.mjs links.mjs playertoken.mjs relay.mjs resultretry.mjs roomapi.mjs rounds.mjs style.css throttle.mjs vendor watch.mjs

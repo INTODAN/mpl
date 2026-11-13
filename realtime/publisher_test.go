@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/realtime"
 	"github.com/centrifugal/gocent/v3"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/realtime"
 )
 
 type apiCommand struct {

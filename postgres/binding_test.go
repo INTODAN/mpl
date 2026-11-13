@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/internal/testutil"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/internal/testutil"
+	"github.com/INTODAN/mpl/postgres"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"

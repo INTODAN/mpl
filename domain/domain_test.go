@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 const roomID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

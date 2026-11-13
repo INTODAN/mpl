@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
 )
 
 // recordingGame is a game written in Go whose hooks record what they got.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // GameAPIPath is where the lobby serves the game API, under the lobby's URL.

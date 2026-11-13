@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
 
 	"gorm.io/gorm/clause"
 )

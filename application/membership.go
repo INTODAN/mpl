@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func (service *Service) Create(ctx context.Context, principal domain.Principal, request domain.CreateRequest) (domain.Snapshot, error) {

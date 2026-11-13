@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/app"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/internal/testutil"
-	"islandBattles/lobby/playertoken"
-	"islandBattles/lobby/realtime"
+	"github.com/INTODAN/mpl/app"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
+	"github.com/INTODAN/mpl/internal/testutil"
+	"github.com/INTODAN/mpl/playertoken"
+	"github.com/INTODAN/mpl/realtime"
 
 	"github.com/google/uuid"
 )

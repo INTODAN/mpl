@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // AddSeat adds a seat that no person plays, such as a game's bot, to a team of

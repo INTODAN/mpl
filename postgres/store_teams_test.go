@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
 )
 
 // changeTeams commits a settings change that gives the lobby these team

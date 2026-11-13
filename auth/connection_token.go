@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 type jwtHeader struct {

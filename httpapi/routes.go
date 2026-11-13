@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/INTODAN/mpl/domain"
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby/domain"
 )
 
 const basePath = "/lobby/v1"

@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // PublishingStore pushes every committed change to subscribers before Create or

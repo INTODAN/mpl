@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

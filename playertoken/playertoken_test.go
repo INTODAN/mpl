@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 const issuer = "https://lobby.example.test"

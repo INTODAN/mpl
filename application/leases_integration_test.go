@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 func TestHeartbeatDuringGracePreservesMembership(t *testing.T) {

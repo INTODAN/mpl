@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // retentionPassTimeout bounds one pass, so a slow database delays the request

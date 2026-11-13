@@ -35,8 +35,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
 )
 
 // HooksPath is where a Game serves its hooks.

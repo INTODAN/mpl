@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // Service implements both the Authenticator and ConnectionTokenIssuer ports.

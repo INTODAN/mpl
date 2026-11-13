@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"

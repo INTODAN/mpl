@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/app"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/app"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 const testGames = `[{"key": "mock-game", "name": "Mock game", "hooks_url": "http://127.0.0.1:9/hooks", "secret_env": "LOBBY_GAME_SECRET_MOCK_GAME"}]`

@@ -13,8 +13,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"islandBattles/lobby/app"
-	lobbypostgres "islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/app"
+	lobbypostgres "github.com/INTODAN/mpl/postgres"
 )
 
 func main() {

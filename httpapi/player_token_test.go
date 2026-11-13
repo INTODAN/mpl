@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 func TestAPlayerTokenIsIssuedForARegisteredGameAndVerifiesWithThePublishedKeys(t *testing.T) {

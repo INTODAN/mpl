@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/INTODAN/mpl/application"
+	"github.com/INTODAN/mpl/domain"
 	"github.com/danielgtaylor/huma/v2"
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/domain"
 )
 
 type bindInput struct {

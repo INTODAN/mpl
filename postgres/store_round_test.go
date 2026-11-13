@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/postgres"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/postgres"
 )
 
 // The store keeps a started lobby's roster frozen. Only reopening the lobby,

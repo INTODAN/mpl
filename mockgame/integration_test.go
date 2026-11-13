@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	lobbyapp "islandBattles/lobby/app"
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/internal/testutil"
-	"islandBattles/lobby/mockgame"
-	lobbypostgres "islandBattles/lobby/postgres"
+	lobbyapp "github.com/INTODAN/mpl/app"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
+	"github.com/INTODAN/mpl/internal/testutil"
+	"github.com/INTODAN/mpl/mockgame"
+	lobbypostgres "github.com/INTODAN/mpl/postgres"
 
 	"github.com/google/uuid"
 )
@@ -35,7 +35,7 @@ var (
 	otherSecret = []byte(strings.Repeat("o", 40))
 )
 
-// stack is the lobby's HTTP server, built by lobby/app from its LOBBY_*
+// stack is the lobby's HTTP server, built by package app from its LOBBY_*
 // configuration as cmd/lobby builds it, with LOBBY_GAMES, and the mock game's
 // HTTP server, which the lobby calls and which reads the lobby through the
 // game API. A second mock game, other-game, has its own secret. A fake

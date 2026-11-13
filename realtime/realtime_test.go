@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/realtime"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/realtime"
 )
 
 const actor = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"

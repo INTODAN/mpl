@@ -1,6 +1,6 @@
 // Package adminmcp answers an operator's questions about lobbies and players
 // through Model Context Protocol tools. It reads only the lobby_* tables,
-// through the GORM records in lobby/postgres, so any game that uses the lobby
+// through the GORM records in package postgres, so any game that uses the lobby
 // can register the tools on its own admin server and add its own beside them.
 // Nothing in it writes: every tool runs in a read-only transaction on a
 // connection whose sessions are read-only too.

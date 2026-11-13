@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/playertoken"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/gamehooks"
+	"github.com/INTODAN/mpl/playertoken"
 )
 
 // The lobby's environment. Every name has the LOBBY_ prefix, so a host that

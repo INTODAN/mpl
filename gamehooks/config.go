@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"islandBattles/lobby/domain"
-	"islandBattles/lobby/frontend"
+	"github.com/INTODAN/mpl/domain"
+	"github.com/INTODAN/mpl/frontend"
 )
 
 // GamesEnv names the environment variable that lists the games the lobby

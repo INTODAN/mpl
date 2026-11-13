@@ -3,7 +3,7 @@ package application
 import (
 	"context"
 
-	"islandBattles/lobby/domain"
+	"github.com/INTODAN/mpl/domain"
 )
 
 // GameSnapshot returns a lobby as its game reads it through the game API: the
