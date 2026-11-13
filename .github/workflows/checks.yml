@@ -161,3 +161,47 @@ jobs:
           path: /tmp/lobby-acceptance-*
           if-no-files-found: ignore
           retention-days: 7
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # The VM deploy's template tests render with Ansible itself, and the
+      # playbooks are linted with the collections they use.
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install Ansible
+        run: |
+          uv tool install ansible-core==2.22.0
+          uv tool install ansible-lint==26.11.0
+          cd deploy/ansible && ansible-galaxy collection install -r requirements.yml -p .collections
+
+      # The plan checks run on synthetic plans, and the template tests on this
+      # machine, so they need no AWS credentials, Terraform or VM.
+      - name: Deploy tests
+        run: python3 -I -m unittest discover -s deploy -p 'test_*.py'
+
+      - name: Ansible syntax and lint
+        working-directory: deploy/ansible
+        run: |
+          for playbook in site.yml dump.yml restore.yml tests/render.yml; do
+            ansible-playbook -i localhost, --syntax-check "$playbook"
+          done
+          ansible-lint
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      # Both providers are mocked in the tests, so nothing reaches AWS.
+      - name: Terraform format, validate and test
+        working-directory: deploy/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test

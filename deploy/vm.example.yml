@@ -1,0 +1,46 @@
+# Settings for scripts/vm.sh. Copy this file to deploy/local/vm.yml, which is
+# gitignored and kept in the deploy bucket under mpl/files/, and replace the
+# placeholders. See deploy/README.md.
+
+# The domain whose vm.<domain> A record points at the VM's static IP.
+deploy_domain: <your-domain>
+
+# Where players and games reach the lobby. `scripts/aws.sh output lobby_url`
+# prints it.
+lobby_url: https://lobby.<your-domain>
+
+# Where Centrifugo's subscribe and refresh proxy calls go. Until the cutover,
+# the address Centrifugo calls today: the Function URL of the game that still
+# runs the lobby in its own process (its lambda_function_url). The cutover
+# switches it to `scripts/aws.sh output function_url` (deploy/README.md, "The
+# cutover").
+centrifugo_proxy_url: https://<url-id>.lambda-url.<region>.on.aws/
+
+# A VM taken over keeps its Compose project, its directory and its admin role
+# (deploy/README.md, "Taking over a running VM"). A new VM leaves them out.
+# vm_compose_project: <the project it runs, see `docker compose ls` on the VM>
+# vm_app_dir: /opt/<that project>
+# postgres_admin_role: <the read-only admin role it has>
+
+# The games with a database on the VM (deploy/README.md, "Tenants"). The
+# first deploy after adding one needs -e app_generate_secrets=true.
+tenants:
+  - key: <game key>                  # its key in the lobby, such as example-game
+    database: <database>             # such as example_game; an existing one is kept
+    role: <role>                     # the role that owns it
+    origins:                         # its sites: they may call the lobby, and open
+      - https://<game>.<your-domain> # Centrifugo connections
+    websocket_origins: []            # further origins for Centrifugo only, such as an app's
+    # Its LOBBY_GAMES entry (README.md, "Binding a game over HTTP"), with the
+    # same key and secret_env LOBBY_GAME_SECRET_<KEY, upper case, - as _>.
+    lobby_game:
+      key: <game key>
+      name: <Game name>
+      hooks_url: https://<game>.<your-domain>/<hooks path>
+      secret_env: LOBBY_GAME_SECRET_<KEY>
+      frontend:
+        origin: https://<game>.<your-domain>
+        result_url: https://<game>.<your-domain>/<result path>
+
+# Optional: a contact address for the Let's Encrypt account.
+# app_letsencrypt_email: <you@your-domain>
