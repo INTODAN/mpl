@@ -43,8 +43,8 @@ app_databases: "{{ [app_lobby_database_entry] + tenants }}"
 app_database_selected: "{{ app_databases | selectattr('database', 'equalto', app_database) | first }}"
 
 # The variable that holds a tenant's shared secret, by its key: the one its
-# lobby_game's secret_env must name. island-battles gives
-# LOBBY_GAME_SECRET_ISLAND_BATTLES.
+# lobby_game's secret_env must name. example-game gives
+# LOBBY_GAME_SECRET_EXAMPLE_GAME.
 app_game_secret_env_prefix: LOBBY_GAME_SECRET_
 # Browsers' origins: the tenants' sites may call the lobby's player API
 # (LOBBY_ALLOWED_ORIGINS), and they and the lobby page may open Centrifugo

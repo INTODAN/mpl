@@ -201,6 +201,8 @@ The game's own change (INTODAN/island-battles-go#232) moves its clients to `lobb
 3. **The old backup:** once the game's Terraform no longer needs it, stop the other configuration's backup timer on the VM (`systemctl disable --now <its timer>`; `island-battles-backup.timer` for Island Battles). This repository's own backup keeps running.
 4. Optionally, set the game's `origins` and `websocket_origins` to what its clients use from then on, and run the `vm` target.
 
+The account's GitHub OIDC provider stays in the game's configuration, which created it: this deployment's roles trust it too, so the game must keep it, or drop it from its own state with a `removed` block, never destroy it. Until the cutover, the game's database backups are in its own bucket, which this repository's GitHub roles can read through `ReadOnlyAccess` unless that bucket's policy denies them too (`mpl-github-deploy`, `mpl-github-apply`), as this one's denies the game's.
+
 ## Tenants
 
 A tenant is a game with a database on the VM. Each entry of `tenants` in `vm.yml` gives:
