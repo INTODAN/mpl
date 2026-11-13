@@ -1045,8 +1045,12 @@ async function loadRoomPanel(game) {
     const module = await gameModule(game.room_module);
     if (epoch !== roomEpoch) return;
     $("game-room-panel").replaceChildren();
-    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID), saveMemberSettings: memberSettingsSaver(lobbyID) });
-    if (module.seatOptions) void loadSeatOptions(module.seatOptions, epoch);
+    // The panel asks for the seat choices again when the ones it offers change.
+    const refreshSeatOptions = () => {
+      if (module.seatOptions && epoch === roomEpoch) void loadSeatOptions(module.seatOptions, epoch, lobbyID);
+    };
+    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID), saveMemberSettings: memberSettingsSaver(lobbyID), refreshSeatOptions });
+    refreshSeatOptions();
   } catch {
     if (epoch === roomEpoch) $("game-room-panel").replaceChildren(element("p", "hint", "Could not load this game’s controls. Reload the page to try again."));
   } finally {
@@ -1059,10 +1063,12 @@ async function loadRoomPanel(game) {
 }
 
 // The room module's seatOptions lists the seats that the host can add to a
-// team, such as the game's bot levels: {label, choices: [{label, settings}]}.
-async function loadSeatOptions(load, epoch) {
+// team, such as the game's bot levels: {label, choices: [{label, settings,
+// input}]}, where a choice's optional input {name, label, placeholder} asks
+// the host for a text that goes into settings[name].
+async function loadSeatOptions(load, epoch, lobbyID) {
   try {
-    const options = await load();
+    const options = await load({ lobbyID, request: roomRequester(lobbyID) });
     if (epoch !== roomEpoch || !Array.isArray(options?.choices) || !options.choices.length) return;
     seatOptions = { epoch, label: String(options.label || "Add"), choices: options.choices };
     render();
@@ -1082,22 +1088,53 @@ function showSeatControls(shown) {
     container.replaceChildren();
     return;
   }
-  const key = JSON.stringify([snapshot.lobby.id, snapshot.teams.map((team) => [team.id, team.name])]);
+  const key = JSON.stringify([snapshot.lobby.id, snapshot.teams.map((team) => [team.id, team.name]), options.choices]);
   if (key !== seatControls) {
     seatControls = key;
+    // New choices keep each team's selected choice, by its label, and its text.
+    const kept = new Map([...container.children].map((row) => [row.dataset.teamId, {
+      label: row.querySelector("select")?.selectedOptions[0]?.textContent, text: row.querySelector("input")?.value ?? "",
+    }]));
     container.replaceChildren(...snapshot.teams.map((team) => {
       const row = element("div", "seat-row", "");
       row.dataset.teamId = team.id;
       const select = document.createElement("select");
       select.append(...options.choices.map((choice, index) => new Option(choice.label, String(index))));
+      const previous = options.choices.findIndex((choice) => choice.label === kept.get(team.id)?.label);
+      if (previous >= 0) select.value = String(previous);
       const label = element("label", "", team.name);
       label.append(select);
+      // A choice with an input asks for its text next to the select.
+      const text = document.createElement("input");
+      text.type = "text";
+      text.value = kept.get(team.id)?.text ?? "";
+      const caption = element("span", "", "");
+      const textLabel = element("label", "seat-input", "");
+      textLabel.append(caption, text);
+      const showInput = () => {
+        const input = options.choices[Number(select.value)].input;
+        textLabel.hidden = !input;
+        caption.textContent = String(input?.label || "");
+        text.placeholder = String(input?.placeholder || "");
+      };
+      select.addEventListener("change", showInput);
+      showInput();
       const add = element("button", "secondary", `${options.label} to ${team.name}`);
       add.type = "button";
-      add.addEventListener("click", () => action(async () => acceptSnapshot(await api(`${roomPath()}/seats`, "POST", {
-        request_id: uuid(), team_id: team.id, seat_settings: options.choices[Number(select.value)].settings,
-      }))));
-      row.append(label, add);
+      add.addEventListener("click", () => action(async () => {
+        const choice = options.choices[Number(select.value)];
+        const settings = { ...choice.settings };
+        if (choice.input) {
+          const value = text.value.trim();
+          if (!value) {
+            text.focus();
+            throw new Error(`Enter the ${String(choice.input.label || "text").toLowerCase()} first.`);
+          }
+          settings[choice.input.name] = value;
+        }
+        acceptSnapshot(await api(`${roomPath()}/seats`, "POST", { request_id: uuid(), team_id: team.id, seat_settings: settings }));
+      }));
+      row.append(label, textLabel, add);
       return row;
     }));
   }
@@ -1105,7 +1142,7 @@ function showSeatControls(shown) {
   const occupied = occupiedTeams(snapshot);
   for (const row of container.children) row.hidden = occupied.has(row.dataset.teamId);
   container.hidden = [...container.children].every((row) => row.hidden);
-  for (const control of container.querySelectorAll("button, select")) control.disabled = busy;
+  for (const control of container.querySelectorAll("button, select, input")) control.disabled = busy;
 }
 
 // Before a demo player gets ready, the game's room module can make the
@@ -1259,7 +1296,7 @@ function render() {
   $("stop-watching").disabled = busy;
   $("watch-button").disabled = busy || !games.size;
   $("link-invite-button").disabled = busy || !games.size;
-  $("example-label").textContent = state.demoPlayer ? "Example strategy · " : "Your localhost bot";
+  $("example-label").textContent = state.demoPlayer ? "Example strategy · " : "Your bot";
   $("example-strategy").hidden = !state.demoPlayer;
   $("example-toggle").hidden = !state.demoPlayer;
   $("display-name").readOnly = Boolean(state.session);
