@@ -8,3 +8,10 @@ __pycache__/
 
 # Local settings made from .env.example
 .env
+
+# The deploy's machine-local files (deploy/README.md): settings, secrets,
+# builds, plans and dumps, kept in the deploy bucket instead. Terraform's
+# working directory and the VM playbooks' collections.
+deploy/local/
+deploy/terraform/.terraform/
+deploy/ansible/.collections/
