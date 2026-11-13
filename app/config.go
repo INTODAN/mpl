@@ -33,6 +33,9 @@ const (
 	ProxySecretEnv           = "LOBBY_PROXY_SECRET"
 	PlayerTokenKeysEnv       = "LOBBY_PLAYER_TOKEN_KEYS"
 	PlayerTokenLifetimeEnv   = "LOBBY_PLAYER_TOKEN_LIFETIME"
+	// AllowedOriginsEnv lists the games' sites whose own lobby UI calls the
+	// player API from another origin, separated by commas.
+	AllowedOriginsEnv = "LOBBY_ALLOWED_ORIGINS"
 	// GamesEnv lists the games, gamehooks.GamesEnv.
 	GamesEnv = gamehooks.GamesEnv
 	// The retention settings, domain.RetentionPolicy; each one unset keeps
@@ -101,6 +104,12 @@ type Config struct {
 	// Retention says when lobby data is deleted; a zero field keeps
 	// domain.DefaultRetention's.
 	Retention domain.RetentionPolicy
+	// AllowedOrigins are the games' sites, such as
+	// https://island-battles.example.org, whose own lobby UI calls the player
+	// API from another origin: Handler answers them with CORS. A host that
+	// runs the lobby in its own process serves its pages on the lobby's
+	// origin and needs none.
+	AllowedOrigins []string
 }
 
 // LookupGameSecret reads a game's shared secret by the variable that its
@@ -143,7 +152,8 @@ func LoadConfig() (Config, error) {
 // LoadConfigFromLookup reads and checks the lobby's settings through lookup,
 // such as os.LookupEnv. Every setting is required except the pool limits,
 // the player token lifetime and the retention settings, which have
-// defaults. Errors name variables, never their values.
+// defaults, and the allowed origins, without which no other site may call
+// the player API. Errors name variables, never their values.
 func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if err := requireEnvironment(lookup, DatabaseURLEnv, PublicURLEnv, CentrifugoAPIURLEnv, CentrifugoAPIKeyEnv,
 		CentrifugoPublicURLEnv, ConnectionTokenSecretEnv, ProxySecretEnv, PlayerTokenKeysEnv, GamesEnv); err != nil {
@@ -169,6 +179,10 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	allowedOrigins, err := ParseOrigins(read(lookup, AllowedOriginsEnv))
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", AllowedOriginsEnv, err)
+	}
 	config := Config{
 		Database:              database,
 		PublicURL:             strings.TrimRight(read(lookup, PublicURLEnv), "/"),
@@ -181,6 +195,7 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		PlayerTokenLifetime:   lifetime,
 		Games:                 read(lookup, GamesEnv),
 		Retention:             retention,
+		AllowedOrigins:        allowedOrigins,
 	}
 	if err := validateURL(PublicURLEnv, config.PublicURL, "http", "https"); err != nil {
 		return Config{}, err
@@ -228,6 +243,28 @@ func loadGameSecrets(lookup func(string) (string, bool), games string) (map[stri
 		}
 	}
 	return secrets, nil
+}
+
+// ParseOrigins reads a list of origins separated by commas, such as
+// "https://island-battles.example.org, http://localhost:3000": each an http
+// or https origin as browsers send it in the Origin header, in lower case,
+// without a path, a trailing slash or a default port. Empty, it lists none.
+func ParseOrigins(value string) ([]string, error) {
+	var origins []string
+	for item := range strings.SplitSeq(value, ",") {
+		origin := strings.TrimSpace(item)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+			origin != strings.ToLower(parsed.Scheme+"://"+parsed.Host) ||
+			(parsed.Scheme == "https" && parsed.Port() == "443") || (parsed.Scheme == "http" && parsed.Port() == "80") {
+			return nil, fmt.Errorf("%q is not an origin such as https://game.example.org, without a path", origin)
+		}
+		origins = append(origins, origin)
+	}
+	return origins, nil
 }
 
 // LoadHTTPAddr reads the address that the local server listens on,

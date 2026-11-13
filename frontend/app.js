@@ -62,6 +62,9 @@ const gameModules = new Map();
 // still plays; it offers no invite links and no watching.
 let linksLibrary = null;
 let watchLibrary = null;
+// The catalog's URL rules (catalog.mjs), loaded with the catalog: where a
+// game's paths and modules are, on the lobby page's origin or the game's.
+let catalogLibrary = null;
 // What a watcher outside the roster has open, in this tab: {game_key, lobby_id,
 // channel, join_code}, kept in state so a reload watches again. watchEpoch
 // counts the watches, like roomEpoch counts rooms.
@@ -539,7 +542,8 @@ function selectedGame() {
 }
 
 // A game's own pages, from its catalog links. The host checked that each URL
-// is a same-origin path. They open in a new tab, so this tab keeps its lobby.
+// is on the lobby page's origin or the game's. They open in a new tab, so
+// this tab keeps its lobby.
 function showGameLinks(container, game) {
   const links = (game?.links || []).map((link) => {
     const anchor = document.createElement("a");
@@ -637,9 +641,10 @@ async function relayGameRequest(data) {
       try {
         // A watcher's document reads the game's watcher prefix only, never a
         // player's, and nothing when its game names none.
+        const prefix = catalogLibrary.locate(target.game,
+          target.watching ? watchLibrary?.watchRelayPrefix(target.game) ?? null : target.game?.data_url_prefix, location.origin);
         response = await relayRequest(data, {
-          prefix: target.watching ? watchLibrary?.watchRelayPrefix(target.game) ?? null : target.game?.data_url_prefix,
-          lobbyID, origin: location.origin, fetch: await gameFetch(target.gameKey),
+          prefix: prefix?.path ?? null, lobbyID, origin: prefix?.origin ?? location.origin, fetch: await gameFetch(target.gameKey),
         });
       } finally {
         shown.relayed--;
@@ -658,7 +663,8 @@ async function relayGameRequest(data) {
 }
 
 async function ensureGamePlayer() {
-  const example = games.get(snapshot?.lobby.game_key)?.example_player;
+  const game = games.get(snapshot?.lobby.game_key);
+  const example = game?.example_player;
   if (!example || gamePlayer || playerLoading) return;
   playerLoading = true;
   const epoch = roomEpoch;
@@ -675,10 +681,12 @@ async function ensureGamePlayer() {
     const channel = `player:${state.session.player_id}`;
     const previous = client.getSubscription(channel);
     if (previous) client.removeSubscription(previous);
-    // The player follows the game of this lobby round only.
+    // The player follows the game of this lobby round only. It asks for the
+    // game's paths, which its fetcher sends to the game's site.
+    const gameSite = catalogLibrary.gameURL(game, location.origin);
     gamePlayer = new ExamplePlayer({
-      lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id,
-      fetcher: await gameFetch(snapshot.lobby.game_key), subscription: client.newSubscription(channel),
+      lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id, gameURL: gameSite,
+      fetcher: catalogLibrary.resolvingFetch(await gameFetch(snapshot.lobby.game_key), gameSite), subscription: client.newSubscription(channel),
       // Outside a demo the player submits only the turns of a localhost bot,
       // which it relays; the demo's player can be paused.
       demo: Boolean(state.demoPlayer), enabled: state.demoPlayer ? Boolean(state.demoPlayer.enabled) : true, pending: state.demoPlayer?.pending || null,
@@ -1002,8 +1010,10 @@ async function requestForRoom(lobbyID, request) {
     throw error;
   });
   const { roomRequest } = await roomAPIModule;
+  const game = games.get(state.room.game_key);
+  const prefix = catalogLibrary.locate(game, game?.room_api_prefix, location.origin);
   return roomRequest(request, {
-    prefix: games.get(state.room.game_key)?.room_api_prefix, lobbyID, origin: location.origin, fetch: await gameFetch(state.room.game_key),
+    prefix: prefix?.path ?? null, lobbyID, origin: prefix?.origin ?? location.origin, fetch: await gameFetch(state.room.game_key),
   });
 }
 function roomRequester(lobbyID) {
@@ -1048,9 +1058,10 @@ async function loadRoomPanel(game) {
     $("game-room-panel").replaceChildren();
     // The panel asks for the seat choices again when the ones it offers change.
     const refreshSeatOptions = () => {
-      if (module.seatOptions && epoch === roomEpoch) void loadSeatOptions(module.seatOptions, epoch, lobbyID);
+      if (module.seatOptions && epoch === roomEpoch) void loadSeatOptions(module.seatOptions, epoch, lobbyID, game);
     };
-    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID), saveMemberSettings: memberSettingsSaver(lobbyID), refreshSeatOptions });
+    panel = new module.RoomPanel({ container: $("game-room-panel"), lobbyID, playerID: state.session.player_id, request: roomRequester(lobbyID),
+      saveMemberSettings: memberSettingsSaver(lobbyID), refreshSeatOptions, gameURL: catalogLibrary.gameURL(game, location.origin) });
     refreshSeatOptions();
   } catch {
     if (epoch === roomEpoch) $("game-room-panel").replaceChildren(element("p", "hint", "Could not load this game’s controls. Reload the page to try again."));
@@ -1068,9 +1079,9 @@ async function loadRoomPanel(game) {
 // input, disabled}]}, where a choice's optional input {name, label,
 // placeholder} asks the host for a text that goes into settings[name], and a
 // choice with disabled: true is shown greyed out and can't be chosen.
-async function loadSeatOptions(load, epoch, lobbyID) {
+async function loadSeatOptions(load, epoch, lobbyID, game) {
   try {
-    const options = await load({ lobbyID, request: roomRequester(lobbyID) });
+    const options = await load({ lobbyID, request: roomRequester(lobbyID), gameURL: catalogLibrary.gameURL(game, location.origin) });
     if (epoch !== roomEpoch || !Array.isArray(options?.choices) || !options.choices.length) return;
     seatOptions = { epoch, label: String(options.label || "Add"), choices: options.choices };
     render();
@@ -1160,7 +1171,10 @@ async function prepareDemoPlayer() {
   const game = games.get(snapshot.lobby.game_key);
   if (!game?.room_module) return;
   const { prepareDemo } = await gameModule(game.room_module);
-  if (prepareDemo) await prepareDemo({ lobbyID: snapshot.lobby.id, request: roomRequester(snapshot.lobby.id), saveMemberSettings: memberSettingsSaver(snapshot.lobby.id) });
+  if (prepareDemo) {
+    await prepareDemo({ lobbyID: snapshot.lobby.id, request: roomRequester(snapshot.lobby.id), saveMemberSettings: memberSettingsSaver(snapshot.lobby.id),
+      gameURL: catalogLibrary.gameURL(game, location.origin) });
+  }
 }
 
 async function mountSettingsForm() {
@@ -1173,7 +1187,7 @@ async function mountSettingsForm() {
   try {
     const { SettingsForm } = await settingsModule(game);
     if (settingsFormGame !== game.key) return;
-    settingsForm = new SettingsForm({ container: $("game-settings"), onChange: () => {} });
+    settingsForm = new SettingsForm({ container: $("game-settings"), onChange: () => {}, gameURL: catalogLibrary.gameURL(game, location.origin) });
   } catch {
     if (settingsFormGame !== game.key) return;
     settingsFormGame = null;
@@ -1203,7 +1217,7 @@ async function describeRoomSettings() {
   const epoch = roomEpoch;
   try {
     const module = await settingsModule(game);
-    const text = module.describeSettings ? await module.describeSettings(snapshot.lobby.game_settings) : "";
+    const text = module.describeSettings ? await module.describeSettings(snapshot.lobby.game_settings, { gameURL: catalogLibrary.gameURL(game, location.origin) }) : "";
     if (epoch !== roomEpoch || describedRoom !== key) return;
     changeSettingsLabel = { epoch, label: String(module.changeSettingsLabel || "Change settings") };
     $("room-settings").textContent = text || "";
@@ -1237,7 +1251,8 @@ async function openRoomSettings() {
   try {
     const { SettingsForm } = await settingsModule(game);
     if (roomSettingsForm?.epoch !== epoch || roomSettingsForm.form) return;
-    roomSettingsForm.form = new SettingsForm({ container: $("room-settings-fields"), onChange: () => {}, current: snapshot.lobby.game_settings, teamCount: snapshot.teams.length });
+    roomSettingsForm.form = new SettingsForm({ container: $("room-settings-fields"), onChange: () => {}, current: snapshot.lobby.game_settings, teamCount: snapshot.teams.length,
+      gameURL: catalogLibrary.gameURL(game, location.origin) });
   } catch {
     if (roomSettingsForm?.epoch !== epoch) return;
     closeRoomSettings();
@@ -1666,6 +1681,7 @@ async function loadGames() {
       const response = await fetch("./games.json", { headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const catalog = await response.json();
+      catalogLibrary = await import("./catalog.mjs");
       $("game").replaceChildren(...catalog.map((game) => new Option(game.name, game.key)));
       games = new Map(catalog.map((game) => [game.key, game]));
       notice();

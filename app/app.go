@@ -78,6 +78,7 @@ type Lobby struct {
 	gameAPI        http.Handler
 	catalog        []frontend.Game
 	keys           *playertoken.KeySet
+	allowedOrigins []string
 }
 
 // New builds the lobby on database, whose schema is up to date, and pushes
@@ -168,6 +169,7 @@ func New(config Config, database *gorm.DB, centrifugo *gocent.Client, logger *sl
 	return &Lobby{
 		service: service, authentication: observedAuthentication{authentication, selected.observer}, playerTokens: playerTokens,
 		retention: retention, proxy: proxy, gameAPI: gameAPIRouter, catalog: catalog, keys: config.PlayerTokenKeys,
+		allowedOrigins: config.AllowedOrigins,
 	}, nil
 }
 
@@ -192,6 +194,7 @@ func (lobby *Lobby) Register(router chi.Router, api huma.API) error {
 // Handler is the lobby on its own: Register's routes, with the player API's
 // OpenAPI document at /openapi.json and its documentation at /docs, a
 // redirect from / to the lobby page, and GET /healthz, which answers 204.
+// The player API answers the configured AllowedOrigins with CORS.
 func (lobby *Lobby) Handler() (http.Handler, error) {
 	router := chi.NewMux()
 	api := humachi.New(router, huma.DefaultConfig("Generic Lobby API", "1.0.0"))
@@ -202,7 +205,7 @@ func (lobby *Lobby) Handler() (http.Handler, error) {
 	router.Get("/healthz", func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNoContent)
 	})
-	return router, nil
+	return allowOrigins(lobby.allowedOrigins, router), nil
 }
 
 // GameAPI serves the game API, under gamehooks.GameAPIPath, for a host that

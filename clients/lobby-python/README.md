@@ -47,11 +47,11 @@ first terminal, then use the join code printed there in a second terminal:
 
 ```sh
 uv run --project clients/lobby-python --locked python clients/lobby-python/examples/lobby_cli.py \
-  --base-url http://localhost:8888 --session-file /tmp/lobby-alice.json \
+  --base-url http://localhost:8890 --session-file /tmp/lobby-alice.json \
   --new-session Alice --create Demo
 
 uv run --project clients/lobby-python --locked python clients/lobby-python/examples/lobby_cli.py \
-  --base-url http://localhost:8888 --session-file /tmp/lobby-bob.json \
+  --base-url http://localhost:8890 --session-file /tmp/lobby-bob.json \
   --new-session Bob --join PRINTED_CODE
 ```
 
@@ -139,7 +139,7 @@ To rejoin after `quit`, reuse the same session file without `--new-session`:
 
 ```sh
 uv run --project clients/lobby-python --locked python clients/lobby-python/examples/lobby_cli.py \
-  --base-url http://localhost:8888 --session-file /tmp/lobby-alice.json --join PRINTED_CODE
+  --base-url http://localhost:8890 --session-file /tmp/lobby-alice.json --join PRINTED_CODE
 ```
 
 This process has a new client-instance UUID while retaining the guest identity.

@@ -1,15 +1,13 @@
 """Run the real lobby stack with test-owned containers and retained failure logs.
 
 The lobby runs as its own process, cmd/lobby. A game's host, when one is
-given, runs as a second process that the lobby reaches over HTTP, and a front
-gives clients one URL for both: /lobby/ and /internal/lobby/ go to the lobby,
-everything else to the game.
+given, runs as a second process that the lobby reaches over HTTP. The two are
+separate origins, as in production: clients get the lobby's URL in
+LOBBY_TEST_API_URL and the game's in LOBBY_TEST_GAME_URL.
 """
 from __future__ import annotations
 
 import argparse
-import http.client
-import http.server
 import json
 import os
 import secrets
@@ -19,19 +17,12 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
-# The lobby's paths, which the front sends to the lobby.
-LOBBY_PREFIXES = ("/lobby/", "/internal/lobby/")
-# Headers that belong to one connection, which the front doesn't pass on.
-HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
-              "transfer-encoding", "upgrade", "content-length"}
 
 
 def free_port() -> int:
@@ -72,70 +63,6 @@ def wait_listening(port: int, process: subprocess.Popen[str] | None, name: str) 
             time.sleep(0.1)
 
 
-class Front(http.server.ThreadingHTTPServer):
-    """One origin for the lobby and the game, as a CDN in front of both would be."""
-
-    daemon_threads = True
-
-    def __init__(self, port: int, lobby_port: int, game_port: int) -> None:
-        super().__init__(("127.0.0.1", port), FrontHandler)
-        self.lobby_port, self.game_port = lobby_port, game_port
-
-    def handle_error(self, request: object, client_address: object) -> None:
-        # A client that hangs up before its answer, as a cancelled request
-        # does, is no failure of the front.
-        if not isinstance(sys.exc_info()[1], ConnectionError):
-            super().handle_error(request, client_address)
-
-
-class FrontHandler(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    server: Front
-
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-    def read_body(self) -> bytes:
-        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
-            body = bytearray()
-            while True:
-                size = int(self.rfile.readline().split(b";")[0].strip(), 16)
-                if size == 0:
-                    while self.rfile.readline() not in (b"\r\n", b"\n", b""):
-                        pass
-                    return bytes(body)
-                body += self.rfile.read(size)
-                self.rfile.readline()
-        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
-
-    def forward(self) -> None:
-        body = self.read_body()
-        path = self.path.split("?", 1)[0]
-        port = self.server.lobby_port if path.startswith(LOBBY_PREFIXES) else self.server.game_port
-        headers = {name: value for name, value in self.headers.items() if name.lower() not in HOP_BY_HOP}
-        upstream = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
-        try:
-            upstream.request(self.command, self.path, body=body if body or self.command not in ("GET", "HEAD") else None, headers=headers)
-            response = upstream.getresponse()
-            content = response.read()
-            status, reason, answer_headers = response.status, response.reason, response.getheaders()
-        except OSError as error:
-            content = f"the front could not reach 127.0.0.1:{port}: {error}".encode()
-            status, reason, answer_headers = 502, "Bad Gateway", [("Content-Type", "text/plain")]
-        finally:
-            upstream.close()
-        self.send_response(status, reason)
-        for name, value in answer_headers:
-            if name.lower() not in HOP_BY_HOP:
-                self.send_header(name, value)
-        self.send_header("Content-Length", str(len(content)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(content)
-
-    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = forward
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server-root", type=Path, help="Go module/workspace containing the game's host")
@@ -163,13 +90,14 @@ def main() -> int:
     token = secrets.token_hex(6)
     database_name = f"lobby-acceptance-db-{token}"
     centrifugo_name = f"lobby-acceptance-events-{token}"
-    database_port, lobby_port, game_port, socket_port, front_port = (free_port() for _ in range(5))
-    lobby_url, game_url = f"http://127.0.0.1:{lobby_port}", f"http://127.0.0.1:{game_port}"
+    database_port, lobby_port, game_port, socket_port = (free_port() for _ in range(4))
+    # The game's host is a site of its own on localhost, which the lobby's
+    # catalog accepts over http for its game screens.
+    lobby_url, game_url = f"http://127.0.0.1:{lobby_port}", f"http://localhost:{game_port}"
     api_key, signing_key, proxy_key = (secrets.token_urlsafe(32) for _ in range(3))
     temporary = Path(tempfile.mkdtemp(prefix="lobby-acceptance-"))
     hosts: list[subprocess.Popen[str]] = []
     mock_game: subprocess.Popen[str] | None = None
-    front: Front | None = None
     # The lobby, the game's host and the mock game share one log.
     log_file = (temporary / "backend.log").open("w+")
     success = False
@@ -300,13 +228,8 @@ def main() -> int:
         # A non-WebSocket GET is expected to reject the upgrade, but it proves
         # the listener is up. Actual authenticated connectivity is tested below.
         wait_listening(socket_port, None, "Centrifugo listener")
-        api_url = lobby_url
-        if args.server_package:
-            front = Front(front_port, lobby_port, game_port)
-            threading.Thread(target=front.serve_forever, daemon=True).start()
-            api_url = f"http://127.0.0.1:{front_port}"
         environment.update({
-            "LOBBY_TEST_API_URL": api_url,
+            "LOBBY_TEST_API_URL": lobby_url,
             "LOBBY_TEST_WEBSOCKET_URL": f"ws://127.0.0.1:{socket_port}/connection/websocket",
             "LOBBY_TEST_CENTRIFUGO_API_URL": f"http://127.0.0.1:{socket_port}/api",
             "LOBBY_TEST_CENTRIFUGO_API_KEY": api_key,
@@ -317,15 +240,14 @@ def main() -> int:
             "LOBBY_TEST_BACKEND_CONTROL": str(control_status),
             "LOBBY_TEST_BACKEND_LOG": str(temporary / "backend.log"),
         })
+        if args.server_package:
+            environment["LOBBY_TEST_GAME_URL"] = game_url
         suites = [] if args.skip_lobby_suite else [str(ROOT / "integration")]
         suites += [str(path.resolve()) for path in args.extra_tests]
         result = subprocess.run([sys.executable, "-m", "pytest", *suites, "-q", "--tb=short", "--disable-warnings"], cwd=ROOT, env=environment, timeout=args.pytest_timeout)
         success = result.returncode == 0
         return result.returncode
     finally:
-        if front is not None:
-            front.shutdown()
-            front.server_close()
         if mock_game is not None and mock_game.poll() is None:
             mock_game.terminate()
             mock_game.wait(timeout=10)

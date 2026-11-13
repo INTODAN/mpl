@@ -148,6 +148,82 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 	}
 }
 
+// remoteQuizGame is quizGame on its own site: every URL absolute on the
+// game's origin.
+func remoteQuizGame(origin string) frontend.Game {
+	game := quizGame()
+	game.Origin = origin
+	for _, field := range []*string{&game.ResultURL, &game.SettingsModule, &game.DataURLPrefix, &game.RoomModule, &game.RoomAPIPrefix,
+		&game.Links[0].URL, &game.ExamplePlayer.Module} {
+		*field = origin + *field
+	}
+	return game
+}
+
+// A lobby on its own site loads a game's screens from the game's site: the
+// catalog takes absolute URLs on the game's origin, https or, for local
+// development, http on localhost.
+func TestHandlerAcceptsAbsoluteURLsOnTheGamesOrigin(t *testing.T) {
+	for _, origin := range []string{"https://quiz.example.org", "https://quiz.example.org:8443", "http://localhost:8888", "http://localhost"} {
+		game := remoteQuizGame(origin)
+		game.WatchResultURL, game.WatchDataURLPrefix = origin+"/quiz/{lobby_id}/watch", origin+"/quiz/{lobby_id}/watch/"
+		handler := mounted(t, []frontend.Game{game})
+		var catalog []map[string]any
+		if err := json.Unmarshal(get(t, handler, "/lobby/ui/games.json").Body.Bytes(), &catalog); err != nil {
+			t.Fatal(err)
+		}
+		if catalog[0]["origin"] != origin || catalog[0]["result_url"] != origin+"/quiz/{lobby_id}/result" {
+			t.Fatalf("catalog %v", catalog)
+		}
+	}
+	// A game may keep some of its URLs as paths on the lobby page's origin.
+	mixed := remoteQuizGame("https://quiz.example.org")
+	mixed.Links[0].URL = "/quiz/rounds/"
+	if _, err := frontend.Handler([]frontend.Game{mixed}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Any URL on another origin than the game's configured one is refused at
+// startup, as is an origin that isn't https or http on localhost.
+func TestHandlerRefusesURLsOnOtherOrigins(t *testing.T) {
+	origin := "https://quiz.example.org"
+	cases := map[string]func(*frontend.Game){
+		"no origin":          func(game *frontend.Game) { game.Origin = "" },
+		"another origin":     func(game *frontend.Game) { game.Origin = "https://other.example.org" },
+		"result elsewhere":   func(game *frontend.Game) { game.ResultURL = "https://other.example.org/quiz/{lobby_id}/result" },
+		"module elsewhere":   func(game *frontend.Game) { game.ExamplePlayer.Module = "https://other.example.org/quiz/player.mjs" },
+		"settings elsewhere": func(game *frontend.Game) { game.SettingsModule = "https://quiz.example.org.evil.example/settings.mjs" },
+		"room elsewhere":     func(game *frontend.Game) { game.RoomModule = "https://quiz.example.org@evil.example/room.mjs" },
+		"prefix elsewhere":   func(game *frontend.Game) { game.DataURLPrefix = "http://quiz.example.org/quiz/{lobby_id}/data/" },
+		"room API elsewhere": func(game *frontend.Game) {
+			game.RoomAPIPrefix = "https://quiz.example.org:8443/quiz/{lobby_id}/players/"
+		},
+		"link elsewhere":       func(game *frontend.Game) { game.Links[0].URL = "https://other.example.org/rounds/" },
+		"protocol-relative":    func(game *frontend.Game) { game.ResultURL = "https://quiz.example.org//evil.example/{lobby_id}" },
+		"prefix with dots":     func(game *frontend.Game) { game.DataURLPrefix = "https://quiz.example.org/quiz/../{lobby_id}/" },
+		"bare origin":          func(game *frontend.Game) { game.SettingsModule = "https://quiz.example.org" },
+		"http origin":          func(game *frontend.Game) { *game = remoteQuizGame("http://quiz.example.org") },
+		"http on 127.0.0.1":    func(game *frontend.Game) { *game = remoteQuizGame("http://127.0.0.1:8888") },
+		"origin with path":     func(game *frontend.Game) { *game = remoteQuizGame("https://quiz.example.org/play") },
+		"origin with slash":    func(game *frontend.Game) { game.Origin = "https://quiz.example.org/" },
+		"upper-case origin":    func(game *frontend.Game) { *game = remoteQuizGame("https://Quiz.example.org") },
+		"default port":         func(game *frontend.Game) { *game = remoteQuizGame("https://quiz.example.org:443") },
+		"origin with user":     func(game *frontend.Game) { *game = remoteQuizGame("https://user@quiz.example.org") },
+		"javascript origin":    func(game *frontend.Game) { *game = remoteQuizGame("javascript://quiz.example.org") },
+		"origin with a tab":    func(game *frontend.Game) { *game = remoteQuizGame("https://quiz.example.org\t") },
+		"origin with a query":  func(game *frontend.Game) { *game = remoteQuizGame("https://quiz.example.org?a") },
+		"origin with fragment": func(game *frontend.Game) { *game = remoteQuizGame("https://quiz.example.org#a") },
+	}
+	for name, mutate := range cases {
+		game := remoteQuizGame(origin)
+		mutate(&game)
+		if _, err := frontend.Handler([]frontend.Game{game}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 // The frontend learns every game from its host, so its own assets name none.
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})

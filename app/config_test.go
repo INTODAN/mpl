@@ -88,6 +88,7 @@ func TestOptionalSettingsOverrideTheDefaults(t *testing.T) {
 		app.RetentionExpiredSessionsEnv:      "2h",
 		app.RetentionBatchSizeEnv:            "100",
 		app.RetentionPassIntervalEnv:         "30s",
+		app.AllowedOriginsEnv:                " https://game.example.org, http://localhost:3000 ",
 	} {
 		environment[name] = value
 	}
@@ -98,7 +99,8 @@ func TestOptionalSettingsOverrideTheDefaults(t *testing.T) {
 	want := domain.RetentionPolicy{CreateRequests: 12 * time.Hour, ExpiredSessions: 2 * time.Hour,
 		Lobbies: domain.LobbyRetention{IdlePeriod: 3 * time.Hour, MaximumAge: 48 * time.Hour}, BatchSize: 100, PassInterval: 30 * time.Second}
 	if config.Database.MaxOpenConnections != 10 || config.Database.MaxIdleConnections != 4 || config.Database.ConnectionMaxIdleTime != 30*time.Second ||
-		config.PlayerTokenLifetime != 2*time.Minute || config.Retention != want {
+		config.PlayerTokenLifetime != 2*time.Minute || config.Retention != want ||
+		strings.Join(config.AllowedOrigins, " ") != "https://game.example.org http://localhost:3000" {
 		t.Fatalf("config = %+v", config)
 	}
 }
@@ -117,6 +119,8 @@ func TestInvalidSettingsAreRefused(t *testing.T) {
 		app.RetentionIdlePeriodEnv:        {"-1h", "1m"},
 		app.RetentionBatchSizeEnv:         {"0", "1001"},
 		"LOBBY_GAME_SECRET_MOCK_GAME":     {"short"},
+		app.AllowedOriginsEnv: {"*", "game.example.org", "https://game.example.org/", "https://game.example.org/play", "https://Game.example.org",
+			"ftp://game.example.org", "https://game.example.org:443", "https://game.example.org, null"},
 	} {
 		for _, value := range values {
 			environment := testEnvironment()
