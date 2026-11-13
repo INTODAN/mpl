@@ -89,7 +89,7 @@ A game can also refuse `ready`, or `start`, until a player does something in the
 game's own API: the failure is `game_requirement`, printed with the game's message.
 Island Battles refuses until the player has set a bot in their member settings
 with `set_member_settings` (see the [backend README](../../../backend/README.md#choosing-a-bot));
-`--game-key quiz-demo` plays a game without that rule. An
+a game without that rule, such as `--game-key mock-game` against the live suite's mock game, plays without it. An
 expired credential or lost membership explains that an explicit new session or
 join is required. Create uses one UUID request id for the process lifetime;
 the CLI never retries it with a new id or mints another guest after a network

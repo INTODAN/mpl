@@ -262,6 +262,7 @@ function reportError(error) {
     not_host: "Only the host can start the lobby.",
     phase_conflict: "The lobby has already started or closed.",
     unavailable: "The lobby server is temporarily unavailable. Please try again.",
+    game_unavailable: "The lobby started, but the game didn’t. Use Retry starting game.",
   };
   if (error.status === 401) {
     dropRoom();

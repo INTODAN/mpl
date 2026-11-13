@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import signal
@@ -52,6 +53,8 @@ def main() -> int:
     parser.add_argument("--extra-tests", type=Path, action="append", default=[], help="Additional host-owned pytest suites")
     parser.add_argument("--skip-lobby-suite", action="store_true", help="Run only --extra-tests against the started stack")
     parser.add_argument("--pytest-timeout", type=int, default=180, help="Seconds allowed for the whole pytest run")
+    parser.add_argument("--mock-game", action="store_true", help="Serve the lobby's mock game, without its rules, as an "
+                        "HTTP game named mock-game, added to the host's LOBBY_GAMES")
     args = parser.parse_args()
     if args.skip_lobby_suite and not args.extra_tests:
         parser.error("--skip-lobby-suite requires --extra-tests")
@@ -66,6 +69,7 @@ def main() -> int:
     api_key, signing_key, proxy_key = (secrets.token_urlsafe(32) for _ in range(3))
     temporary = Path(tempfile.mkdtemp(prefix="lobby-acceptance-"))
     backend: subprocess.Popen[str] | None = None
+    mock_game: subprocess.Popen[str] | None = None
     log_file = (temporary / "backend.log").open("w+")
     success = False
     try:
@@ -95,6 +99,31 @@ def main() -> int:
         # The lobby's own setting: one player token key, an Ed25519 seed of
         # 32 bytes in base64url.
         environment.setdefault("LOBBY_PLAYER_TOKEN_KEYS", f"acceptance:{secrets.token_urlsafe(32)}")
+        if args.mock_game:
+            # The lobby calls the mock game over HTTP, as LOBBY_GAMES configures
+            # it, and the mock game reads the lobby's game API.
+            mock_port, mock_secret = free_port(), secrets.token_urlsafe(32)
+            games = json.loads(environment.get("LOBBY_GAMES") or "[]")
+            games.append({"key": "mock-game", "name": "Mock game", "hooks_url": f"http://127.0.0.1:{mock_port}/hooks",
+                          "secret_env": "LOBBY_GAME_SECRET_MOCK_GAME",
+                          # The lobby page lists every game; nothing here opens the result.
+                          "frontend": {"result_url": "/mock-game/{lobby_id}/result"}})
+            environment.update({"LOBBY_GAMES": json.dumps(games), "LOBBY_GAME_SECRET_MOCK_GAME": mock_secret})
+            command("go", "build", "-o", str(temporary / "mock-game"), "./cmd/mock-game", cwd=ROOT, env=environment)
+            mock_game = subprocess.Popen([str(temporary / "mock-game")], cwd=ROOT, stdout=log_file, stderr=subprocess.STDOUT, text=True,
+                                         env={**environment, "MOCK_GAME_ADDR": f"127.0.0.1:{mock_port}", "MOCK_GAME_SECRET": mock_secret,
+                                              "MOCK_GAME_LOBBY_URL": f"http://127.0.0.1:{http_port}", "MOCK_GAME_RULES": "off"})
+            deadline = time.monotonic() + 30
+            while True:
+                if mock_game.poll() is not None:
+                    raise RuntimeError("The mock game exited before listening")
+                try:
+                    with socket.create_connection(("127.0.0.1", mock_port), timeout=1):
+                        break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("The mock game did not start")
+                    time.sleep(0.1)
         command("go", "build", "-o", str(temporary / "backend"), args.server_package, cwd=server_root, env=environment)
         if args.migrate_package:
             command("go", "build", "-o", str(temporary / "migrate"), args.migrate_package, cwd=server_root, env=environment)
@@ -168,6 +197,9 @@ def main() -> int:
         success = result.returncode == 0
         return result.returncode
     finally:
+        if mock_game is not None and mock_game.poll() is None:
+            mock_game.terminate()
+            mock_game.wait(timeout=10)
         if backend is not None and backend.poll() is None:
             backend.terminate()
             try:

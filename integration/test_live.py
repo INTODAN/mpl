@@ -25,6 +25,8 @@ DATABASE = os.environ["LOBBY_TEST_POSTGRES_CONTAINER"]
 # The game key of the suite's lobbies. A host whose first example game adds
 # its own rules, such as a choice to make before getting ready, sets another.
 GAME_KEY = os.environ.get("LOBBY_TEST_GAME_KEY", "island-battles")
+# A second game of the host, which the runner's --mock-game serves.
+SECOND_GAME_KEY = os.environ.get("LOBBY_TEST_SECOND_GAME_KEY", "mock-game")
 
 
 async def container(*arguments: str) -> str:
@@ -101,7 +103,7 @@ async def test_two_python_players_create_join_choose_teams(guests):
 
 async def test_generic_second_game_starts(guests):
     client, second = await guests(), await guests()
-    room = await create(client, "quiz-demo")
+    room = await create(client, SECOND_GAME_KEY)
     scope = Scope.from_snapshot(room)
     await second.join_lobby(game_key=scope.game_key, join_code=room.lobby.join_code)
     await client.select_team(scope, room.teams[0].id)
