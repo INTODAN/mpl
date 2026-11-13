@@ -15,12 +15,12 @@ and with a game's host beside it:
   --lobby-games-command "go run ./cmd/lobby-games"
 ```
 
-The runner requires Go, Python 3.14+, uv, and Linux Docker or Podman. It builds the lobby, the game's host and the mock game, starts disposable PostgreSQL 18-alpine and Centrifugo 6.9.6 containers, and configures the lobby with its own settings ([Running the lobby](../README.md#configuration)): `LOBBY_DATABASE_URL`, `LOBBY_HTTP_ADDR`, `LOBBY_PUBLIC_URL` (the lobby's address), `LOBBY_CENTRIFUGO_PUBLIC_URL`, `LOBBY_CENTRIFUGO_API_URL`, `LOBBY_CENTRIFUGO_API_KEY`, `LOBBY_CONNECTION_TOKEN_HMAC_SECRET`, `LOBBY_PROXY_SECRET`, and `LOBBY_PLAYER_TOKEN_KEYS` unless the environment already sets it. The lobby migrates its own schema as it starts, and Centrifugo sends its proxy calls to it.
+The runner requires Go, Python 3.14+, uv, and Linux Docker or Podman. It builds the lobby, the game's host and the mock game, starts disposable PostgreSQL 18-alpine and Centrifugo 6.9.6 containers, and configures the lobby with its own settings ([Running the lobby](../README.md#configuration)): `LOBBY_DATABASE_URL`, `LOBBY_HTTP_ADDR`, `LOBBY_PUBLIC_URL` (the lobby's address), `LOBBY_CENTRIFUGO_PUBLIC_URL`, `LOBBY_CENTRIFUGO_API_URL`, `LOBBY_CENTRIFUGO_API_KEY`, `LOBBY_CONNECTION_TOKEN_HMAC_SECRET`, `LOBBY_PROXY_SECRET`, and `LOBBY_PLAYER_TOKEN_KEYS` unless the environment already sets it. Before every start it runs the lobby's migrate command (`cmd/migrate`), as a deploy does, and Centrifugo sends its proxy calls to the lobby.
 
-A game's host shares the database and gets these variables, each with the `--env-prefix` in front:
+A game's host gets a database of its own, `game`, on the same PostgreSQL server, as in production: the lobby's tables stay in the lobby's database. It gets these variables, each with the `--env-prefix` in front, and the lobby's `LOBBY_DATABASE_URL` too:
 
 ```text
-DATABASE_URL
+DATABASE_URL       the game's own database
 HTTP_ADDR
 CENTRIFUGO_API_URL
 CENTRIFUGO_API_KEY

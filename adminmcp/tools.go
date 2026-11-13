@@ -10,14 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// Games adds a game's own data to the lobby tools' answers.
+// Games adds a game's own data to the lobby tools' answers. A game keeps its
+// data in a database of its own, never the lobby's, so it reads there itself,
+// with the tool call's context.
 type Games interface {
 	// Overview returns the game's counts for the overview tool, which shows
-	// them under "games". It reads in the overview's transaction.
-	Overview(transaction *gorm.DB, now time.Time) (any, error)
+	// them under "games".
+	Overview(ctx context.Context, now time.Time) (any, error)
 	// GameIDs returns the ID of the game that each of lobbyIDs is linked to,
 	// leaving out lobbies without one. The tools show it as game_id.
-	GameIDs(transaction *gorm.DB, lobbyIDs []string) (map[string]any, error)
+	GameIDs(ctx context.Context, lobbyIDs []string) (map[string]any, error)
 }
 
 // Options configure AddTools. The zero value works.
@@ -50,7 +52,8 @@ func ReadOnlyAnnotations(title string) *mcp.ToolAnnotations {
 }
 
 // AddTools registers overview, list_lobbies, get_lobby and find_players on
-// server. Each call reads database in a read-only transaction; see ReadOnly.
+// server. Each call reads database, the lobby's, in a read-only transaction;
+// see ReadOnly.
 func AddTools(server *mcp.Server, database *gorm.DB, options Options) {
 	reader := lobbyReader{clock: options.Clock, lobbyRetention: options.LobbyRetention, games: options.Games}
 	if reader.clock == nil {

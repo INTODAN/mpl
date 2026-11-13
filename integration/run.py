@@ -116,6 +116,13 @@ def main() -> int:
                 raise TimeoutError("Disposable PostgreSQL did not become ready")
             time.sleep(0.1)
         database_url = f"postgres://lobby:lobby@127.0.0.1:{database_port}/lobby?sslmode=disable"
+        # The game's host keeps its tables in a database of its own on the
+        # same server, as in production: the lobby's tables are the lobby's
+        # alone, and nothing joins the two.
+        game_database_url = f"postgres://lobby:lobby@127.0.0.1:{database_port}/game?sslmode=disable"
+        if args.server_package:
+            command(runtime, "exec", database_name, "psql", "-h", "127.0.0.1", "-U", "lobby", "-d", "lobby",
+                    "-c", "CREATE DATABASE game", stdout=subprocess.DEVNULL)
         environment = os.environ.copy()
         # The lobby's own settings (lobby/README.md, "Running the lobby").
         environment.update({
@@ -131,10 +138,10 @@ def main() -> int:
         # One player token key, an Ed25519 seed of 32 bytes in base64url.
         environment.setdefault("LOBBY_PLAYER_TOKEN_KEYS", f"acceptance:{secrets.token_urlsafe(32)}")
         if args.server_package:
-            # The game's host shares the database, pushes its own events to
+            # The game's host has its own database, pushes its own events to
             # Centrifugo, and reaches the lobby at its URL.
             environment.update({
-                f"{args.env_prefix}DATABASE_URL": database_url,
+                f"{args.env_prefix}DATABASE_URL": game_database_url,
                 f"{args.env_prefix}HTTP_ADDR": f"127.0.0.1:{game_port}",
                 f"{args.env_prefix}CENTRIFUGO_API_URL": f"http://127.0.0.1:{socket_port}/api",
                 f"{args.env_prefix}CENTRIFUGO_API_KEY": api_key,
@@ -163,6 +170,7 @@ def main() -> int:
         if not environment.get("LOBBY_GAMES"):
             raise RuntimeError("The lobby needs a game: pass --mock-game, --lobby-games-command or set LOBBY_GAMES")
         command("go", "build", "-o", str(temporary / "lobby"), "./cmd/lobby", cwd=ROOT, env=environment)
+        command("go", "build", "-o", str(temporary / "lobby-migrate"), "./cmd/migrate", cwd=ROOT, env=environment)
         if args.server_package:
             command("go", "build", "-o", str(temporary / "backend"), args.server_package, cwd=server_root, env=environment)
         if args.migrate_package:
@@ -171,7 +179,10 @@ def main() -> int:
         def start_hosts() -> list[subprocess.Popen[str]]:
             started: list[subprocess.Popen[str]] = []
             # A deploy migrates before the new build serves, so every start
-            # does too. The lobby migrates its own schema as it starts.
+            # does too: the lobby's database with the lobby's migrate command,
+            # then the game's host's.
+            log_file.flush()
+            command(str(temporary / "lobby-migrate"), cwd=ROOT, env=environment, stdout=log_file, stderr=subprocess.STDOUT)
             if args.migrate_package:
                 log_file.flush()
                 command(str(temporary / "migrate"), cwd=server_root, env=environment, stdout=log_file, stderr=subprocess.STDOUT)

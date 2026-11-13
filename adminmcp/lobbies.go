@@ -222,7 +222,7 @@ func (reader lobbyReader) overview(transaction *gorm.DB) (Overview, error) {
 		return strings.Compare(left.GameKey+"\x00"+left.Phase, right.GameKey+"\x00"+right.Phase)
 	})
 	if reader.games != nil {
-		overview.Games, err = reader.games.Overview(transaction, now)
+		overview.Games, err = reader.games.Overview(transaction.Statement.Context, now)
 		if err != nil {
 			return Overview{}, fmt.Errorf("read the game's counts: %w", err)
 		}
@@ -297,7 +297,7 @@ func (reader lobbyReader) summaries(transaction *gorm.DB, rooms []postgres.RoomR
 	}
 	gameIDs := map[string]any{}
 	if reader.games != nil && len(lobbyIDs) > 0 {
-		if gameIDs, err = reader.games.GameIDs(transaction, lobbyIDs); err != nil {
+		if gameIDs, err = reader.games.GameIDs(transaction.Statement.Context, lobbyIDs); err != nil {
 			return nil, fmt.Errorf("read the lobbies' games: %w", err)
 		}
 	}
@@ -373,7 +373,7 @@ func (reader lobbyReader) getLobby(transaction *gorm.DB, input GetLobbyInput) (L
 	}
 	gameIDs := map[string]any{}
 	if reader.games != nil {
-		if gameIDs, err = reader.games.GameIDs(transaction, []string{room.ID}); err != nil {
+		if gameIDs, err = reader.games.GameIDs(transaction.Statement.Context, []string{room.ID}); err != nil {
 			return LobbyDetail{}, fmt.Errorf("read the lobby's game: %w", err)
 		}
 	}

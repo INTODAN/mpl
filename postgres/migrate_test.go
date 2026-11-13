@@ -31,6 +31,30 @@ type historyRow struct {
 	Adopted bool
 }
 
+// Current tells a migrated database from one without the set's history or
+// with only part of it.
+func TestCurrentReportsWhetherEveryMigrationIsApplied(t *testing.T) {
+	ctx := context.Background()
+	empty := testutil.NewEmptyPostgres(t)
+	if current, err := lobbypostgres.Migrations().Current(ctx, empty); err != nil || current {
+		t.Fatalf("an empty database: current = %t, %v", current, err)
+	}
+	migrated := testutil.NewPostgresFixture(t)
+	if current, err := lobbypostgres.Migrations().Current(ctx, migrated); err != nil || !current {
+		t.Fatalf("a migrated database: current = %t, %v", current, err)
+	}
+	var newest int64
+	if err := migrated.Table(historyTable).Select("max(version)").Scan(&newest).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := migrated.Exec(`DELETE FROM lobby_schema_migrations WHERE version = ?`, newest).Error; err != nil {
+		t.Fatal(err)
+	}
+	if current, err := lobbypostgres.Migrations().Current(ctx, migrated); err != nil || current {
+		t.Fatalf("a database without the newest migration: current = %t, %v", current, err)
+	}
+}
+
 func TestMigrateFreshInstallRecordsEveryVersion(t *testing.T) {
 	db := testutil.NewPostgresFixture(t)
 	history := migrationHistory(t, db)

@@ -75,6 +75,33 @@ func (set MigrationSet) Apply(ctx context.Context, database *gorm.DB) error {
 	return nil
 }
 
+// Current reports whether database has every migration of the set applied:
+// its history table exists and records the newest version of the set's files,
+// or a newer one. It changes nothing and takes no lock. A host that is about
+// to rely on the set's schema, such as one that drops an older copy of it
+// elsewhere, checks it first.
+func (set MigrationSet) Current(ctx context.Context, database *gorm.DB) (bool, error) {
+	if database == nil {
+		return false, errors.New("nil database")
+	}
+	migrations, err := set.load()
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	if err := database.WithContext(ctx).Raw(`SELECT to_regclass(?) IS NOT NULL`, set.HistoryTable).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("%s: look for the history: %w", set.HistoryTable, err)
+	}
+	if !exists {
+		return false, nil
+	}
+	var newest *int64
+	if err := database.WithContext(ctx).Table(set.HistoryTable).Select("max(version)").Scan(&newest).Error; err != nil {
+		return false, fmt.Errorf("%s: read the history: %w", set.HistoryTable, err)
+	}
+	return newest != nil && *newest >= migrations[len(migrations)-1].version, nil
+}
+
 func (set MigrationSet) apply(ctx context.Context, database *gorm.DB) error {
 	if database == nil {
 		return errors.New("nil database")

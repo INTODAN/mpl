@@ -32,11 +32,11 @@ func (fixedClock) Now() time.Time { return now }
 // fakeGames links the waiting lobby to game 7 and counts one running game.
 type fakeGames struct{ linkedLobbyID string }
 
-func (games fakeGames) Overview(*gorm.DB, time.Time) (any, error) {
+func (games fakeGames) Overview(context.Context, time.Time) (any, error) {
 	return map[string]int{"running": 1}, nil
 }
 
-func (games fakeGames) GameIDs(_ *gorm.DB, lobbyIDs []string) (map[string]any, error) {
+func (games fakeGames) GameIDs(_ context.Context, lobbyIDs []string) (map[string]any, error) {
 	gameIDs := map[string]any{}
 	if slices.Contains(lobbyIDs, games.linkedLobbyID) {
 		gameIDs[games.linkedLobbyID] = 7

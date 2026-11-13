@@ -159,7 +159,7 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 		CentrifugoPublicURLEnv, ConnectionTokenSecretEnv, ProxySecretEnv, PlayerTokenKeysEnv, GamesEnv); err != nil {
 		return Config{}, err
 	}
-	database, err := loadDatabaseConfig(lookup)
+	database, err := LoadDatabaseConfigFromLookup(lookup)
 	if err != nil {
 		return Config{}, err
 	}
@@ -280,7 +280,13 @@ func LoadHTTPAddr(lookup func(string) (string, bool)) (string, error) {
 	return address, nil
 }
 
-func loadDatabaseConfig(lookup func(string) (string, bool)) (DatabaseConfig, error) {
+// LoadDatabaseConfigFromLookup reads the database settings through lookup:
+// LOBBY_DATABASE_URL, which is required, and the optional pool limits. They
+// are all that the migrate command, cmd/migrate, reads.
+func LoadDatabaseConfigFromLookup(lookup func(string) (string, bool)) (DatabaseConfig, error) {
+	if err := requireEnvironment(lookup, DatabaseURLEnv); err != nil {
+		return DatabaseConfig{}, err
+	}
 	config := DatabaseConfig{
 		URL:                   read(lookup, DatabaseURLEnv),
 		MaxOpenConnections:    DefaultDatabaseMaxOpenConnections,

@@ -40,7 +40,14 @@ async def container(*arguments: str) -> str:
 
 
 async def sql(statement: str) -> str:
+    """Run a statement in the lobby's database."""
     return await container("exec", DATABASE, "psql", "-U", "lobby", "-d", "lobby", "-At", "-c", statement)
+
+
+async def game_sql(statement: str) -> str:
+    """Run a statement in the game host's own database, which the runner
+    creates beside the lobby's on the same server."""
+    return await container("exec", DATABASE, "psql", "-U", "lobby", "-d", "game", "-At", "-c", statement)
 
 
 @pytest_asyncio.fixture
