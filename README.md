@@ -24,10 +24,11 @@ cmd/                The lobby's local server, Lambda and migrate command, the Op
 clients/            Go example and the Python client, its CLI and generator
 centrifugo/         Centrifugo configuration
 integration/        Live tests and the configurable runner
-scripts/            The live tests' entry point
+deploy/             The deployment: Terraform, the VM's Ansible, the plan checker and their tests
+scripts/            The live tests' entry point, and the deploy scripts
 docs/               Architecture and implementation records
 .agents/skills/     Conventions for coding agents (see AGENTS.md)
-.github/workflows/  Checks on every pull request, and the release
+.github/workflows/  Checks on every pull request, the release, and the deploy
 ```
 
 ## Using the module
@@ -54,6 +55,8 @@ All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ 
 *   **Python client tests:** `uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests`
 *   **Lobby page tests:** `node --test frontend/*.test.mjs`
 *   **Live tests with the mock game (Linux Docker or Podman):** `./scripts/test-acceptance.sh --mock-game` ([the acceptance runner](integration/README.md))
+*   **Deploy tests (the plan checker, the deploy bucket's sync, the VM's templates rendered by Ansible):** `python3 -I -m unittest discover -s deploy -p 'test_*.py'`; they need `ansible-playbook` ([deploy README](deploy/README.md#checks))
+*   **Deploy configuration:** in `deploy/terraform`, `terraform fmt -check -recursive`, `terraform init -backend=false`, `terraform validate` and `terraform test` (mocked providers); in `deploy/ansible`, `ansible-playbook -i localhost, --syntax-check site.yml` and `ansible-lint`
 
 Go database tests use disposable PostgreSQL containers through Testcontainers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests run the lobby's own server, `cmd/lobby`, with the mock game or a game's host beside it; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the game host's suite.
 
@@ -70,6 +73,7 @@ After changing the player API, the game API or the events, export the API docume
 | Python | the Python client's tests, with `uv --locked` |
 | JS | `node --test` for the lobby page's tests in `frontend/` |
 | Live (mock game) | `./scripts/test-acceptance.sh --mock-game`: the lobby, its migrate command and the mock game against disposable PostgreSQL and Centrifugo containers |
+| Deploy | the deploy tests, Ansible's syntax check and lint, and Terraform's format check, validation and tests with mocked providers; nothing reaches AWS |
 
 It also has a `workflow_call` trigger, so the release workflow runs the same checks with `uses: ./.github/workflows/checks.yml` before it tags. When you change the golangci-lint version in the workflow, change the one you run locally to match.
 
@@ -78,6 +82,10 @@ It also has a `workflow_call` trigger, so the release workflow runs the same che
 [`.github/workflows/release.yml`](.github/workflows/release.yml) releases the lobby. It runs only when someone with write access starts it by hand, from `main` (`workflow_dispatch`, with the version to release, higher than every earlier one); merging to `main` releases nothing. It runs the checks, then tags the commit `vX.Y.Z`, which is the version `go get github.com/INTODAN/mpl@vX.Y.Z` resolves, creates the GitHub release, and publishes `mpl-lobby-client` at the same version to PyPI with trusted publishing, in the GitHub environment `pypi`; no PyPI token exists. Versions continue the lobby's versions from the Island Battles repository, where it was tagged `lobby/vX.Y.Z`; the first release here is `v0.3.0`.
 
 Before the first release, the PyPI project's trusted publisher must name this repository, the workflow `release.yml` and the environment `pypi`, and the environment should be limited to `main`.
+
+## Deploying
+
+The lobby runs on AWS Lambda behind CloudFront on its own name, `lobby.<domain>`, with Postgres and Centrifugo on a Lightsail VM that it shares with its tenants, the games whose database lives there. [deploy/README.md](deploy/README.md) has the runbook: the Terraform configuration and its state, taking over a VM that runs already, the DNS records, the VM deploy, the tenants and the Deploy workflow. Merging deploys nothing; the owner starts each deploy by hand, from `main`.
 
 ## Running the lobby
 

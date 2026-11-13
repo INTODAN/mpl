@@ -35,6 +35,17 @@ Each issue is written to be implemented on its own: read the whole issue, plus t
 - After changing an API, re-export the API documents and regenerate the Python models in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
 - Games pin the module by version (`go get github.com/INTODAN/mpl@vX.Y.Z`) and the Python client by its PyPI version. A change here reaches a game only after a release and the game's own update; say in the PR what a game must change.
 
+## Deploying
+
+You have no AWS credentials, and only merged code deploys. When the owner asks you to deploy or apply a change, use the Deploy workflow (`.github/workflows/deploy.yml`) on `main`, as [deploy/README.md](deploy/README.md#deploying-from-github-actions) describes, and only when asked:
+
+1. The change must be merged first. Open the pull request, and wait for the owner to merge it.
+2. For AWS resources, start a `plan` run on `main`. Read the plan from its log or summary, and tell the owner what it imports, creates, changes and destroys.
+3. Only when the owner says to, start an `apply` run with `plan_run_id` set to that plan run's ID. Never pass `allow_destroy` unless the owner named each resource.
+4. Then start the `vm`, `lobby` or `smoke` runs the change needs, and check the result: the job's log, and the AWS resources it should have changed.
+
+The VM serves the lobby's tenants too. Keep `deploy/` game-neutral as well: a game appears only in the tenants' settings, which live in the deploy bucket, never in the code.
+
 ## Releasing
 
 Don't run the Release workflow (`.github/workflows/release.yml`), and don't create tags or GitHub releases, unless the owner asks. It runs only by hand, from `main`, as [README.md](README.md#releases) describes.
