@@ -31,8 +31,9 @@ let resultFailures = 0;
 let resultDocument = null;
 let gamePlayer = null;
 let playerLoading = false;
-// True once a player outside a demo reports what its game player does, such as
-// relaying a localhost bot's turns, so the page shows the status panel.
+// True once a player outside a demo reports what it does for its game, so the
+// page shows the status panel. A game's player that reports nothing shows
+// nothing.
 let playerReports = false;
 let latestGameState = null;
 // The selected game's settings form, from its catalog settings module.
@@ -687,8 +688,8 @@ async function ensureGamePlayer() {
     gamePlayer = new ExamplePlayer({
       lobbyID: snapshot.lobby.id, lobbyRound: snapshot.lobby.round, playerID: state.session.player_id, gameURL: gameSite,
       fetcher: catalogLibrary.resolvingFetch(await gameFetch(snapshot.lobby.game_key), gameSite), subscription: client.newSubscription(channel),
-      // Outside a demo the player submits only the turns of a localhost bot,
-      // which it relays; the demo's player can be paused.
+      // Outside a demo the player does only what its game leaves to the
+      // page; the demo's player plays its example strategy and can be paused.
       demo: Boolean(state.demoPlayer), enabled: state.demoPlayer ? Boolean(state.demoPlayer.enabled) : true, pending: state.demoPlayer?.pending || null,
       savePending: (pending) => {
         if (current() && state.demoPlayer) { state.demoPlayer.pending = pending; save(); }
@@ -891,7 +892,7 @@ async function connectWatch() {
     subscription.on("subscribed", (context) => {
       if (epoch !== watchEpoch) return;
       // After a reconnect that could not recover every publication, the
-      // document is read again, so it misses no generation.
+      // document is read again, so it misses nothing the game published.
       if (subscribed && !context.recovered) reloadWatchResult();
       subscribed = true;
     });
@@ -1142,7 +1143,7 @@ function showSeatControls(shown) {
       add.type = "button";
       add.addEventListener("click", () => action(async () => {
         const choice = options.choices[Number(select.value)];
-        if (!choice || choice.disabled === true) throw new Error("Choose a bot that can be added.");
+        if (!choice || choice.disabled === true) throw new Error(catalogLibrary.seatTexts(games.get(snapshot?.lobby.game_key)).unavailable);
         const settings = { ...choice.settings };
         if (choice.input) {
           const value = text.value.trim();
@@ -1272,7 +1273,7 @@ function settingsChangeError(error) {
   const messages = {
     not_host: "Only the host can change the settings.",
     phase_conflict: "The game has already started, so its settings can’t change any more.",
-    lobby_full: "These settings have fewer teams than the lobby has players and bots. Remove a bot, or choose settings with more teams.",
+    lobby_full: catalogLibrary.seatTexts(games.get(snapshot?.lobby.game_key)).tooFewTeams,
     invalid_game_settings: `These settings can’t be used: ${error.message}`,
   };
   if (!messages[error.code]) return error;
@@ -1320,7 +1321,13 @@ function render() {
   $("stop-watching").disabled = busy;
   $("watch-button").disabled = busy || !games.size;
   $("link-invite-button").disabled = busy || !games.size;
-  $("example-label").textContent = state.demoPlayer ? "Example strategy · " : "Your bot";
+  // Outside a demo, the game's entry gives the example player's panel its
+  // heading, if any, and its words for what Back to lobby keeps.
+  const shownGame = games.get(snapshot?.lobby.game_key);
+  const heading = catalogLibrary?.examplePlayerHeading(shownGame, Boolean(state.demoPlayer)) ?? "";
+  $("example-label").textContent = heading;
+  $("example-heading").hidden = !heading;
+  if (catalogLibrary) $("reopen-hint").textContent = catalogLibrary.seatTexts(shownGame).reopen;
   $("example-strategy").hidden = !state.demoPlayer;
   $("example-toggle").hidden = !state.demoPlayer;
   $("display-name").readOnly = Boolean(state.session);
@@ -1402,7 +1409,7 @@ function render() {
     ? `Every team needs a player before the game can start. Still empty: ${empty.map((team) => team.name).join(", ")}.`
     : "";
   const startedHint = state.demoPlayer && game?.example_player
-    ? `${game.example_player.summary} Keep both tabs open; pause either player to hold the next turn.`
+    ? `${game.example_player.summary} Keep both tabs open; you can pause either player.`
     : game?.started_hint || "The game has started.";
   $("room-hint").textContent = !waiting ? startedHint : state.demoPlayer ? "The demo starts automatically when both players are ready." : members.length < 2 ? "Share the code above to invite the other players." : allReady && emptyHint ? emptyHint : host ? "Once every player chooses a team and marks ready, you can start the lobby." : "Choose a team and mark ready. The host will start the lobby.";
   $("retry-game").disabled = busy;

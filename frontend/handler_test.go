@@ -17,9 +17,10 @@ func quizGame() frontend.Game {
 		Key: "quiz-demo", Name: "Quiz", ResultURL: "/quiz/{lobby_id}/result",
 		StartedHint: "Answer in the quiz app.", SettingsModule: "/quiz/settings.mjs", DataURLPrefix: "/quiz/{lobby_id}/data/",
 		RoomModule: "/quiz/room.mjs", RoomAPIPrefix: "/quiz/{lobby_id}/players/",
-		Links: []frontend.Link{{Label: "Past rounds", URL: "/quiz/rounds/"}},
+		Links:     []frontend.Link{{Label: "Past rounds", URL: "/quiz/rounds/"}},
+		SeatNames: &frontend.SeatNames{Singular: "a quiz robot", Plural: "quiz robots"},
 		ExamplePlayer: &frontend.ExamplePlayer{
-			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.",
+			Module: "/quiz/player.mjs", Strategy: "First answer", Summary: "Each player picks the first answer.", Heading: "Your buzzer",
 		},
 	}
 }
@@ -63,8 +64,10 @@ func TestHandlerServesTheHostCatalog(t *testing.T) {
 			"key": "quiz-demo", "name": "Quiz", "result_url": "/quiz/{lobby_id}/result", "started_hint": "Answer in the quiz app.", "settings_module": "/quiz/settings.mjs",
 			"data_url_prefix": "/quiz/{lobby_id}/data/", "room_module": "/quiz/room.mjs", "room_api_prefix": "/quiz/{lobby_id}/players/",
 			"links":          []any{map[string]any{"label": "Past rounds", "url": "/quiz/rounds/"}},
-			"example_player": map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer."},
+			"seat_names":     map[string]any{"singular": "a quiz robot", "plural": "quiz robots"},
+			"example_player": map[string]any{"module": "/quiz/player.mjs", "strategy": "First answer", "summary": "Each player picks the first answer.", "heading": "Your buzzer"},
 		},
+		// A game that names no seats and no heading gets no such words.
 		{"key": "chess", "name": "Chess", "result_url": "/chess/{lobby_id}"},
 	}
 	if !reflect.DeepEqual(catalog, want) {
@@ -105,6 +108,9 @@ func TestHandlerRejectsInvalidCatalogs(t *testing.T) {
 		"room prefix without module": func(game *frontend.Game) { game.RoomModule = "" },
 		"link without label":         func(game *frontend.Game) { game.Links[0].Label = " " },
 		"link without url":           func(game *frontend.Game) { game.Links[0].URL = "" },
+		"seats without singular":     func(game *frontend.Game) { game.SeatNames.Singular = " " },
+		"seats without plural":       func(game *frontend.Game) { game.SeatNames.Plural = "" },
+		"seats without names":        func(game *frontend.Game) { game.SeatNames = &frontend.SeatNames{} },
 	}
 	// Hostile values for both URL fields. A browser strips tab, LF and CR
 	// before parsing, so "/<ctrl>/evil.com" reads as "//evil.com".

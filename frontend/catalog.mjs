@@ -3,6 +3,8 @@
 // game whose site is not the lobby's. The host checked every URL against
 // those two origins when it started (handler.go). The page loads the game's
 // modules and documents, and calls its API, wherever the catalog points.
+// Below them are the page's texts that take the game's own words from its
+// catalog entry.
 
 // gameURL is the origin of the game's site: its catalog `origin`, or the
 // lobby page's own for a game whose URLs are all paths. The page passes it to
@@ -34,4 +36,30 @@ export function catalogURL(game, value, pageOrigin) {
 // URL unchanged.
 export function resolvingFetch(fetch, base) {
   return (url, init) => fetch(typeof url === "string" && url.startsWith("/") && !url.startsWith("//") ? base + url : url, init);
+}
+
+// The page's texts that depend on a game's words. A game names its seats that
+// no person plays, such as its bots, in its catalog entry's seat_names
+// ({singular: "a bot", plural: "bots"}). For a game that names none, the
+// texts name no such seats, but for calling one a seat where the host has
+// just tried to add one.
+export function seatTexts(game) {
+  const names = game?.seat_names;
+  return {
+    // The host tried to add a seat whose choice can't be added.
+    unavailable: `Choose ${names?.singular || "a seat"} that can be added.`,
+    // The host's new settings have fewer teams than the lobby has members.
+    tooFewTeams: names
+      ? `These settings have fewer teams than the lobby has players and ${names.plural}. Remove ${names.singular}, or choose settings with more teams.`
+      : "These settings have fewer teams than the lobby has players. Choose settings with more teams.",
+    // What Back to lobby keeps.
+    reopen: `Once the game has ended, this opens the lobby again for the next game, with the same ${names ? `players, teams and ${names.plural}` : "players and teams"}.`,
+  };
+}
+
+// The heading of the example player's panel: the example strategy in a demo,
+// and otherwise the heading that the game's entry gives its example player,
+// such as "Your bot", or none.
+export function examplePlayerHeading(game, demo) {
+  return demo ? "Example strategy · " : game?.example_player?.heading || "";
 }

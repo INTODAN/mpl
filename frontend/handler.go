@@ -103,6 +103,18 @@ type Game struct {
 	// Links optionally lists the game's own pages that the lobby page links
 	// to, such as one that still works after a lobby is gone.
 	Links []Link `json:"links,omitempty"`
+	// SeatNames optionally names the seats that no person plays, which the
+	// game's room module lets the host add, in the page's texts, such as
+	// the game's bots. Without it the page names no such seats.
+	SeatNames *SeatNames `json:"seat_names,omitempty"`
+}
+
+// SeatNames are a game's words for its seats that no person plays.
+type SeatNames struct {
+	// Singular names one seat, with its article, such as "a bot".
+	Singular string `json:"singular"`
+	// Plural names several, such as "bots".
+	Plural string `json:"plural"`
 }
 
 // Link is one of a game's pages that the lobby page links to. It opens in a
@@ -123,6 +135,11 @@ type ExamplePlayer struct {
 	Strategy string `json:"strategy"`
 	// Summary describes in one sentence what each example player does.
 	Summary string `json:"summary"`
+	// Heading optionally heads the example player's panel in a lobby that
+	// isn't a demo, where the player does what the game leaves to the page,
+	// such as passing the player's turns on to a program of theirs. Without
+	// it the panel has no heading there.
+	Heading string `json:"heading,omitempty"`
 }
 
 // Handler serves the embedded UI assets and the host's game catalog. Mount it
@@ -209,6 +226,9 @@ func validateCatalog(games []Game) error {
 			if _, ok := path(link.URL); !ok {
 				return fmt.Errorf("frontend: game %q needs a URL %s for its link %q", game.Key, onItsOrigin, link.Label)
 			}
+		}
+		if names := game.SeatNames; names != nil && (strings.TrimSpace(names.Singular) == "" || strings.TrimSpace(names.Plural) == "") {
+			return fmt.Errorf("frontend: game %q needs both seat names, singular and plural", game.Key)
 		}
 		if player := game.ExamplePlayer; player != nil {
 			if _, ok := path(player.Module); !ok {

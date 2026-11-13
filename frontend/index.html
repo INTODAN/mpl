@@ -119,17 +119,17 @@
         <div><p id="watch-game" class="eyebrow"></p><h2>Watching a lobby</h2><p id="watch-status" class="room-settings" role="status"></p></div>
         <span id="watch-connection" class="connection" role="status">Connecting…</span>
       </div>
-      <p class="hint">You watch without a seat: you can’t play, choose a team or get ready, and the lobby’s players, teams and map are shown to its members only. The host can remove you.</p>
+      <p class="hint">You watch without a seat: you can’t play, choose a team or get ready, and the lobby’s players, teams and settings are shown to its members only. The host can remove you.</p>
       <footer class="room-footer"><span id="watching-as"></span><button id="stop-watching" class="text-button" type="button">Stop watching</button></footer>
     </section>
     <section id="result-panel" class="card game-result" aria-label="Game result" hidden>
       <div id="example-controls" class="example-controls" hidden>
-        <div><span class="eyebrow"><span id="example-label">Example strategy · </span><span id="example-strategy"></span></span><strong id="example-status">Starting example player…</strong><p id="example-detail"></p></div>
+        <div><span id="example-heading" class="eyebrow"><span id="example-label">Example strategy · </span><span id="example-strategy"></span></span><strong id="example-status">Starting example player…</strong><p id="example-detail"></p></div>
         <button id="example-toggle" class="secondary" type="button">Pause this player</button>
       </div>
       <div id="result-actions" class="result-actions">
         <button id="back-to-lobby" class="secondary" type="button">Back to lobby</button>
-        <span class="hint">Once the game has ended, this opens the lobby again for the next game, with the same players, teams and bots.</span>
+        <span id="reopen-hint" class="hint">Once the game has ended, this opens the lobby again for the next game, with the same players and teams.</span>
       </div>
       <p id="result-status" role="status">Preparing the game…</p>
       <button id="retry-game" class="secondary" type="button" hidden>Retry starting game</button>
