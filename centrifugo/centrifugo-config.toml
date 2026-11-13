@@ -12,17 +12,19 @@ allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000", "tauri://lo
 enabled = false
 single_connection = false
 
-# A proxy call applies due expiry and pushes the result before it answers. A
-# push that retries can take about 1.2 s, past Centrifugo's 1 s default.
+# The proxy calls go to the lobby, which runs on its own on :8890 locally
+# (lobby/cmd/lobby). A proxy call applies due expiry and pushes the result
+# before it answers. A push that retries can take about 1.2 s, past
+# Centrifugo's 1 s default.
 [channel.proxy.subscribe]
-endpoint = "http://host.docker.internal:8888/internal/lobby/centrifugo/subscribe"
+endpoint = "http://host.docker.internal:8890/internal/lobby/centrifugo/subscribe"
 timeout = "5s"
 
 [channel.proxy.subscribe.http]
 static_headers = { "X-Lobby-Proxy-Secret" = "${CENTRIFUGO_VAR_LOBBY_PROXY_SECRET}" }
 
 [channel.proxy.sub_refresh]
-endpoint = "http://host.docker.internal:8888/internal/lobby/centrifugo/sub-refresh"
+endpoint = "http://host.docker.internal:8890/internal/lobby/centrifugo/sub-refresh"
 timeout = "5s"
 
 [channel.proxy.sub_refresh.http]

@@ -1,32 +1,41 @@
 # Live lobby acceptance
 
-This suite belongs to the generic lobby component. It checks the public lobby API, PostgreSQL lobby schema, pushes after commit and their failure while Centrifugo is down, reconnect/history recovery, leases, restart recovery, protocol authorization, and the Python SDK and CLI. It never queries game tables or calls game binding endpoints.
+This suite belongs to the generic lobby component. It checks the lobby's own server, its public API, PostgreSQL lobby schema, pushes after commit and their failure while Centrifugo is down, reconnect/history recovery, leases, restart recovery, protocol authorization, and the Python SDK and CLI. It never queries game tables or calls game binding endpoints.
 
-From the component root, supply a Go host application:
+The runner runs the lobby as its own process, the local server [`cmd/lobby`](../cmd/lobby/main.go), and, when one is given, a game's host as a second process that the lobby reaches over HTTP. From the component root, the lobby alone with the [mock game](../mockgame/):
 
 ```sh
-./scripts/test-acceptance.sh --server-root /path/to/host --server-package ./cmd/server
+./scripts/test-acceptance.sh --mock-game
 ```
 
-The runner requires Go, Python 3.14+, uv, and Linux Docker or Podman. It builds the supplied Go package, starts disposable PostgreSQL 18-alpine and Centrifugo 6.9.6 containers, and configures the host with these environment variables:
+and with a game's host beside it:
+
+```sh
+./scripts/test-acceptance.sh --server-root /path/to/game --server-package ./cmd/server --env-prefix GAME_ \
+  --lobby-games-command "go run ./cmd/lobby-games"
+```
+
+The runner requires Go, Python 3.14+, uv, and Linux Docker or Podman. It builds the lobby, the game's host and the mock game, starts disposable PostgreSQL 18-alpine and Centrifugo 6.9.6 containers, and configures the lobby with its own settings ([Running the lobby](../README.md#configuration)): `LOBBY_DATABASE_URL`, `LOBBY_HTTP_ADDR`, `LOBBY_PUBLIC_URL` (the lobby's address), `LOBBY_CENTRIFUGO_PUBLIC_URL`, `LOBBY_CENTRIFUGO_API_URL`, `LOBBY_CENTRIFUGO_API_KEY`, `LOBBY_CONNECTION_TOKEN_HMAC_SECRET`, `LOBBY_PROXY_SECRET`, and `LOBBY_PLAYER_TOKEN_KEYS` unless the environment already sets it. The lobby migrates its own schema as it starts, and Centrifugo sends its proxy calls to it.
+
+A game's host shares the database and gets these variables, each with the `--env-prefix` in front:
 
 ```text
 DATABASE_URL
 HTTP_ADDR
-CENTRIFUGO_PUBLIC_URL
 CENTRIFUGO_API_URL
 CENTRIFUGO_API_KEY
-CONNECTION_TOKEN_HMAC_SECRET
-LOBBY_PROXY_SECRET
+LOBBY_URL          the lobby's address, which is also the iss of its player tokens
 ```
 
-`--env-prefix` prepends a host-specific configuration namespace to these names. It also sets `LOBBY_PLAYER_TOKEN_KEYS`, the [player token](../README.md#player-tokens) key, to a new key, without the prefix, unless the environment already sets it. The host must expose `/healthz`, the lobby HTTP API and trusted Centrifugo proxy routes; initialize the lobby schema, or supply `--migrate-package` with a Go package that does and exits, which the runner then runs with the same environment before every host start; push each committed change through the lobby's `realtime.Publisher`, whose failures it logs to standard output; and configure `island-battles` and `mock-game` as example game keys. Tests read that log through `LOBBY_TEST_BACKEND_LOG`. `LOBBY_TEST_GAME_KEY` can override the first game key, which every test uses unless it names another, the CLI test included, and `LOBBY_TEST_SECOND_GAME_KEY` the second, `mock-game`. These keys carry no game-specific behavior in this suite, so a host whose first example game adds its own rules, such as a ready check that refuses readiness until a player chooses something in the game's API, sets `LOBBY_TEST_GAME_KEY` to a game without them.
+It must expose `/healthz`, serve the hooks that its `LOBBY_GAMES` entry names, read the lobby's game API and verify player tokens with the lobby's JWKS at `LOBBY_URL`, and log to standard output. `--migrate-package` names a Go package that migrates the game host's schema and exits, which the runner runs with the same environment before every start. `--lobby-games-command` names a command, run in `--server-root`, that prints the lobby's `LOBBY_GAMES` with the game added, given the game host's address as its last argument and `LOBBY_GAMES` in its environment; the game's shared secret must be in both processes' environment. Clients reach both processes through one URL: the runner serves a front that sends `/lobby/` and `/internal/lobby/` to the lobby and every other path to the game's host, and `LOBBY_TEST_API_URL` is the front's address, or the lobby's without a game's host.
 
-`--mock-game` serves such a game: the runner builds [`cmd/mock-game`](../cmd/mock-game/main.go), the [mock game](../mockgame/) over HTTP, starts it without its rules (`MOCK_GAME_RULES=off`: no settings, no member settings or seats, everyone may get ready), and adds it to the host's `LOBBY_GAMES` as `mock-game`, with a new secret in `LOBBY_GAME_SECRET_MOCK_GAME`. The host must read `LOBBY_GAMES` and serve the lobby's game API, which the mock game reads.
+The lobby pushes each committed change through its `realtime.Publisher`, whose failures it logs to standard output. The lobby, the game's host and the mock game write one log, which tests read through `LOBBY_TEST_BACKEND_LOG`. `LOBBY_TEST_GAME_KEY` sets the game key that every test uses unless it names another, the CLI test included (`mock-game` without a game's host), and `LOBBY_TEST_SECOND_GAME_KEY` the second, `mock-game`. These keys carry no game-specific behavior in this suite, so a game whose lobbies need something of their own, such as a choice in the game's API before getting ready, sets `LOBBY_TEST_GAME_KEY` to a game without it.
 
-`--extra-tests /path/to/tests` adds host-owned pytest suites. They can reuse the fixtures and helpers in `integration.test_live`. In the Island Battles monorepo, the root `scripts/test-lobby-acceptance.sh` supplies the backend package, its migrate command, its environment prefix, and `integration/island_battles/` tests.
+`--mock-game` serves such a game: the runner builds [`cmd/mock-game`](../cmd/mock-game/main.go), the mock game over HTTP, starts it without its rules (`MOCK_GAME_RULES=off`: no settings, no member settings or seats, everyone may get ready), and adds it to the lobby's `LOBBY_GAMES` as `mock-game`, with a new secret in `LOBBY_GAME_SECRET_MOCK_GAME`. It reads the lobby's game API.
 
-The runner uses temporary ports, generated credentials, and unique container names. No configured developer database is used. It restarts the supplied host process to verify persisted state and cleans containers and processes on success or failure. Failure logs remain under a printed `/tmp/lobby-acceptance-*` directory. `LOBBY_CONTAINER_RUNTIME` can select a Docker-compatible executable. Infrastructure failures fail the suite instead of skipping it.
+`--extra-tests /path/to/tests` adds game-owned pytest suites. They can reuse the fixtures and helpers in `integration.test_live`. In the Island Battles monorepo, the root `scripts/test-lobby-acceptance.sh` supplies the backend package, its migrate command, its environment prefix, `backend/cmd/lobby-games`, and `integration/island_battles/` tests.
+
+The runner uses temporary ports, generated credentials, and unique container names. No configured developer database is used. It restarts the lobby and the game's host to verify persisted state (`SIGUSR1` to the runner restarts both, `SIGUSR2` stops both) and cleans containers and processes on success or failure. Failure logs remain under a printed `/tmp/lobby-acceptance-*` directory. `LOBBY_CONTAINER_RUNTIME` can select a Docker-compatible executable. Infrastructure failures fail the suite instead of skipping it.
 
 Generator reproducibility is checked separately from the component root:
 

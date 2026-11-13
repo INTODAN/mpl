@@ -58,6 +58,9 @@ func WithSourceClock(now func() time.Time) JWKSOption {
 	return func(source *JWKSSource) { source.now = now }
 }
 
+// JWKSPath is where the lobby publishes its keys, under its URL.
+const JWKSPath = "/lobby/v1/jwks.json"
+
 // NewJWKSSource returns a source that reads the JWKS at url, such as
 // https://lobby.example.org/lobby/v1/jwks.json. It fetches nothing until a
 // key is needed.

@@ -2,7 +2,7 @@
 
 A plain HTML/CSS/JavaScript playground for two players on the generic lobby API. It names no game of its own: the host application lists its games when it mounts the frontend, and the page builds its create form from that list. No frontend build step or CDN access is needed. Assets are embedded in Go; restart/rebuild the host after changing them.
 
-In this repository, `./scripts/dev.sh` runs the game backend, which serves the frontend at **http://localhost:8888/lobby/ui/** (or your configured backend address). The script supports Docker Compose or native Podman on Linux; see the [backend setup](../../backend/README.md#run-locally) and its [browser demo](../../backend/README.md#browser-demo).
+The lobby serves it at `/lobby/ui/`: its own server, [`cmd/lobby`](../README.md#running-the-lobby), or a game's host that runs the lobby in its own process. In this repository, `./scripts/dev.sh` runs the lobby on :8890 and the game backend, which serves Island Battles' modules under `/game/demo/`, on :8888; open the page on one origin through the 3D client's dev server (`bun run dev` in `clients/island-battles-web`), at **http://localhost:3000/lobby/ui/**. The script supports Docker Compose or native Podman on Linux; see the [backend setup](../../backend/README.md#run-locally) and its [browser demo](../../backend/README.md#browser-demo).
 
 ## Mount it with a game catalog
 

@@ -3,6 +3,7 @@ module islandBattles/lobby
 go 1.25.0
 
 require (
+	github.com/aws/aws-lambda-go v1.54.0
 	github.com/centrifugal/centrifuge-go v0.10.11
 	github.com/centrifugal/gocent/v3 v3.4.0
 	github.com/danielgtaylor/huma/v2 v2.34.1

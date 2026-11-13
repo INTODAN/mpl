@@ -3,28 +3,25 @@ package mockgame_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"islandBattles/lobby/application"
-	"islandBattles/lobby/auth"
+	lobbyapp "islandBattles/lobby/app"
 	"islandBattles/lobby/domain"
 	"islandBattles/lobby/gamehooks"
-	"islandBattles/lobby/httpapi"
 	"islandBattles/lobby/internal/testutil"
 	"islandBattles/lobby/mockgame"
 	lobbypostgres "islandBattles/lobby/postgres"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -38,9 +35,11 @@ var (
 	otherSecret = []byte(strings.Repeat("o", 40))
 )
 
-// stack is the lobby's HTTP server, configured with LOBBY_GAMES, and the mock
-// game's HTTP server, which the lobby calls and which reads the lobby
-// through the game API. A second mock game, other-game, has its own secret.
+// stack is the lobby's HTTP server, built by lobby/app from its LOBBY_*
+// configuration as cmd/lobby builds it, with LOBBY_GAMES, and the mock game's
+// HTTP server, which the lobby calls and which reads the lobby through the
+// game API. A second mock game, other-game, has its own secret. A fake
+// Centrifugo API accepts the lobby's pushes.
 type stack struct {
 	t         *testing.T
 	lobbyURL  string
@@ -67,43 +66,49 @@ func newStack(t *testing.T) *stack {
 	}
 	otherServer := httptest.NewServer(other)
 	t.Cleanup(otherServer.Close)
+	centrifugo := httptest.NewServer(http.HandlerFunc(fakeCentrifugo))
+	t.Cleanup(centrifugo.Close)
 
 	configuration := fmt.Sprintf(`[
 		{"key": %q, "name": "Mock game", "hooks_url": %q, "secret_env": "MOCK_GAME_SECRET", "start_rules": {"every_team_needs_member": true},
 		 "frontend": {"result_url": "/mock/{lobby_id}/result"}},
-		{"key": "other-game", "name": "Other game", "hooks_url": %q, "secret_env": "OTHER_GAME_SECRET"}
+		{"key": "other-game", "name": "Other game", "hooks_url": %q, "secret_env": "OTHER_GAME_SECRET", "frontend": {"result_url": "/other/{lobby_id}/result"}}
 	]`, gameKey, gameServer.URL+mockgame.HooksPath, otherServer.URL+mockgame.HooksPath)
-	environment := map[string]string{gamehooks.GamesEnv: configuration, "MOCK_GAME_SECRET": string(gameSecret), "OTHER_GAME_SECRET": string(otherSecret)}
-	games, err := gamehooks.LoadGames(func(name string) (string, bool) {
+	environment := map[string]string{
+		lobbyapp.DatabaseURLEnv:           "postgres://lobby:lobby@127.0.0.1:1/lobby",
+		lobbyapp.PublicURLEnv:             "http://127.0.0.1:8890",
+		lobbyapp.CentrifugoAPIURLEnv:      centrifugo.URL + "/api",
+		lobbyapp.CentrifugoAPIKeyEnv:      "test-centrifugo-api-key",
+		lobbyapp.CentrifugoPublicURLEnv:   "ws://127.0.0.1:1/connection/websocket",
+		lobbyapp.ConnectionTokenSecretEnv: strings.Repeat("c", 32),
+		lobbyapp.ProxySecretEnv:           "test-proxy-secret",
+		lobbyapp.PlayerTokenKeysEnv:       "test:" + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 32))),
+		lobbyapp.GamesEnv:                 configuration,
+		"MOCK_GAME_SECRET":                string(gameSecret),
+		"OTHER_GAME_SECRET":               string(otherSecret),
+	}
+	config, err := lobbyapp.LoadConfigFromLookup(func(name string) (string, bool) {
 		value, found := environment[name]
 		return value, found
-	}, gamehooks.WithTimeout(hookTimeout))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock, identifiers := domain.SystemClock{}, domain.CryptoIdentifiers{}
-	policy := domain.DefaultPolicy(gamehooks.Registrations(games)...)
-	store, err := lobbypostgres.NewStore(database, clock)
+	lobby, err := lobbyapp.New(config, database, lobbyapp.NewCentrifugoClient(config), slog.New(slog.NewTextHandler(io.Discard, nil)),
+		lobbyapp.WithHookOptions(gamehooks.WithTimeout(hookTimeout)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	identities, err := lobbypostgres.NewIdentityStore(database)
+	handler, err := lobby.Handler()
 	if err != nil {
 		t.Fatal(err)
 	}
-	authentication, err := auth.NewService(identities, clock, policy, identifiers, []byte(strings.Repeat("c", 32)), "ws://127.0.0.1:1/connection/websocket")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lobbies, err := application.NewService(store, clock, identifiers, policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	router := chi.NewRouter()
-	httpapi.Register(newAPI(router, "Lobby"), lobbies, authentication, authentication, nil, nil)
-	httpapi.RegisterGameAPI(newAPI(router, "Lobby game API"), lobbies, gamehooks.Secrets(games))
-	lobbyServer := httptest.NewServer(router)
+	lobbyServer := httptest.NewServer(handler)
 	t.Cleanup(lobbyServer.Close)
+	store, err := lobbypostgres.NewStore(database, domain.SystemClock{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gameAPI, err := gamehooks.NewGameAPIClient(gameKey, lobbyServer.URL, gameSecret)
 	if err != nil {
@@ -118,12 +123,12 @@ func newStack(t *testing.T) *stack {
 	return &stack{t: t, lobbyURL: lobbyServer.URL, gameURL: gameServer.URL, game: game, other: other, store: store, gameAPI: gameAPI, otherKeys: otherKeys}
 }
 
-// newAPI is a Huma API on router without documentation routes, so that two
-// APIs share it, as the player API and the game API do.
-func newAPI(router chi.Router, title string) huma.API {
-	config := huma.DefaultConfig(title, "1.0.0")
-	config.OpenAPIPath, config.DocsPath, config.SchemasPath = "", "", ""
-	return humachi.New(router, config)
+// fakeCentrifugo answers each command of a Centrifugo API request, one JSON
+// command per line, with success.
+func fakeCentrifugo(response http.ResponseWriter, request *http.Request) {
+	body, _ := io.ReadAll(request.Body)
+	commands := strings.Count(strings.TrimSpace(string(body)), "\n") + 1
+	_, _ = io.WriteString(response, strings.TrimSuffix(strings.Repeat(`{"result":{}}`+"\n", commands), "\n"))
 }
 
 type guest struct {

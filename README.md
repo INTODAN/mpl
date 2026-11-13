@@ -7,6 +7,7 @@ lobby/
   go.mod, go.sum       Independent Go module
   domain/             Types, ports, errors, policies, and pure state rules
   application/        Membership commands, teams, leases, binding, and publishing
+  app/                The whole lobby, built from its LOBBY_* configuration
   auth/               Guest credentials, connection tokens and player tokens
   playertoken/        Player token signing and verification, which games import
   postgres/           Persistence and versioned schema migrations
@@ -18,7 +19,7 @@ lobby/
   realtime/           Centrifugo authorization and the push publisher
   internal/           Shared implementation helpers and test fixtures
   api/                OpenAPI and event schema artifacts
-  cmd/                Offline OpenAPI exporter
+  cmd/                The lobby's local server and Lambda, the OpenAPI exporter, the mock game's server
   clients/            Go example and Python SDK, wrapper, CLI, and generator
   centrifugo/         Shared transport configuration
   integration/        Live tests and configurable host runner
@@ -35,9 +36,54 @@ go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/
 uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
 ```
 
-Go database tests use disposable PostgreSQL containers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests additionally need a host application implementing the lobby endpoints; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the host application's suite.
+Go database tests use disposable PostgreSQL containers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests run the lobby's own server, `cmd/lobby`, with the mock game or a game's host beside it; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the game host's suite.
 
 The module path remains `islandBattles/lobby`. Go consumers import `islandBattles/lobby/domain` for contracts and `islandBattles/lobby/application` for services; there is no root Go package or compatibility alias layer. It has no dependency or filesystem replacement pointing to the parent repository. To extract it, copy this directory, verify with `GOWORK=off`, then choose the published repository's module path and update imports. The monorepo's `go.work` and root `go.mod` local replacement are consumer-side wiring only. A plain `go test ./...` at the monorepo root tests the host module; use `go test ./... ./lobby/...` there to test both modules.
+
+## Running the lobby
+
+The lobby runs on its own, as a server that games reach over the network:
+
+- **`cmd/lobby`** is the local server, for development and live tests. It listens on `LOBBY_HTTP_ADDR`, `:8890` by default, brings the lobby's schema up to date before it listens (`postgres.Migrate`, under an advisory lock), and keeps a pool of 10 connections unless `LOBBY_DATABASE_MAX_OPEN_CONNECTIONS` says otherwise.
+- **`cmd/lobby-lambda`** serves the same lobby from AWS Lambda behind a Function URL, with response streaming (`lambdaurl`, the `RESPONSE_STREAM` invoke mode). It ends each request's work 2 seconds before the invocation's deadline, answers 503 until it has started and tries to start again at most every 10 seconds, runs no schema changes, and keeps Lambda's pool of 2 connections. It isn't deployed yet: Island Battles' Lambda still runs the lobby in its own process.
+- **Package `app`** builds the whole lobby from an `app.Config`, for both commands and for a game's host that runs the lobby in its own process (Island Battles in production, until the lobby is deployed on its own), so there is one wiring: the stores, guest sessions, player tokens and the JWKS, the games of `LOBBY_GAMES` and the game API, the Centrifugo publisher, authorizer and proxy, retention, and the lobby page. `app.New(config, database, centrifugo, logger, options...)` builds it; `Lobby.Handler()` serves it on its own, and `Lobby.Register(router, api)` on a host's router and Huma API. `app.WithHookOptions` passes options to the hook clients, such as an in-memory transport, and `app.WithObserver` tells the host about authenticated players and the causes of failures that the responses leave out.
+
+The lobby's own server serves:
+
+| Path | What |
+|---|---|
+| `/lobby/v1/*` | The player API ([`api/openapi.json`](api/openapi.json)), with the public keys at `/lobby/v1/jwks.json` |
+| `/lobby/v1/game-api/*` | The game API ([`api/game-api.openapi.json`](api/game-api.openapi.json)) |
+| `/internal/lobby/centrifugo/*` | Centrifugo's subscribe and refresh proxy |
+| `/lobby/ui/` | The [lobby page](frontend/README.md); `/` redirects there |
+| `/openapi.json`, `/docs` | The player API's document and its documentation |
+| `/healthz` | 204 |
+
+Retention runs as in a host's process: at the end of lobby requests, at most once a minute per process unless a pass found a backlog ([Deleting old data](#deleting-old-data)).
+
+### Configuration
+
+Both commands read the same environment; every name starts with `LOBBY_`. [`.env.example`](.env.example) lists them with local values.
+
+| Variable | |
+|---|---|
+| `LOBBY_DATABASE_URL` | PostgreSQL, `postgres://…`. Required. |
+| `LOBBY_DATABASE_MAX_OPEN_CONNECTIONS`, `LOBBY_DATABASE_MAX_IDLE_CONNECTIONS`, `LOBBY_DATABASE_CONNECTION_MAX_IDLE_TIME` | The pool: 2 (10 on the local server), 2 and `1m` by default. |
+| `LOBBY_HTTP_ADDR` | The local server's `host:port`, `:8890` by default. |
+| `LOBBY_PUBLIC_URL` | Where players and games reach the lobby, an origin without a path, such as `https://lobby.example.org`. It is the `iss` of [player tokens](#player-tokens), so a game uses it as the lobby's URL. Required. |
+| `LOBBY_CENTRIFUGO_PUBLIC_URL` | The WebSocket URL that connection tokens send players to, `ws://` or `wss://`. Required. |
+| `LOBBY_CENTRIFUGO_API_URL`, `LOBBY_CENTRIFUGO_API_KEY` | Centrifugo's HTTP API, which each committed change is pushed to. Required. |
+| `LOBBY_CONNECTION_TOKEN_HMAC_SECRET` | Signs Centrifugo connection tokens; Centrifugo's `client.token.hmac_secret_key`. Required. |
+| `LOBBY_PROXY_SECRET` | The `X-Lobby-Proxy-Secret` of Centrifugo's proxy calls. Required. |
+| `LOBBY_PLAYER_TOKEN_KEYS`, `LOBBY_PLAYER_TOKEN_LIFETIME` | The [player token](#player-tokens) keys, required, and their lifetime, `15m` by default. |
+| `LOBBY_GAMES` | The games, at least one ([Configuration](#configuration-1) of HTTP games), with each game's secret in the variable its `secret_env` names. Required. |
+| `LOBBY_RETENTION_IDLE_PERIOD`, `LOBBY_RETENTION_MAXIMUM_AGE`, `LOBBY_RETENTION_CREATE_REQUESTS`, `LOBBY_RETENTION_EXPIRED_SESSIONS`, `LOBBY_RETENTION_BATCH_SIZE`, `LOBBY_RETENTION_PASS_INTERVAL` | [Retention](#deleting-old-data): the lobbies' idle period and maximum age, the create requests' idempotency window, how long expired sessions are kept, the rows a pass deletes of each kind and the least time between passes. Each unset keeps `DefaultRetention()`'s value. |
+
+A setting that is missing or invalid stops the lobby from starting, and the error names the variables, never their values.
+
+### Starting a game while the lobby is locked
+
+A ready or start request holds a database connection, and the room's lock, while the lobby calls the game's `ready-check` hook, and a game may read the same lobby through the game API before it answers, as Island Battles does at the start. The game API reads without the lock (`Service.GameSnapshot`), so a start never waits on itself: its transaction holds one connection, and the game's read takes another (`app` tests this on a pool of 2). On Lambda an instance serves one request at a time, so the game's read reaches another instance. The local server serves many requests at once, and other requests to the same lobby hold their connections while they wait for the lock, so its pool is wider: 10 connections.
 
 ## Schema migrations
 
@@ -49,7 +95,7 @@ A host can version its own tables with `postgres.MigrationSet`, which takes its 
 
 ## Temporary browser frontend
 
-The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The host application lists its games when it mounts the frontend, so the frontend names none of its own. The Island Battles backend serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose a game, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed. The page can also: copy an invite link (`?join=CODE`) that joins the lobby after the name step; watch a lobby by code or `?watch=CODE` link without a seat, for a game whose catalog entry names a watcher document (`POST /lobby/v1/watches`, the watch channel, `DELETE …/watch`); list a lobby's [watchers](#watchers) for its members, with a **Remove** button for the host (`GET …/watchers`, `DELETE …/watchers/{player_id}`), whose kicked watcher is told so and returned to the start screen; and let the game's settings form choose the teams. See the [frontend README](frontend/README.md#watching-a-lobby).
+The [frontend](frontend/README.md) is a plain HTML/CSS/JavaScript playground for two players. The games of `LOBBY_GAMES` list themselves in its catalog, so the frontend names none of its own. The lobby serves it at `/lobby/ui/`. Open that address in two tabs or browsers, choose a game, and create or join using the shared code. Assets are embedded in the Go executable; no frontend build or dependency installation is needed. The page can also: copy an invite link (`?join=CODE`) that joins the lobby after the name step; watch a lobby by code or `?watch=CODE` link without a seat, for a game whose catalog entry names a watcher document (`POST /lobby/v1/watches`, the watch channel, `DELETE …/watch`); list a lobby's [watchers](#watchers) for its members, with a **Remove** button for the host (`GET …/watchers`, `DELETE …/watchers/{player_id}`), whose kicked watcher is told so and returned to the start screen; and let the game's settings form choose the teams. See the [frontend README](frontend/README.md#watching-a-lobby).
 
 ## Domain and application services
 
@@ -283,7 +329,7 @@ These in-process helpers remain for a game in the lobby's own process. Island Ba
 
 A game can run in a service of its own, in any language: the lobby calls its **hooks** over HTTP, and the game reads the lobby through the **game API**. Package `gamehooks` implements both sides for Go, and `mockgame` is a small game built on it that the lobby's integration tests play against, over real HTTP servers ([`mockgame/integration_test.go`](mockgame/integration_test.go)); [`cmd/mock-game`](cmd/mock-game/main.go) serves it for the live suite ([integration README](integration/README.md)). A game can still be registered in the lobby's own process with Go functions, as before.
 
-**Island Battles is the example HTTP game** ([backend README](../backend/README.md#binding-to-the-lobby)). Its `LOBBY_GAMES` entry is [`backend/lobbyadapter/lobby_game.json`](../backend/lobbyadapter/lobby_game.json), with `hooks_url` at the game's `/game/lobby-hooks` and its secret in `LOBBY_GAME_SECRET_ISLAND_BATTLES`. It serves its hooks with `gamehooks.NewHandler`: its settings, seat and member settings validators, a ready check that answers from the request's members unless an uploaded bot needs its package read, or, at the start, its bot seats, a `start` that binds the round's game with `BindOnce`-style idempotence, and `round-ended`. It reads lobbies and authorizes watchers with `gamehooks.GameAPIClient`, and verifies players with `playertoken`. While it shares a process and a Lambda with the lobby, both sides send their requests through an `http.RoundTripper` that calls the other side's `http.Handler` in memory, so nothing changes in the deploy; the requests are signed and checked as over a network.
+**Island Battles is the example HTTP game** ([backend README](../backend/README.md#binding-to-the-lobby)). Its `LOBBY_GAMES` entry is [`backend/lobbyadapter/lobby_game.json`](../backend/lobbyadapter/lobby_game.json), with `hooks_url` at the game's `/game/lobby-hooks` and its secret in `LOBBY_GAME_SECRET_ISLAND_BATTLES`. It serves its hooks with `gamehooks.NewHandler`: its settings, seat and member settings validators, a ready check that answers from the request's members unless an uploaded bot needs its package read, or, at the start, its bot seats, a `start` that binds the round's game with `BindOnce`-style idempotence, and `round-ended`. It reads lobbies and authorizes watchers with `gamehooks.GameAPIClient`, and verifies players with `playertoken`. Locally and in the live tests, the lobby runs on its own (`cmd/lobby`) and the backend reaches it at `ISLAND_BATTLES_LOBBY_URL`. In production, until the lobby is deployed on its own, the backend builds the lobby in its own process and Lambda with [`app`](#running-the-lobby), and both sides send their requests through an `http.RoundTripper` that calls the other side's `http.Handler` in memory; the requests are signed and checked as over a network.
 
 ### Configuration
 
