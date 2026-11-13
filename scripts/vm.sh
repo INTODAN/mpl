@@ -16,7 +16,8 @@ end, and logs in to the VM with a temporary key from Lightsail.
 Usage:
   scripts/vm.sh deploy <ip> [ansible-playbook options]
       Provision the VM, or update it, a VM taken over included. Safe to
-      re-run. Publishes each tenant's settings to the deploy bucket under
+      re-run. First writes the VM owner marker mpl/vm-owner to the deploy
+      bucket, which stops the game's own VM deploy. Publishes each tenant's settings to the deploy bucket under
       mpl/tenants/. The first deploy, and the first after adding a tenant,
       needs -e app_generate_secrets=true to create the missing secrets in
       deploy/local/secrets/.
@@ -147,6 +148,9 @@ case "$command" in
     host="$1"
     shift
     deploy_files require-secrets
+    # The game's own VM deploy refuses to run while this marker is there. It
+    # goes first, so a run that fails half way is marked too.
+    deploy_files claim-vm
     run_playbook "$host" site.yml "$@"
     # The tenants' settings, for their own deploys to read.
     deploy_files publish-tenants

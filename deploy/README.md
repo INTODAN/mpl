@@ -48,6 +48,7 @@ A private, versioned S3 bucket in the account, which this deployment may share w
 | `mpl/terraform/terraform.tfstate` | Terraform's state (and its `.tflock` during a run). It holds the Lambda's settings and the backup key: secrets. |
 | `mpl/files/…` | `deploy/local/`, synced by `scripts/aws.sh` and `scripts/vm.sh` before and after each run: `aws.tfvars`, `vm.yml`, `secrets/`, `lobby.env`, `smoke-session.json`. |
 | `mpl/plans/<run ID>/` | A plan the Deploy workflow saved. The apply deletes it; a later plan run deletes those older than 3 days. |
+| `mpl/vm-owner` | The VM owner marker: `mpl` and a newline. The VM deploy writes it before it changes anything on the VM, if it is missing or says something else; the game's own VM deploy refuses to run while it is there. Never removed here. |
 | `mpl/tenants/<key>/tenant.env` | What each tenant needs from the lobby and the VM ([Tenants](#tenants)). The VM deploy writes it; the game's own deploy reads it. |
 
 `scripts/deploy-files.sh status|pull|push` syncs `deploy/local/` by hand; a file changed on both sides since the last sync is a conflict, which `--force` settles. The build, plans, dumps and the tenants' files stay on the machine, outside the sync.
@@ -82,7 +83,7 @@ What the first VM deploy does change on the VM: Postgres's `pg_hba.conf` and Cen
 
 ### Before you start
 
-The VM must run what the other configuration deploys today, with every secret this repository copies. For Island Battles, that means section 2 of its owner checklist ([INTODAN/island-battles-go#119](https://github.com/INTODAN/island-battles-go/issues/119)) is done first: its VM deploy that generates the lobby's secrets and creates the `lobby` database, the Terraform apply that moves the lobby to that database, and its client releases, whose release redeploys the VM with that repository's Ansible. After the takeover, don't run the other repository's VM deploy (a `vm` run, or a release that redeploys the VM) until the cutover: it would write its own configuration over this one's. If one runs anyway, run this repository's `vm` target again afterwards.
+The VM must run what the other configuration deploys today, with every secret this repository copies. For Island Battles, that means section 2 of its owner checklist ([INTODAN/island-battles-go#119](https://github.com/INTODAN/island-battles-go/issues/119)) is done first: its VM deploy that generates the lobby's secrets and creates the `lobby` database, the Terraform apply that moves the lobby to that database, and its client releases, whose release redeploys the VM with that repository's Ansible. After the takeover, don't run the other repository's VM deploy (a `vm` run, or a release that redeploys the VM) until the cutover: it would write its own configuration over this one's. From the first `vm` run on ([step 8](#8-the-vm-deploy-an-agent-when-the-owner-says)), the marker `mpl/vm-owner` makes Island Battles' own VM deploy refuse, and its releases skip the VM (INTODAN/island-battles-go's `deploy/README.md`, "The VM belongs to INTODAN/mpl"; INTODAN/island-battles-go#256). If one is forced anyway, run this repository's `vm` target again afterwards.
 
 Until the cutover, the game's in-process lobby and this repository's Lambda share the `lobby` database. Deploy the lobby only from a `main` whose migrations the game's pinned module version also has: a migration that only one of them knows would leave the other on a schema it doesn't expect.
 
@@ -184,7 +185,9 @@ Add `lobby.<domain>` as a CNAME of the distribution: `scripts/aws.sh output lobb
 
 ### 8. The VM deploy (an agent, when the owner says)
 
-A Deploy run with target `vm`, at a quiet time. It checks the settings, the secrets, the Compose project and `vm.<domain>`; takes over the VM's Compose project; writes `lobby.env` and the tenants' `tenant.env`, and publishes those under `mpl/tenants/`; and backs every database up once. The game keeps running throughout, apart from the containers' one restart.
+A Deploy run with target `vm`, at a quiet time. It checks the settings, the secrets, the Compose project and `vm.<domain>`; writes the VM owner marker `mpl/vm-owner` to the deploy bucket (`mpl`, before anything on the VM changes, so a run that fails half way is marked too; a run that finds it already there writes nothing); takes over the VM's Compose project; writes `lobby.env` and the tenants' `tenant.env`, and publishes those under `mpl/tenants/`; and backs every database up once. The game keeps running throughout, apart from the containers' one restart.
+
+Check the marker with `aws s3 cp "s3://$MPL_DEPLOY_BUCKET/mpl/vm-owner" -`, which prints `mpl`. If the owner runs step 8 from a change that predates the marker, write it by hand first, with administrator credentials: `printf 'mpl\n' | aws s3 cp - "s3://$MPL_DEPLOY_BUCKET/mpl/vm-owner"`. The deploy role may write it: its `mpl/*` permission covers it.
 
 ### 9. The first lobby deploy and the smoke test (an agent, when the owner says)
 

@@ -15,6 +15,9 @@ this repository took over, so everything of this repository's lies under
 - `mpl/tenants/<key>/`: what each tenant, a game with a database on the VM,
   needs from the lobby: deploy/local/tenants/<key>/, which the VM deploy
   writes and `publish-tenants` uploads. The game's own deploy reads it there.
+- `mpl/vm-owner`: the VM owner marker, which `claim-vm` writes (`mpl` and a
+  newline) when the VM deploy starts. The game's own VM deploy checks it and
+  refuses to run while it is there. Never removed here.
 
 scripts/aws.sh and scripts/vm.sh pull before they run and push when they end.
 Each machine records in deploy/local/.sync-base.json what it last pulled or
@@ -35,7 +38,7 @@ Usage, from the repository root:
 
     python3 -I deploy/deploy_files.py status|pull|push [--force]
     python3 -I deploy/deploy_files.py bucket|has-state|require-secrets
-    python3 -I deploy/deploy_files.py publish-tenants|expire-plans
+    python3 -I deploy/deploy_files.py publish-tenants|expire-plans|claim-vm
 
 The bucket is the one MPL_DEPLOY_BUCKET names. It exists already: the
 deployment that shares it created it, or a person did (deploy/README.md).
@@ -63,6 +66,10 @@ PLANS_PREFIX = PREFIX + "plans/"
 SAVED_PLAN_DAYS = 3
 TENANTS_DIRECTORY = "tenants"
 TENANTS_PREFIX = PREFIX + "tenants/"
+# The marker that tells the game's own deploy that this repository owns the VM
+# (INTODAN/island-battles-go#256). It holds a plain name and a newline.
+VM_OWNER_KEY = PREFIX + "vm-owner"
+VM_OWNER = "mpl"
 # Top-level entries of deploy/local/ that stay on the machine: Terraform's
 # plans, the built Lambda, database dumps, and the tenants' settings, which
 # publish-tenants uploads elsewhere.
@@ -113,6 +120,15 @@ class S3Store:
     def put(self, key, source):
         """Upload source to key, whatever the bucket has there."""
         aws_json("s3api", "put-object", "--bucket", self.bucket, "--key", key, "--body", str(source))
+
+    def read(self, key):
+        """Return the text of the object at key, or None when the bucket has none."""
+        if not any(item["Key"] == key for item in self.objects(key)):
+            return None
+        with tempfile.TemporaryDirectory() as directory:
+            destination = pathlib.Path(directory) / "object"
+            aws_json("s3api", "get-object", "--bucket", self.bucket, "--key", key, str(destination))
+            return destination.read_text()
 
     def delete(self, key):
         aws_json("s3api", "delete-object", "--bucket", self.bucket, "--key", key)
@@ -326,6 +342,24 @@ def publish_tenants(store, directory, log=print):
     return uploaded
 
 
+def claim_vm(store, log=print):
+    """Write the VM owner marker, unless it already says this repository owns the VM.
+
+    Returns whether it wrote it. The game's own VM deploy refuses to run while
+    the marker is there, so the VM deploy writes it before it changes anything
+    on the VM: a first run that fails half way is marked too. Nothing here
+    removes it.
+    """
+    if (store.read(VM_OWNER_KEY) or "").strip() == VM_OWNER:
+        return False
+    with tempfile.TemporaryDirectory() as directory:
+        source = pathlib.Path(directory) / "vm-owner"
+        source.write_text(VM_OWNER + "\n")
+        store.put(VM_OWNER_KEY, source)
+    log(f"Wrote the VM owner marker {VM_OWNER_KEY}: {VM_OWNER}")
+    return True
+
+
 def expire_plans(store, now, log=print):
     """Delete saved plans older than SAVED_PLAN_DAYS, which nobody applied.
 
@@ -344,7 +378,7 @@ def expire_plans(store, now, log=print):
 
 def main(arguments):
     commands = ("status", "pull", "push", "bucket", "has-state", "require-secrets", "publish-tenants",
-                "expire-plans")
+                "expire-plans", "claim-vm")
     if not arguments or arguments[0] not in commands:
         print(f"Usage: deploy_files.py {'|'.join(commands)} [--force]", file=sys.stderr)
         return 2
@@ -373,6 +407,9 @@ def main(arguments):
             return 1
         if command == "publish-tenants":
             publish_tenants(store, LOCAL_DIRECTORY, log)
+            return 0
+        if command == "claim-vm":
+            claim_vm(store, log)
             return 0
         if command == "expire-plans":
             expire_plans(store, datetime.datetime.now(datetime.timezone.utc), log)
