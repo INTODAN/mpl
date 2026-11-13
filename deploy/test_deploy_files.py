@@ -45,6 +45,9 @@ class FakeStore:
     def put(self, key, source):
         self.objects[key] = (pathlib.Path(source).read_text(), NOW)
 
+    def read(self, key):
+        return self.objects[key][0] if key in self.objects else None
+
     def delete(self, key):
         del self.objects[key]
 
@@ -254,6 +257,46 @@ class PublishTenantsTest(unittest.TestCase):
 
 
 NOW = datetime.datetime(2026, 11, 13, 12, 0, tzinfo=datetime.timezone.utc)
+OLD = NOW - datetime.timedelta(days=10)
+
+
+class ClaimVmTest(unittest.TestCase):
+    def test_writes_the_marker_the_games_deploy_checks(self):
+        store = FakeStore()
+        self.assertTrue(deploy_files.claim_vm(store, log=lambda _: None))
+        self.assertEqual(store.objects["mpl/vm-owner"], ("mpl\n", NOW))
+
+    def test_is_idempotent(self):
+        store = FakeStore(objects={"mpl/vm-owner": ("mpl", OLD)})
+        self.assertFalse(deploy_files.claim_vm(store, log=lambda _: None))
+        self.assertEqual(store.objects["mpl/vm-owner"], ("mpl", OLD))
+
+    def test_replaces_a_marker_that_says_something_else(self):
+        store = FakeStore(objects={"mpl/vm-owner": ("", OLD)})
+        self.assertTrue(deploy_files.claim_vm(store, log=lambda _: None))
+        self.assertEqual(store.objects["mpl/vm-owner"][0], "mpl\n")
+
+    def test_the_marker_is_a_plain_name_in_the_deploy_roles_prefix(self):
+        self.assertTrue(deploy_files.VM_OWNER_KEY.startswith("mpl/"))
+        self.assertRegex(deploy_files.VM_OWNER, r"[a-z0-9][a-z0-9._-]{0,63}")
+
+
+class VmScriptTest(unittest.TestCase):
+    def deploy_branch(self):
+        script = (pathlib.Path(deploy_files.__file__).parent.parent / "scripts" / "vm.sh").read_text()
+        return script.split("  deploy)\n", 1)[1].split("    ;;", 1)[0]
+
+    def test_the_marker_follows_the_secrets_check_and_precedes_the_playbook(self):
+        branch = self.deploy_branch()
+        order = [branch.index(text) for text in ("deploy_files require-secrets", "deploy_files claim-vm",
+                                                 'run_playbook "$host" site.yml')]
+        self.assertEqual(order, sorted(order))
+
+    def test_a_failed_secrets_check_stops_before_the_marker(self):
+        # The script runs with set -e, and the check is a plain command.
+        script = (pathlib.Path(deploy_files.__file__).parent.parent / "scripts" / "vm.sh").read_text()
+        self.assertIn("set -euo pipefail", script)
+        self.assertNotIn("require-secrets ||", self.deploy_branch())
 
 
 class ExpirePlansTest(unittest.TestCase):
