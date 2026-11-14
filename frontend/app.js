@@ -108,6 +108,8 @@ function roomPath(room = state.room) {
   return `/games/${encodeURIComponent(room.game_key)}/lobbies/${encodeURIComponent(room.lobby_id)}`;
 }
 
+const unreachableMessage = "Cannot reach the lobby server. Check your connection and try again.";
+
 let throttleModule = null;
 function loadThrottle() {
   throttleModule ??= import("./throttle.mjs").catch((error) => {
@@ -147,7 +149,7 @@ async function api(path, method = "GET", body) {
     return data;
   } catch (error) {
     if (error.status) throw error;
-    throw new Error("Cannot reach the lobby server. Check your connection and try again.");
+    throw new Error(unreachableMessage);
   } finally {
     clearTimeout(timeout);
   }
@@ -313,9 +315,11 @@ function acceptSnapshot(next) {
   // showed is over, and the next one gets its own result and player.
   if (gameRound !== null && gameRound !== next.lobby.round) dropGame();
   snapshot = next;
+  // The phase tells a reload whether to join the lobby again on the player's
+  // behalf once the membership has lapsed (restore.mjs).
   state.room = {
     game_key: next.lobby.game_key, lobby_id: next.lobby.id,
-    join_code: next.lobby.join_code, membership_generation: next.membership_generation,
+    join_code: next.lobby.join_code, membership_generation: next.membership_generation, phase: next.lobby.phase,
   };
   state.pendingCreate = null;
   save();
@@ -1673,13 +1677,44 @@ async function restore() {
     return;
   }
   if (!state.room) return;
+  const room = state.room;
+  // If the room can't be restored, its code waits in Join code, which joins
+  // with the selected game: the room's.
+  if (games.has(room.game_key)) $("game").value = room.game_key;
   await action(async () => {
-    // Reuse this tab's lease on reload; an expired membership needs explicit rejoin.
-    const room = state.room;
-    try { acceptSnapshot(await api(roomPath(room))); }
-    catch (error) { dropRoom(); throw error; }
-    scheduleSync(0);
+    // Reuse this tab's lease on reload. Once it has lapsed, restore.mjs joins
+    // a started lobby again with its code, and otherwise says how to.
+    let restored;
+    try {
+      const { restoreRoom } = await loadRestore();
+      restored = await restoreRoom(room, {
+        read: () => api(roomPath(room)),
+        join: () => api("/memberships", "POST", { game_key: room.game_key, join_code: room.join_code, client_instance_id: state.clientInstanceID }),
+        leave: (joined) => api(`${roomPath({ game_key: joined.lobby.game_key, lobby_id: joined.lobby.id })}/membership`, "DELETE"),
+      });
+    } catch (error) {
+      dropRoom();
+      throw error;
+    }
+    if (restored.snapshot) {
+      acceptSnapshot(restored.snapshot);
+      scheduleSync(0);
+      return;
+    }
+    dropRoom();
+    $("join-code").value = restored.joinCode;
+    notice(restored.message);
   });
+}
+
+let restoreModule = null;
+function loadRestore() {
+  restoreModule ??= import("./restore.mjs").catch(() => {
+    restoreModule = null;
+    // Like the page's other modules, it comes from the lobby's server.
+    throw new Error(unreachableMessage);
+  });
+  return restoreModule;
 }
 // The host supplies its games; this page names none of its own.
 async function loadGames() {

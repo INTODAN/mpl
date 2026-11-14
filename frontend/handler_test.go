@@ -234,7 +234,7 @@ func TestHandlerRefusesURLsOnOtherOrigins(t *testing.T) {
 func TestAssetsNameNoGame(t *testing.T) {
 	handler := mounted(t, []frontend.Game{quizGame()})
 	// The file server answers index.html at the mount point itself.
-	for _, file := range []string{"", "app.js", "links.mjs", "relay.mjs", "resultretry.mjs", "roomapi.mjs", "rounds.mjs", "style.css", "throttle.mjs", "watch.mjs"} {
+	for _, file := range []string{"", "app.js", "links.mjs", "relay.mjs", "restore.mjs", "resultretry.mjs", "roomapi.mjs", "rounds.mjs", "style.css", "throttle.mjs", "watch.mjs"} {
 		path := "/lobby/ui/" + file
 		body, err := io.ReadAll(get(t, handler, path).Body)
 		if err != nil {
