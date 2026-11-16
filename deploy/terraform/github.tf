@@ -24,8 +24,9 @@ locals {
 
 # An account has one OIDC provider for GitHub, which every repository's roles
 # trust. Another configuration may own it already, such as the one a game's
-# repository applies, so this one only looks it up. A new account creates it
-# once by hand (deploy/README.md, "Deploying from GitHub Actions").
+# repository applies, so this one only looks it up. If no other project has
+# it, create it once by hand (deploy/README.md, "Taking over a running VM",
+# step 4).
 data "aws_iam_openid_connect_provider" "github" {
   count = local.github_deploy ? 1 : 0
   url   = "https://token.actions.githubusercontent.com"

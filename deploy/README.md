@@ -156,7 +156,7 @@ scripts/aws.sh output github_deploy_role_arn
 scripts/aws.sh output certificate_validation_record
 ```
 
-The plan creates 5 resources: the certificate, the lobby function's role (the deploy role may pass it), the deploy role, its policy and its read-only attachment. It imports nothing yet. The account's GitHub OIDC provider exists already (the other deployment created it); on a new account, create it once with `aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com`.
+The plan creates 5 resources: the certificate, the lobby function's role (the deploy role may pass it), the deploy role, its policy and its read-only attachment. It imports nothing yet. This configuration doesn't create the account's GitHub OIDC provider; it only looks it up. If the account has it already, because another project created it, skip this. Otherwise create it once with `aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com`. A project that later creates it with Terraform must import it, not create it again.
 
 Set the repository variable `AWS_DEPLOY_ROLE_ARN` to the role's ARN.
 
@@ -283,7 +283,7 @@ The lobby logs JSON lines; Lambda keeps only warnings and errors, in `/aws/lambd
 
 ## Postgres connections
 
-Postgres keeps its default of 100 connections. Every Lambda instance of the lobby keeps a pool of `database_max_open_connections` (2), and at most `reserved_concurrency` (5) run. Terraform refuses settings where those and `tenant_database_connections` (20: one game of 5 instances with two pools of 2) leave fewer than `postgres_spare_connections` (10) free. Raise `tenant_database_connections` when a tenant opens more.
+Postgres keeps its default of 100 connections. Every Lambda instance of the lobby keeps a pool of `database_max_open_connections` (2), and at most `reserved_concurrency` (5) run. Terraform refuses settings where those and `tenant_database_connections` leave fewer than `postgres_spare_connections` (10) free. `tenant_database_connections` (20) is what the tenants may open together: for a game on Lambda, its reserved concurrency × its pool size, one pool per instance. 20 is room for one game of 5 instances with a pool of 2 each, twice over. Raise `tenant_database_connections` when a tenant opens more.
 
 ## Secrets
 
