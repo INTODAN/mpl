@@ -7,11 +7,12 @@ through GitHub's OIDC provider. So only merged code ever gets it: merging the
 pull request is the approval (deploy/README.md, "Deploying from GitHub
 Actions").
 
-The role reads the whole account (ReadOnlyAccess), as a plan must, and changes
-only what deploy/terraform/ manages: Lightsail (the VM, taken over or new),
-Lambda, CloudWatch logs and alarms, SNS, ACM and CloudFront, buckets named
-mpl-*, this repository's part of the shared deploy bucket (mpl/), and IAM
-roles and users named mpl-*. It can't change itself. Because it can write IAM
+The role reads the whole account (ReadOnlyAccess), as a plan must, except the
+other deployment's part of the shared deploy bucket, and changes only what
+deploy/terraform/ manages: Lightsail (the VM, taken over or new), Lambda,
+CloudWatch logs and alarms, SNS, ACM and CloudFront, buckets named mpl-*,
+this repository's part of the shared deploy bucket (mpl/), and IAM roles and
+users named mpl-*. It can't change itself. Because it can write IAM
 policies for mpl-* roles, treat it as close to administrator of the account:
 reviewing what merges to main is the control.
 
@@ -54,6 +55,11 @@ PERMISSIONS_POLICY_NAME = "apply-the-deployment"
 # What deploy/terraform/ creates or changes, besides S3 and IAM. The account's
 # cost budgets aren't this configuration's (observability.tf).
 MANAGED_SERVICES = ["lightsail", "lambda", "logs", "cloudwatch", "sns", "acm", "cloudfront"]
+# The other deployment's part of the shared deploy bucket: the game whose VM
+# this one took over keeps its files (with its secrets), its Terraform state
+# and its saved plans at the bucket's root (deploy/README.md, "Deploying from
+# GitHub Actions"). deploy/terraform/github.tf denies the deploy role the same.
+OTHER_DEPLOYMENT_PREFIXES = ["files/", "terraform/", "plans/"]
 
 
 def oidc_provider_arn(account):
@@ -126,6 +132,18 @@ def permissions_policy(account, deploy_bucket):
                 "Effect": "Allow",
                 "Action": "iam:*",
                 "Resource": [f"{iam}:role/{NAME_PREFIX}*", f"{iam}:user/{NAME_PREFIX}*"],
+            },
+            {
+                # ReadOnlyAccess reads every bucket, so an explicit Deny keeps
+                # the other deployment's secrets from this role. s3:GetObject*
+                # is every read of an object: its content, the earlier versions
+                # the bucket keeps, their checksums (GetObjectAttributes), tags
+                # and ACLs. Listing the keys stays allowed, and nothing under
+                # mpl/ is denied.
+                "Sid": "KeepOutOfTheOtherDeploymentsPart",
+                "Effect": "Deny",
+                "Action": "s3:GetObject*",
+                "Resource": [f"arn:aws:s3:::{deploy_bucket}/{prefix}*" for prefix in OTHER_DEPLOYMENT_PREFIXES],
             },
             {
                 "Sid": "LeaveThisRoleAlone",

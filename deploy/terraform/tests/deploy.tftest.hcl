@@ -440,6 +440,20 @@ run "keeps_backups_from_the_github_roles" {
   }
 
   assert {
+    condition = (
+      one([for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement : statement if statement.Sid == "KeepOutOfTheOtherDeploymentsPart"]).Effect == "Deny" &&
+      one([for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement : statement if statement.Sid == "KeepOutOfTheOtherDeploymentsPart"]).Action == "s3:GetObject*" &&
+      toset(one([for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement : statement if statement.Sid == "KeepOutOfTheOtherDeploymentsPart"]).Resource) == toset([
+        "arn:aws:s3:::shared-deploy-123456789012/files/*",
+        "arn:aws:s3:::shared-deploy-123456789012/terraform/*",
+        "arn:aws:s3:::shared-deploy-123456789012/plans/*",
+      ]) &&
+      length([for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement : statement if statement.Effect == "Deny"]) == 1
+    )
+    error_message = "The deploy role must be denied every read (s3:GetObject*) of the other deployment's files, state and plans in the deploy bucket, and nothing else."
+  }
+
+  assert {
     condition     = one([for statement in jsondecode(aws_iam_role_policy.github_deploy[0].policy).Statement : statement if statement.Sid == "PublishTheLobby"]).Resource == "arn:aws:lambda:eu-central-1:123456789012:function:mpl"
     error_message = "The deploy role may publish the lobby function and no other."
   }
