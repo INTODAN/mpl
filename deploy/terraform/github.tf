@@ -1,6 +1,7 @@
 # The role that the repository's Deploy workflow (.github/workflows/deploy.yml)
 # assumes through GitHub's OIDC provider, so no AWS keys are stored in GitHub.
-# Only jobs in var.github_environment of var.github_repository may assume it.
+# Only jobs in var.github_environment of var.github_repository may assume it,
+# by the sub claim GitHub gives them (var.github_oidc_subject_prefix).
 #
 # It can read the account, as a plan must, and write only what a lobby or VM
 # deploy writes: the function's code and settings, this repository's part of
@@ -14,6 +15,9 @@ data "aws_caller_identity" "current" {}
 
 locals {
   github_deploy = var.github_repository != null
+  # The sub claim of the environment's jobs (variables.tf,
+  # github_oidc_subject_prefix).
+  github_oidc_subject = "${coalesce(var.github_oidc_subject_prefix, "repo:${coalesce(var.github_repository, "-")}")}:environment:${var.github_environment}"
   # This repository's part of the deploy bucket (deploy/deploy_files.py).
   deploy_bucket_prefix = "mpl/"
 }
@@ -39,7 +43,7 @@ resource "aws_iam_role" "github_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.github_environment}"
+          "token.actions.githubusercontent.com:sub" = local.github_oidc_subject
         }
       }
     }]

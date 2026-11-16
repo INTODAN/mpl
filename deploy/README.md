@@ -124,7 +124,7 @@ cp deploy/aws.example.tfvars deploy/local/aws.tfvars
 cp deploy/vm.example.yml deploy/local/vm.yml
 ```
 
-In `aws.tfvars`, describe the VM exactly as it runs: `adopt_vm = true`; `vm_instances` and `static_ip_instance` as in the other configuration's `aws.tfvars`, with any zone, blueprint or bundle it sets; `static_ip_name` as `aws lightsail get-static-ips` lists it (`island-battles-vm` for Island Battles); `vm_tags` as the instance's tags (`Project = "island-battles"`, `ManagedBy = "terraform"` for Island Battles); `manage_vm_firewall = false`; and `backup_denied_roles` with the other repository's GitHub roles (`island-battles-github-deploy`, `island-battles-github-apply`). Set `lobby_hostname`, `alert_email`, `region` and `github_repository = "INTODAN/mpl"`.
+In `aws.tfvars`, describe the VM exactly as it runs: `adopt_vm = true`; `vm_instances` and `static_ip_instance` as in the other configuration's `aws.tfvars`, with any zone, blueprint or bundle it sets; `static_ip_name` as `aws lightsail get-static-ips` lists it (`island-battles-vm` for Island Battles); `vm_tags` as the instance's tags (`Project = "island-battles"`, `ManagedBy = "terraform"` for Island Battles); `manage_vm_firewall = false`; and `backup_denied_roles` with the other repository's GitHub roles (`island-battles-github-deploy`, `island-battles-github-apply`). Set `lobby_hostname`, `alert_email`, `region` and `github_repository = "INTODAN/mpl"`, and `github_oidc_subject_prefix` to what `gh api repos/INTODAN/mpl/actions/oidc/customization/sub --jq .sub_claim_prefix` prints ([Deploying from GitHub Actions](#deploying-from-github-actions)).
 
 In `vm.yml`: `deploy_domain` and `lobby_url`; `centrifugo_proxy_url` as the game's Function URL, its `lambda_function_url`; `vm_compose_project: island-battles`, `vm_app_dir: /opt/island-battles` and `postgres_admin_role: island_battles_admin`, as the VM runs them; and the tenant ([Tenants](#tenants)), for Island Battles:
 
@@ -150,7 +150,8 @@ The Deploy workflow needs a role before it can plan, so the first apply creates 
 ```sh
 scripts/aws.sh apply -target=aws_acm_certificate.lobby \
   -target=aws_iam_role_policy.github_deploy -target=aws_iam_role_policy_attachment.github_deploy_read
-python3 -I deploy/github_apply_role.py create --repository INTODAN/mpl --deploy-bucket "$MPL_DEPLOY_BUCKET"
+python3 -I deploy/github_apply_role.py create --repository INTODAN/mpl --deploy-bucket "$MPL_DEPLOY_BUCKET" \
+  --subject-prefix "$(gh api repos/INTODAN/mpl/actions/oidc/customization/sub --jq .sub_claim_prefix)"
 scripts/aws.sh output github_deploy_role_arn
 scripts/aws.sh output certificate_validation_record
 ```
@@ -258,6 +259,8 @@ The Deploy workflow runs on `main` only, in the `production` environment, when s
 | `smoke` | deploy | `scripts/vm.sh smoke`. |
 
 The deploy role ([`terraform/github.tf`](terraform/github.tf)) reads the account and may write only the lobby function's code and settings, the bucket's `mpl/`, and get a temporary SSH key for the VM. The apply role ([`github_apply_role.py`](github_apply_role.py)) lives outside Terraform and may change Lightsail, Lambda, logs, alarms, SNS, ACM, CloudFront, buckets and IAM roles and users named `mpl-*`, and the bucket's `mpl/`; it can't change itself. Run `github_apply_role.py create` again after changing it.
+
+Both roles trust only the `production` environment's jobs, by the `sub` claim of their OIDC tokens. A repository created after 2026-07-15 gets GitHub's immutable form of it, with the owner's and the repository's IDs, such as `repo:INTODAN@69002101/mpl@1457098143:environment:production`, and can't go back to the name-based `repo:INTODAN/mpl:…`. `gh api repos/<owner>/<name>/actions/oidc/customization/sub --jq .sub_claim_prefix` prints the repository's prefix: set it as `github_oidc_subject_prefix` in `aws.tfvars`, for the deploy role, and pass it as `--subject-prefix` to `github_apply_role.py create`, for the apply role. A role that trusts the other form fails the run's first step with `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
 
 Agents start these runs only when the owner asks ([AGENTS.md](../AGENTS.md#deploying)): a `plan`, a summary of what it imports, creates, changes and destroys, and an `apply` only on the owner's word.
 

@@ -445,6 +445,63 @@ run "keeps_backups_from_the_github_roles" {
   }
 }
 
+run "trusts_the_immutable_oidc_subject" {
+  command = plan
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
+  override_data {
+    target = data.aws_iam_openid_connect_provider.github[0]
+    values = {
+      arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    }
+  }
+
+  override_resource {
+    target          = aws_s3_bucket.backups
+    override_during = plan
+    values = {
+      arn = "arn:aws:s3:::mpl-backups-123456789012"
+    }
+  }
+
+  override_resource {
+    target          = aws_iam_role.lambda
+    override_during = plan
+    values = {
+      arn = "arn:aws:iam::123456789012:role/mpl-lambda"
+    }
+  }
+
+  variables {
+    github_repository          = "example/mpl"
+    github_oidc_subject_prefix = "repo:example@123/mpl@456"
+    deploy_bucket              = "shared-deploy-123456789012"
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.github_deploy[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:example@123/mpl@456:environment:production"
+    error_message = "A repository with GitHub's immutable subject must be trusted by it, with the owner's and the repository's IDs."
+  }
+}
+
+run "refuses_another_repositorys_oidc_subject" {
+  command = plan
+
+  variables {
+    github_repository          = "example/mpl"
+    github_oidc_subject_prefix = "repo:other@123/mpl@456"
+    deploy_bucket              = "shared-deploy-123456789012"
+  }
+
+  expect_failures = [var.github_oidc_subject_prefix]
+}
+
 run "alarms_on_errors_and_missing_backups" {
   command = plan
 

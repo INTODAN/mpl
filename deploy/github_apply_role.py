@@ -20,10 +20,17 @@ widen the role that applies it. Run this again after changing it here.
 
 Usage, from the repository root, with credentials that can manage IAM:
 
-    python3 -I deploy/github_apply_role.py create --repository <owner>/<name> --deploy-bucket <bucket>
-    python3 -I deploy/github_apply_role.py policies --account <id> --repository <owner>/<name> --deploy-bucket <bucket>
+    python3 -I deploy/github_apply_role.py create --repository <owner>/<name> --deploy-bucket <bucket> [--subject-prefix <prefix>]
+    python3 -I deploy/github_apply_role.py policies --account <id> --repository <owner>/<name> --deploy-bucket <bucket> [--subject-prefix <prefix>]
 
 `policies` prints the trust and permission policies without calling AWS.
+
+--subject-prefix is the start of the sub claim in the repository's OIDC
+tokens, as aws.tfvars' github_oidc_subject_prefix sets it for the deploy role:
+the repository's sub_claim_prefix, which
+`gh api repos/<owner>/<name>/actions/oidc/customization/sub --jq .sub_claim_prefix`
+prints. It defaults to repo:<owner>/<name>, GitHub's name-based form; a
+repository created after 2026-07-15 has the immutable form, with IDs.
 """
 
 import json
@@ -57,7 +64,14 @@ def role_arn(account):
     return f"arn:aws:iam::{account}:role/{ROLE_NAME}"
 
 
-def trust_policy(account, repository):
+def subject_prefix_matches(prefix, repository):
+    """Whether prefix is repository's sub claim prefix, by name or with IDs."""
+    match = re.fullmatch(r"repo:([A-Za-z0-9_.-]+?)(?:@\d+)?/([A-Za-z0-9_.-]+?)(?:@\d+)?", prefix)
+    return match is not None and f"{match[1]}/{match[2]}" == repository
+
+
+def trust_policy(account, repository, subject_prefix=None):
+    subject_prefix = subject_prefix or f"repo:{repository}"
     return {
         "Version": "2012-10-17",
         "Statement": [{
@@ -66,7 +80,7 @@ def trust_policy(account, repository):
             "Action": "sts:AssumeRoleWithWebIdentity",
             "Condition": {"StringEquals": {
                 f"{OIDC_HOST}:aud": "sts.amazonaws.com",
-                f"{OIDC_HOST}:sub": f"repo:{repository}:environment:{ENVIRONMENT}",
+                f"{OIDC_HOST}:sub": f"{subject_prefix}:environment:{ENVIRONMENT}",
             }},
         }],
     }
@@ -123,14 +137,14 @@ def permissions_policy(account, deploy_bucket):
     }
 
 
-def create(repository, deploy_bucket):
+def create(repository, deploy_bucket, subject_prefix=None):
     account = aws("sts", "get-caller-identity", "--query", "Account", "--output", "text").strip()
     try:
         aws_json("iam", "get-open-id-connect-provider", "--open-id-connect-provider-arn", oidc_provider_arn(account))
     except AwsError as error:
         raise AwsError(f"{error}\nGitHub's OIDC provider is missing. Create it once for the account "
                        "(deploy/README.md, \"Deploying from GitHub Actions\").") from error
-    trust = json.dumps(trust_policy(account, repository))
+    trust = json.dumps(trust_policy(account, repository, subject_prefix))
     try:
         aws_json("iam", "create-role", "--role-name", ROLE_NAME, "--assume-role-policy-document", trust,
                  "--max-session-duration", "3600",
@@ -149,8 +163,10 @@ def create(repository, deploy_bucket):
 
 
 def main(arguments):
-    usage = ("Usage: github_apply_role.py create --repository <owner>/<name> --deploy-bucket <bucket>\n"
-             "       github_apply_role.py policies --account <id> --repository <owner>/<name> --deploy-bucket <bucket>")
+    usage = ("Usage: github_apply_role.py create --repository <owner>/<name> --deploy-bucket <bucket> "
+             "[--subject-prefix <prefix>]\n"
+             "       github_apply_role.py policies --account <id> --repository <owner>/<name> --deploy-bucket <bucket> "
+             "[--subject-prefix <prefix>]")
     if not arguments or arguments[0] not in ("create", "policies"):
         print(usage, file=sys.stderr)
         return 2
@@ -161,17 +177,22 @@ def main(arguments):
             not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", deploy_bucket):
         print(usage, file=sys.stderr)
         return 2
+    subject_prefix = options.get("--subject-prefix")
+    if subject_prefix is not None and not subject_prefix_matches(subject_prefix, repository):
+        print(f"--subject-prefix must be {repository}'s sub_claim_prefix, such as repo:{repository} or "
+              f"repo:{repository.replace('/', '@<owner ID>/')}@<repository ID>.", file=sys.stderr)
+        return 2
     if arguments[0] == "policies":
         account = options.get("--account", "")
         if not re.fullmatch(r"\d{12}", account):
             print(usage, file=sys.stderr)
             return 2
-        print(json.dumps({"trust": trust_policy(account, repository),
+        print(json.dumps({"trust": trust_policy(account, repository, subject_prefix),
                           "permissions": permissions_policy(account, deploy_bucket),
                           "managed": [READ_POLICY_ARN]}, indent=2))
         return 0
     try:
-        arn = create(repository, deploy_bucket)
+        arn = create(repository, deploy_bucket, subject_prefix)
     except AwsError as error:
         print(error, file=sys.stderr)
         return 1

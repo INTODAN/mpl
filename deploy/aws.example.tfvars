@@ -16,6 +16,11 @@ alert_email = "<your email address>"
 # Let the repository's Deploy workflow deploy through an IAM role that GitHub
 # Actions assumes with OIDC (deploy/README.md).
 github_repository = "<owner>/mpl"
+# The start of its OIDC tokens' sub claim, if it isn't repo:<owner>/mpl: a
+# repository created after 2026-07-15 has the immutable form, with IDs.
+# `gh api repos/<owner>/mpl/actions/oidc/customization/sub --jq .sub_claim_prefix`
+# prints it.
+# github_oidc_subject_prefix = "repo:<owner>@<owner ID>/mpl@<repository ID>"
 
 # The VM ----------------------------------------------------------------------
 #
