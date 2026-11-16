@@ -11,13 +11,12 @@ When a game needs something the lobby doesn't offer, add a generic mechanism tha
 Open work in this repository and in its sibling (INTODAN/island-battles-go, its first game) is tracked on one project board, [**Island Battles**](https://github.com/users/INTODAN/projects/1). Its Status column is **Parked** (ideas: don't start them unless the owner says), **Todo**, **In progress**, **In review** (a pull request waits) and **Done**. Steps only the owner can do are in INTODAN/island-battles-go#119. When asked to start implementing, continue, or "do the next issues":
 
 1. Take **Todo** items whose *Blocked by* issues are all closed. Check with `gh api repos/INTODAN/mpl/issues/N/dependencies/blocked_by`.
-2. Move the item to **In progress** before you start, so parallel sessions don't take it too, and to **In review** when its pull request is open. `gh project` needs the `project` scope, which the owner's `gh` login has had since 2026-11-16:
+2. Move the item to **In progress** before you start, so parallel sessions don't take it too, and to **In review** when its pull request is open. `gh project` needs the `project` scope; if `gh` reports it missing, ask the owner.
    ```sh
-   gh project item-list 1 --owner INTODAN --format json   # the item's id
-   gh project field-list 1 --owner INTODAN --format json  # the Status field's and options' ids
-   gh project item-edit --project-id <project id> --id <item id> --field-id <field id> --single-select-option-id <option id>
+   gh project item-list 1 --owner INTODAN --format json -L 200 --query "status:Todo"   # what's ready
+   gh project item-edit 1 --owner INTODAN --url <issue URL> --field Status --value "In progress"
    ```
-3. Implement one issue per pull request, with `Closes #N` in its body. Independent items can run in parallel in separate branches, worktrees or subagents.
+3. Implement one issue per pull request, with `Closes #N` in its body (or `Closes INTODAN/island-battles-go#N` for an issue in the sibling repository). Independent items can run in parallel in separate branches, worktrees or subagents.
 4. Don't merge, unless the owner told your session to. Then merge only after an independent review, with the branch up to date and its checks green. Move the item to **Done** once it's merged and its steps after the merge are done.
 5. **Every issue you file goes on the board:** `gh project item-add 1 --owner INTODAN --url <issue URL>`, then set its Status (**Parked** for a `discussion` issue, otherwise **Todo**). When it waits on another issue, add a *Blocked by* relationship on the issue (`gh api -X POST repos/INTODAN/mpl/issues/N/dependencies/blocked_by -F issue_id=<the blocking issue's numeric id>`), rather than writing it in the text.
 
