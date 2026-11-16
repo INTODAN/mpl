@@ -29,6 +29,7 @@ Each issue is written to be implemented on its own: read the whole issue, plus t
 ## Steps after a merge
 
 When your change needs a step after it merges (a plan and apply, an apply-role script, a setting, a release, a check), write it in the PR. Name who does it, and assume an agent does it with the owner's `gh` login and `aws login`, asking in chat before an apply, a release, or anything irreversible. Only these go to the owner's checklist that #1 names:
+
 - sign-ins an agent can't make: PyPI's website, DNS, the owner's inbox;
 - checks on real devices;
 - decisions.
