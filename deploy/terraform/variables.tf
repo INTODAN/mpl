@@ -310,6 +310,29 @@ variable "github_repository" {
   }
 }
 
+variable "github_oidc_subject_prefix" {
+  description = <<-EOT
+    The start of the sub claim in the repository's GitHub OIDC tokens, which
+    the deploy role trusts: the repository's sub_claim_prefix, which
+    `gh api repos/<owner>/<name>/actions/oidc/customization/sub --jq .sub_claim_prefix`
+    prints. Null means repo:<github_repository>, GitHub's name-based form.
+    Repositories created after 2026-07-15 get the immutable form, with the
+    owner's and the repository's IDs, such as repo:example@123/mpl@456; they
+    can't go back to the name-based one.
+  EOT
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.github_oidc_subject_prefix == null || (
+      can(regex("^repo:[A-Za-z0-9-]+(@[0-9]+)?/[A-Za-z0-9._-]+(@[0-9]+)?$", var.github_oidc_subject_prefix)) &&
+      var.github_repository != null &&
+      replace(coalesce(var.github_oidc_subject_prefix, "-"), "/@[0-9]+/", "") == "repo:${coalesce(var.github_repository, "-")}"
+    )
+    error_message = "github_oidc_subject_prefix must be github_repository's sub_claim_prefix, such as repo:example@123/mpl@456 for github_repository = \"example/mpl\"."
+  }
+}
+
 variable "github_environment" {
   description = "The GitHub environment whose jobs may assume the deploy role. Limit it to the main branch in the repository's settings."
   type        = string

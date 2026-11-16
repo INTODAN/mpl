@@ -68,6 +68,19 @@ class PolicyTest(unittest.TestCase):
             "token.actions.githubusercontent.com:sub": f"repo:{REPOSITORY}:environment:production",
         }})
 
+    def test_trusts_the_immutable_subject_when_given(self):
+        prefix = "repo:example@123/mpl@456"
+        trust = github_apply_role.trust_policy(ACCOUNT, REPOSITORY, prefix)["Statement"]
+        self.assertEqual(trust[0]["Condition"]["StringEquals"]["token.actions.githubusercontent.com:sub"],
+                         "repo:example@123/mpl@456:environment:production")
+
+    def test_matches_a_subject_prefix_to_its_repository(self):
+        for prefix in ("repo:example/mpl", "repo:example@123/mpl@456"):
+            self.assertTrue(github_apply_role.subject_prefix_matches(prefix, REPOSITORY), prefix)
+        for prefix in ("repo:other@123/mpl@456", "repo:example@123/other@456", "example@123/mpl@456",
+                       "repo:example@123/mpl@456:environment:production", "repo:example@x/mpl"):
+            self.assertFalse(github_apply_role.subject_prefix_matches(prefix, REPOSITORY), prefix)
+
     def test_changes_only_the_deployments_resources_and_never_itself(self):
         statements = {statement["Sid"]: statement
                       for statement in github_apply_role.permissions_policy(ACCOUNT, BUCKET)["Statement"]}
@@ -124,6 +137,24 @@ class CreateTest(unittest.TestCase):
         self.assertEqual(fake.argument("attach-role-policy", "--policy-arn"), "arn:aws:iam::aws:policy/ReadOnlyAccess")
         self.assertEqual(json.loads(fake.argument("put-role-policy", "--policy-document")),
                          github_apply_role.permissions_policy(ACCOUNT, BUCKET))
+
+    def test_creates_the_role_trusting_the_subject_prefix(self):
+        fake = FakeAws(role_exists=True)
+        prefix = "repo:example@123/mpl@456"
+        status, _, _ = run(fake, ["create", "--repository", REPOSITORY, "--deploy-bucket", BUCKET,
+                                  "--subject-prefix", prefix])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(fake.argument("update-assume-role-policy", "--policy-document")),
+                         github_apply_role.trust_policy(ACCOUNT, REPOSITORY, prefix))
+
+    def test_rejects_another_repositorys_subject_prefix(self):
+        fake = FakeAws()
+        status, _, errors = run(fake, ["create", "--repository", REPOSITORY, "--deploy-bucket", BUCKET,
+                                       "--subject-prefix", "repo:other@123/mpl@456"])
+        self.assertEqual(status, 2)
+        self.assertEqual(fake.calls, [])
+        self.assertIn("sub_claim_prefix", errors)
 
     def test_updates_an_existing_roles_trust_and_policies(self):
         fake = FakeAws(role_exists=True)
