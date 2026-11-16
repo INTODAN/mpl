@@ -48,6 +48,30 @@ class FakeAws:
         return call[call.index(name) + 1]
 
 
+# The object reads that ReadOnlyAccess allows with s3:Get*.
+OBJECT_READS = [
+    "s3:GetObject", "s3:GetObjectVersion", "s3:GetObjectAttributes", "s3:GetObjectVersionAttributes",
+    "s3:GetObjectTorrent", "s3:GetObjectVersionTorrent", "s3:GetObjectVersionForReplication",
+    "s3:GetObjectTagging", "s3:GetObjectVersionTagging", "s3:GetObjectAcl", "s3:GetObjectVersionAcl",
+    "s3:GetObjectRetention", "s3:GetObjectLegalHold",
+]
+
+
+def listed(value):
+    return value if isinstance(value, list) else [value]
+
+
+def matches(statement, action, resource):
+    """Whether statement names action and resource, with IAM's wildcards."""
+    return (any(fnmatch.fnmatchcase(action, pattern) for pattern in listed(statement["Action"]))
+            and any(fnmatch.fnmatchcase(resource, pattern) for pattern in listed(statement["Resource"])))
+
+
+def denied(policy, action, resource):
+    return any(statement["Effect"] == "Deny" and matches(statement, action, resource)
+               for statement in policy["Statement"])
+
+
 def run(fake, arguments):
     output, errors = io.StringIO(), io.StringIO()
     with mock.patch.object(github_apply_role, "aws", fake.text), \
@@ -110,6 +134,31 @@ class PolicyTest(unittest.TestCase):
         allowed = [statement for statement in statements.values() if statement["Effect"] == "Allow"]
         self.assertFalse(any(statement["Resource"] == "*" and "iam:*" in statement["Action"] for statement in allowed),
                          "IAM must stay limited to the deployment's own roles and users")
+
+    def test_cant_read_the_other_deployments_part_of_the_deploy_bucket(self):
+        policy = github_apply_role.permissions_policy(ACCOUNT, BUCKET)
+        statements = {statement["Sid"]: statement for statement in policy["Statement"]}
+        self.assertEqual(statements["KeepOutOfTheOtherDeploymentsPart"], {
+            "Sid": "KeepOutOfTheOtherDeploymentsPart", "Effect": "Deny", "Action": "s3:GetObject*",
+            "Resource": [f"arn:aws:s3:::{BUCKET}/files/*", f"arn:aws:s3:::{BUCKET}/terraform/*",
+                         f"arn:aws:s3:::{BUCKET}/plans/*"]})
+        # The other deployment's secrets, settings, state, lock and plans, in
+        # every version the bucket keeps, and their checksums.
+        for key in ("files/secrets/admin_api_key", "files/lambda.env", "terraform/terraform.tfstate",
+                    "terraform/terraform.tfstate.tflock", "plans/123/plan.tfplan"):
+            for action in OBJECT_READS:
+                self.assertTrue(denied(policy, action, f"arn:aws:s3:::{BUCKET}/{key}"), f"{action} {key}")
+        # Nothing of this repository's, including the tenants' settings that
+        # the game reads with its own roles.
+        for key in ("mpl/files/vm.yml", "mpl/files/secrets/postgres_admin_password", "mpl/terraform/terraform.tfstate",
+                    "mpl/plans/123/plan.tfplan", "mpl/tenants/island-battles/tenant.env", "mpl/vm-owner"):
+            resource = f"arn:aws:s3:::{BUCKET}/{key}"
+            for action in OBJECT_READS:
+                self.assertFalse(denied(policy, action, resource), f"{action} {key}")
+            self.assertTrue(matches(statements["UseItsPartOfTheDeployBucket"], "s3:GetObject", resource), key)
+        # Listing the bucket, and other buckets' objects, are left alone.
+        self.assertFalse(denied(policy, "s3:ListBucket", f"arn:aws:s3:::{BUCKET}"))
+        self.assertFalse(denied(policy, "s3:GetObject", f"arn:aws:s3:::mpl-backups-{ACCOUNT}/files/x"))
 
     def test_prints_the_policies_without_aws(self):
         fake = FakeAws()

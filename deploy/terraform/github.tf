@@ -3,13 +3,13 @@
 # Only jobs in var.github_environment of var.github_repository may assume it,
 # by the sub claim GitHub gives them (var.github_oidc_subject_prefix).
 #
-# It can read the account, as a plan must, and write only what a lobby or VM
-# deploy writes: the function's code and settings, this repository's part of
-# the deploy bucket (mpl/), and a temporary SSH key for the VM. Anything
-# else, such as new alarms or a change to the VM, goes through
-# `scripts/aws.sh apply`: on a person's machine, or in the Deploy workflow's
-# apply target, which applies a saved plan from main with the apply role from
-# deploy/github_apply_role.py.
+# It can read the account, as a plan must, except the other deployment's part
+# of the deploy bucket, and write only what a lobby or VM deploy writes: the
+# function's code and settings, this repository's part of the deploy bucket
+# (mpl/), and a temporary SSH key for the VM. Anything else, such as new
+# alarms or a change to the VM, goes through `scripts/aws.sh apply`: on a
+# person's machine, or in the Deploy workflow's apply target, which applies a
+# saved plan from main with the apply role from deploy/github_apply_role.py.
 
 data "aws_caller_identity" "current" {}
 
@@ -20,6 +20,11 @@ locals {
   github_oidc_subject = "${coalesce(var.github_oidc_subject_prefix, "repo:${coalesce(var.github_repository, "-")}")}:environment:${var.github_environment}"
   # This repository's part of the deploy bucket (deploy/deploy_files.py).
   deploy_bucket_prefix = "mpl/"
+  # The other deployment's part: the game whose VM this one took over keeps
+  # its files (with its secrets), its Terraform state and its saved plans at
+  # the bucket's root (deploy/README.md, "Deploying from GitHub Actions").
+  # deploy/github_apply_role.py denies the apply role the same.
+  other_deployment_prefixes = ["files/", "terraform/", "plans/"]
 }
 
 # An account has one OIDC provider for GitHub, which every repository's roles
@@ -111,6 +116,18 @@ resource "aws_iam_role_policy" "github_deploy" {
           "arn:aws:s3:::${var.deploy_bucket}/${local.deploy_bucket_prefix}terraform/terraform.tfstate.tflock",
           "arn:aws:s3:::${var.deploy_bucket}/${local.deploy_bucket_prefix}plans/*",
         ]
+      },
+      {
+        # ReadOnlyAccess reads every bucket, so an explicit Deny keeps the
+        # other deployment's secrets from this role. s3:GetObject* is every
+        # read of an object: its content, the earlier versions the bucket
+        # keeps, their checksums (GetObjectAttributes), tags and ACLs. None of
+        # them is this repository's to read. Listing the keys stays allowed,
+        # and nothing under mpl/ is denied.
+        Sid      = "KeepOutOfTheOtherDeploymentsPart"
+        Effect   = "Deny"
+        Action   = "s3:GetObject*"
+        Resource = [for prefix in local.other_deployment_prefixes : "arn:aws:s3:::${var.deploy_bucket}/${prefix}*"]
       },
       {
         Sid      = "LogInToTheVm"
