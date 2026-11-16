@@ -203,9 +203,9 @@ variable "database_max_open_connections" {
 variable "tenant_database_connections" {
   description = <<-EOT
     The most connections that the tenants, the games with a database on the
-    VM, open together: for a game on Lambda, its concurrency × its pools ×
-    its pool size. The default fits one game of 5 instances with two pools
-    of 2 each.
+    VM, open together: for a game on Lambda, its concurrency × its pool
+    size. The default fits one game of 5 instances with a pool of 2 each,
+    twice over.
   EOT
   type        = number
   default     = 20
