@@ -13,7 +13,7 @@ The open work lives in GitHub issues on `INTODAN/mpl`, and **issue #1 is the wor
 1. Read #1. Find the first wave with unticked items, and the items in it whose **needs** are all closed and that nobody has claimed.
 2. Claim each item you take by editing #1, as it describes.
 3. Implement one issue per pull request, with `Closes #N` in its body (or a link such as `INTODAN/island-battles-go#231`, for an issue that lives in a game's repository). Items marked ∥ can run in parallel in separate branches, worktrees or subagents. Items marked → wait for the item named.
-4. Don't merge. The owner reviews and merges, and ticks the item in #1.
+4. Don't merge, unless the owner told your session to. Then merge only after an independent review, with the branch up to date and its checks green, and tick the item in #1.
 
 Each issue is written to be implemented on its own: read the whole issue, plus the decisions and issues it links, before writing code.
 
@@ -23,8 +23,16 @@ Each issue is written to be implemented on its own: read the whole issue, plus t
 - `design-first`: post the mockup or design on the issue, then stop until the owner picks.
 - `needs-decision`: blocked on the owner. Ask on the issue; don't guess.
 - `discussion`: a future idea. Don't implement it.
-- `owner-action`: needs the owner's credentials or settings. Don't do it. When your change needs a manual step, say so in the PR and add it to the owner's checklist that #1 names.
+- `owner-action`: needs the owner. Ask on the issue first: most of these an agent can do with the owner's `gh` login and `aws login`.
 - `epic`: a parent issue. Work on its sub-issues, not on the epic itself.
+
+## Steps after a merge
+
+When your change needs a step after it merges (a plan and apply, an apply-role script, a setting, a release, a check), write it in the PR. Name who does it, and assume an agent does it with the owner's `gh` login and `aws login`, asking in chat before an apply, a release, or anything irreversible. Only these go to the owner's checklist that #1 names:
+
+- sign-ins an agent can't make: PyPI's website, DNS, the owner's inbox;
+- checks on real devices;
+- decisions.
 
 ## How to work in this repository
 
@@ -37,9 +45,9 @@ Each issue is written to be implemented on its own: read the whole issue, plus t
 
 ## Deploying
 
-You have no AWS credentials, and only merged code deploys. When the owner asks you to deploy or apply a change, use the Deploy workflow (`.github/workflows/deploy.yml`) on `main`, as [deploy/README.md](deploy/README.md#deploying-from-github-actions) describes, and only when asked:
+Only merged code deploys. When the owner asks you to deploy or apply a change, use the Deploy workflow (`.github/workflows/deploy.yml`) on `main`, as [deploy/README.md](deploy/README.md#deploying-from-github-actions) describes. In a session where the owner has run `aws login`, you may also read AWS, edit the deploy bucket's settings files, and, when the owner says, run `github_apply_role.py` or log in to the VM with Lightsail's temporary keys.
 
-1. The change must be merged first. Open the pull request, and wait for the owner to merge it.
+1. The change must be merged first: by the owner, or by you when the owner told your session to merge.
 2. For AWS resources, start a `plan` run on `main`. Read the plan from its log or summary, and tell the owner what it imports, creates, changes and destroys.
 3. Only when the owner says to, start an `apply` run with `plan_run_id` set to that plan run's ID. Never pass `allow_destroy` unless the owner named each resource.
 4. Then start the `vm`, `lobby` or `smoke` runs the change needs, and check the result: the job's log, and the AWS resources it should have changed.
