@@ -45,6 +45,7 @@ When your change needs a step after it merges (a plan and apply, an apply-role s
 - Skills in [`.agents/skills/`](.agents/skills/) hold the repository's conventions. Read the one that applies before changing that area:
   - `lobby-development`: Huma endpoints, application services, GORM persistence and migrations, hooks and the game API
   - `breaking-changes`: any change to the player API, the game API, events, stored data or the Python client
+  - `owner-token`: in a cloud environment, when the environment's own GitHub token can't do an action (such as editing the project board)
 - After changing an API, re-export the API documents and regenerate the Python models in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
 - Games pin the module by version (`go get github.com/INTODAN/mpl@vX.Y.Z`) and the Python client by its PyPI version. A change here reaches a game only after a release and the game's own update; say in the PR what a game must change.
 
