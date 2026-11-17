@@ -76,6 +76,11 @@ test("answers a response without a body with a null body, even when it says it i
   }
 });
 
+test("still reports a body that says it is JSON but isn't as unreachable", async () => {
+  const { options } = context(() => new Response("{bad", { status: 200, headers: { "Content-Type": "application/json" } }));
+  await assert.rejects(roomRequest({ path: `/quiz/${lobbyID}/players/choice` }, options), /Cannot reach/);
+});
+
 test("refuses other methods, paths and lobbies without fetching", async () => {
   const { calls, options } = context();
   const refused = [
