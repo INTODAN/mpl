@@ -53,9 +53,11 @@ type ValidateSettingsRequest struct {
 	Teams    []domain.TeamDefinition `json:"teams"`
 }
 
-// ValidateSeatRequest is the body of validate-seat.
+// ValidateSeatRequest is the body of validate-seat. PlayerID is the player
+// making the request, whom the lobby checks to be the host only afterwards.
 type ValidateSeatRequest struct {
 	LobbyID  string          `json:"lobby_id"`
+	PlayerID string          `json:"player_id"`
 	Settings json.RawMessage `json:"settings"`
 }
 

@@ -13,14 +13,14 @@ import (
 
 // AddSeat adds a seat that no person plays, such as a game's bot, to a team of
 // a waiting lobby. Only the host can add one. The game checks the seat's
-// settings and names the seat before the transaction, so it never runs while
-// the room is locked. The seat takes its team, which holds no other member,
-// and counts toward the lobby's capacity. It is always ready, holds no lease,
-// and joins the start roster with its own player ID, which the game plays
-// from the seat's settings. A request
-// ID makes a retry safe: the same ID with the same team and settings returns
-// the current snapshot without a second seat, and with others fails with
-// idempotency_conflict.
+// settings, for the player making the request, and names the seat before the
+// transaction, so it never runs while the room is locked; the host check
+// runs afterwards, inside it. The seat takes its team, which holds no other
+// member, and counts toward the lobby's capacity. It is always ready, holds no
+// lease, and joins the start roster with its own player ID, which the game
+// plays from the seat's settings. A request ID makes a retry safe: the same ID
+// with the same team and settings returns the current snapshot without a
+// second seat, and with others fails with idempotency_conflict.
 func (service *Service) AddSeat(ctx context.Context, principal domain.Principal, scope domain.Scope, request domain.AddSeatRequest) (domain.Snapshot, error) {
 	if err := validatePrincipal(principal); err != nil {
 		return domain.Snapshot{}, err
@@ -31,7 +31,7 @@ func (service *Service) AddSeat(ctx context.Context, principal domain.Principal,
 	if domain.ValidateUUID(request.TeamID) != nil || (request.RequestID != "" && domain.ValidateUUID(request.RequestID) != nil) {
 		return domain.Snapshot{}, domain.ErrInvalidInput
 	}
-	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, scope.LobbyID, request.SeatSettings)
+	settings, name, err := service.policy.ValidateSeatSettings(ctx, scope.GameKey, scope.LobbyID, principal.PlayerID, request.SeatSettings)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}

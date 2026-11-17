@@ -85,9 +85,9 @@ func (client *Client) ValidateSettings(ctx context.Context, lobbyID string, sett
 }
 
 // ValidateSeat calls validate-seat; it is a domain.SeatValidator.
-func (client *Client) ValidateSeat(ctx context.Context, lobbyID string, settings json.RawMessage) (string, error) {
+func (client *Client) ValidateSeat(ctx context.Context, lobbyID, playerID string, settings json.RawMessage) (string, error) {
 	var seat ValidateSeatResponse
-	if err := client.validate(ctx, HookValidateSeat, ValidateSeatRequest{LobbyID: lobbyID, Settings: settings}, &seat); err != nil {
+	if err := client.validate(ctx, HookValidateSeat, ValidateSeatRequest{LobbyID: lobbyID, PlayerID: playerID, Settings: settings}, &seat); err != nil {
 		return "", err
 	}
 	return seat.DisplayName, nil

@@ -18,6 +18,8 @@ import (
 // recordingGame is a game written in Go whose hooks record what they got.
 type recordingGame struct {
 	settingsLobby string
+	seatLobby     string
+	seatPlayer    string
 	teams         []domain.TeamDefinition
 	members       []domain.ReadyMember
 	atStart       bool
@@ -37,7 +39,8 @@ func (game *recordingGame) registration() domain.GameRegistration {
 			}
 			return errors.New("mode must be fast")
 		},
-		ValidateSeat: func(_ context.Context, _ string, settings json.RawMessage) (string, error) {
+		ValidateSeat: func(_ context.Context, lobbyID, playerID string, settings json.RawMessage) (string, error) {
+			game.seatLobby, game.seatPlayer = lobbyID, playerID
 			if string(settings) != `{"level":1}` {
 				return "", errors.New("level must be 1")
 			}
@@ -107,10 +110,10 @@ func TestTheClientCallsAGoGameThroughTheHandler(t *testing.T) {
 	}
 
 	// Seats and member settings.
-	if _, name, err := policy.ValidateSeatSettings(ctx, "example-game", "", json.RawMessage(`{"level":1}`)); err != nil || name != "Robot" {
-		t.Fatalf("seat = %q, %v", name, err)
+	if _, name, err := policy.ValidateSeatSettings(ctx, "example-game", "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", json.RawMessage(`{"level":1}`)); err != nil || name != "Robot" || game.seatLobby != "00000000-0000-4000-8000-000000000001" || game.seatPlayer != "00000000-0000-4000-8000-000000000002" {
+		t.Fatalf("seat = %q, %v, lobby %q, player %q", name, err, game.seatLobby, game.seatPlayer)
 	}
-	if _, _, err := policy.ValidateSeatSettings(ctx, "example-game", "", json.RawMessage(`{"level":2}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings || err.Error() != "level must be 1" {
+	if _, _, err := policy.ValidateSeatSettings(ctx, "example-game", "", "", json.RawMessage(`{"level":2}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings || err.Error() != "level must be 1" {
 		t.Fatalf("refused seat = %v", err)
 	}
 	if _, err := policy.ValidateMemberSettings(ctx, "example-game", "", json.RawMessage(`{}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidMemberSettings || err.Error() != "no member settings here" {
@@ -162,7 +165,7 @@ func TestNilHooksAnswerAsTheLobbyTreatsThem(t *testing.T) {
 	if err := client.ValidateSettings(ctx, "", json.RawMessage(`{"a":1}`), nil); err == nil || errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("settings = %v", err)
 	}
-	if _, err := client.ValidateSeat(ctx, "", json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
+	if _, err := client.ValidateSeat(ctx, "", "", json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("seat = %v", err)
 	}
 	if err := client.ValidateMemberSettings(ctx, "", json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
