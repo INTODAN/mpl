@@ -61,6 +61,21 @@ test("answers a problem with its status and body", async () => {
   assert.deepEqual(await roomRequest({ path: `/quiz/${lobbyID}/players/choice` }, text.options), { status: 502, body: null });
 });
 
+test("answers a response without a body with a null body, even when it says it is JSON", async () => {
+  const json = { "Content-Type": "application/json" };
+  for (const respond of [
+    () => new Response(null, { status: 204, headers: json }),
+    () => new Response(null, { status: 204 }),
+    () => new Response("", { status: 200, headers: json }),
+    () => new Response("", { status: 404, headers: { "Content-Type": "application/problem+json" } }),
+  ]) {
+    const { options } = context(respond);
+    const answer = await roomRequest({ method: "DELETE", path: `/quiz/${lobbyID}/players/uploads/1` }, options);
+    const expected = respond();
+    assert.deepEqual(answer, { status: expected.status, body: null });
+  }
+});
+
 test("refuses other methods, paths and lobbies without fetching", async () => {
   const { calls, options } = context();
   const refused = [

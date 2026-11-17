@@ -16,7 +16,8 @@ const repeatableRoomMethods = ["GET", "PUT", "DELETE"];
 export const roomTimeoutMilliseconds = 8000;
 
 // roomRequest fetches a room module's request and resolves to its status and
-// body: the parsed value for a JSON response, and null otherwise. It throws an
+// body: the parsed value for a JSON response, and null otherwise, and for a
+// response without a body, such as a 204, whatever its Content-Type. It throws an
 // Error that says why when it refuses the request, or can't get an answer.
 // fetch sends the request with the player's token for the game, as
 // playertoken.mjs's playerTokenFetch does.
@@ -41,7 +42,10 @@ export async function roomRequest({ method = "GET", path, body }, { prefix, lobb
     if (response.status === 429) return { status: 429, body: { status: 429, detail: serverBusyMessage } };
     const type = response.headers.get("Content-Type") || "";
     const json = /^application\/(problem\+)?json\b/.test(type);
-    return { status: response.status, body: json ? await response.json() : null };
+    // A 204 may still say it is JSON, as a Lambda function URL does when
+    // the function sets no Content-Type, so read the body before parsing it.
+    const text = json ? await response.text() : "";
+    return { status: response.status, body: text === "" ? null : JSON.parse(text) };
   } catch {
     throw new Error("Cannot reach the game server. Check your connection and try again.");
   } finally {
