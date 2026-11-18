@@ -17,7 +17,7 @@ The types of the API (`Snapshot`, `Member`, `paths` and the rest) are generated 
 npm install mpl-lobby-client@X.Y.Z   # or: bun add mpl-lobby-client@X.Y.Z
 ```
 
-Each release publishes it at the release's version, the same as the Go module's tag and the Python client's version. It is an ES module for browsers, Node 20.3 or newer, Bun and Deno, and needs `fetch`, `WebSocket`, `crypto.randomUUID` and `AbortSignal.any`. In Node older than 22, which has no global `WebSocket`, pass one to the Centrifugo SDK through the `realtime` option.
+Each release publishes it at the release's version, the same as the Go module's tag and the Python client's version. It is an ES module for browsers, Node 22 or newer, Bun and Deno, and needs `fetch`, `WebSocket`, `crypto.randomUUID` and `AbortSignal.any`. Where the runtime has no `WebSocket`, a join fails with `CompatibilityError` `realtime_unavailable`.
 
 ## Using it
 

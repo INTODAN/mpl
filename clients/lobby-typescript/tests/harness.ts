@@ -163,11 +163,18 @@ export class FakeSDK extends Emitter implements RealtimeClient {
 		super();
 	}
 
+	failConnect = false;
+
 	connect(): void {
+		if (this.failConnect) throw new Error("WebSocket constructor not found");
 		this.emit("connected");
 	}
 
 	newSubscription(channel: string, options: { recoverable: boolean; positioned: boolean }) {
+		// Like the real SDK, one subscription per channel.
+		if (this.subscriptions.some((item) => item.channel === channel)) {
+			throw new Error(`Subscription to the channel ${channel} already exists`);
+		}
 		const subscription = new FakeSubscription(this, channel, options);
 		this.subscriptions.push(subscription);
 		return subscription;
@@ -201,6 +208,8 @@ export class Harness {
 	sdks: FakeSDK[] = [];
 	/** Whether new subscriptions are acknowledged as soon as they subscribe. */
 	autoAck = true;
+	/** Whether new SDKs fail to connect, as with no WebSocket in the runtime. */
+	failConnect = false;
 	client: LobbyClient;
 
 	constructor(credential: string | null = "retained-secret") {
@@ -210,6 +219,7 @@ export class Harness {
 			realtime: (address, options) => {
 				const sdk = new FakeSDK(address, options);
 				sdk.autoAck = this.autoAck;
+				sdk.failConnect = this.failConnect;
 				this.sdks.push(sdk);
 				return sdk;
 			},

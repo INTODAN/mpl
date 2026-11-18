@@ -157,6 +157,7 @@ jobs:
   publish-npm:
     needs: release
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     environment:
       name: npm
       url: https://www.npmjs.com/package/mpl-lobby-client
@@ -180,7 +181,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          check-latest: true
           registry-url: https://registry.npmjs.org
+
+      - name: Check npm can publish with trusted publishing
+        run: |
+          version="$(npm --version)"
+          if [[ "$(printf '%s\n%s\n' 11.5.1 "$version" | sort -V | head -n 1)" != 11.5.1 ]]; then
+            echo "::error::npm $version can't publish with trusted publishing; it needs 11.5.1 or newer."
+            exit 1
+          fi
 
       - name: Install
         run: bun install --frozen-lockfile

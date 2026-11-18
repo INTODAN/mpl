@@ -329,10 +329,16 @@ export class LobbyClient {
 		sdk.on("disconnected", () => {
 			this.#connected = false;
 		});
+		try {
+			sdk.connect();
+		} catch {
+			// A setup no retry can fix, such as no WebSocket in this runtime. The
+			// client keeps no SDK, so a later call tries again rather than hang.
+			throw new CompatibilityError("realtime_unavailable");
+		}
 		this.#sdk = sdk;
 		this.#spawn(this.#worker());
 		this.#spawn(this.#ticker());
-		sdk.connect();
 	}
 
 	/**
@@ -406,6 +412,8 @@ export class LobbyClient {
 		this.#states.set(key, state);
 		try {
 			await this.#ensureSdk();
+			// A newer join of this lobby may have replaced this one meanwhile.
+			if (!this.#current(state)) throw state.error ?? new ClientClosedError();
 			const sdk = this.#sdk;
 			if (!sdk) throw new ClientClosedError();
 			const subscription = sdk.newSubscription(result.channel, {

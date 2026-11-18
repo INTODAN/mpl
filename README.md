@@ -85,7 +85,7 @@ It also has a `workflow_call` trigger, so the release workflow runs the same che
 
 Before the first release, the PyPI project's trusted publisher must name this repository, the workflow `release.yml` and the environment `pypi`, and the environment should be limited to `main`.
 
-npm lets a package have a trusted publisher only once it exists, so the first npm version is published by hand: from the release's tag, in `clients/lobby-typescript`, `npm version --no-git-tag-version X.Y.Z` and `npm publish --access public` with the owner's npm login. Then the package's settings on npmjs.com name the trusted publisher: the GitHub repository `INTODAN/mpl`, the workflow `release.yml` and the environment `npm`, which should be limited to `main` too. The workflow's npm job skips a version that npm has already.
+npm lets a package have a trusted publisher only once it exists, so the first npm version is published by hand: from the release's tag, in `clients/lobby-typescript`, `npm version --no-git-tag-version X.Y.Z` and `npm publish --access public --provenance=false` with the owner's npm login (provenance needs CI, so only the workflow's versions have it). Then the package's settings on npmjs.com name the trusted publisher: the GitHub repository `INTODAN/mpl`, the workflow `release.yml` and the environment `npm`, which should be limited to `main` too. The workflow's npm job skips a version that npm has already.
 
 ## Deploying
 

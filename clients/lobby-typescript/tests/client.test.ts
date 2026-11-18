@@ -139,6 +139,22 @@ describe("following a lobby", () => {
 		expect(other.lobby.id).toBe(OTHER);
 	});
 
+	test("a realtime client that can't connect fails each join instead of hanging", async () => {
+		h.failConnect = true;
+		await expect(h.join()).rejects.toThrow("realtime_unavailable");
+		await expect(h.join()).rejects.toThrow("realtime_unavailable");
+		h.failConnect = false;
+		expect((await h.join()).lobby.id).toBe(LOBBY);
+	});
+
+	test("two joins of one lobby at once leave the newer one following it", async () => {
+		const [first, second] = await Promise.allSettled([h.join(), h.join()]);
+		expect(first.status).toBe("rejected");
+		expect(second.status).toBe("fulfilled");
+		expect((await h.client.snapshot(SCOPE)).lobby.id).toBe(LOBBY);
+		expect(h.sdk.subscriptions).toHaveLength(1);
+	});
+
 	test("periodic reconcile reads even while disconnected", async () => {
 		await h.join();
 		h.sdk.emit("disconnected");
