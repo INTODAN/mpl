@@ -81,6 +81,8 @@ describe("following a lobby", () => {
 		h.sub.publish(5, { schema_version: 2 });
 		await settle();
 		expect(() => h.client.updates(SCOPE)).toThrow(CompatibilityError);
+		// A stopped scope leaves its channel.
+		expect(h.sdk.subscriptions).toHaveLength(0);
 	});
 
 	test("a slow reader skips to the newest snapshot", async () => {
@@ -120,6 +122,21 @@ describe("following a lobby", () => {
 		sub.unsubscribe();
 		await until(() => sub.calls === 2);
 		expect(readsAtResubscribe).toBe(before + 1);
+	});
+
+	test("an unexpected failure stops one scope, and later joins still sync", async () => {
+		await h.join();
+		const sub = h.sub;
+		sub.subscribe = () => {
+			throw new TypeError("SDK failure");
+		};
+		sub.unsubscribe();
+		await until(() => h.sdk.subscriptions.length === 0);
+		await expect(h.client.snapshot(SCOPE)).rejects.toThrow("background_failure");
+		h.hook = (call) =>
+			call.path.endsWith("/memberships") ? json(200, snapshot(1, 1, OTHER)) : undefined;
+		const other = await h.client.joinLobby({ gameKey: "quiz-demo", joinCode: "EFGH" });
+		expect(other.lobby.id).toBe(OTHER);
 	});
 
 	test("periodic reconcile reads even while disconnected", async () => {
@@ -247,6 +264,12 @@ describe("tokens and errors", () => {
 		});
 		await expect(client.issuePlayerToken("quiz-demo")).rejects.toBeInstanceOf(TransientError);
 		await client.close();
+	});
+
+	test("a base URL that isn't absolute http(s) is refused at once", () => {
+		expect(() => new LobbyClient("lobby.example.org")).toThrow(TypeError);
+		expect(() => new LobbyClient("ftp://lobby.example.org")).toThrow(TypeError);
+		expect(() => new LobbyClient("https://lobby.example.org/")).not.toThrow();
 	});
 
 	test("a malformed success is a compatibility error", async () => {

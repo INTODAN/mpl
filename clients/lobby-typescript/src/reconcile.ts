@@ -24,20 +24,36 @@ export class Latch {
 	}
 }
 
-/** A resettable event, like asyncio.Event. */
+/**
+ * A resettable event, like asyncio.Event. Waiters register a listener and
+ * remove it when they stop waiting, so a long-lived signal holds none of
+ * their state.
+ */
 export class Signal {
-	#latch = new Latch();
+	#set = false;
+	readonly #listeners = new Set<() => void>();
 
 	set(): void {
-		this.#latch.set();
+		this.#set = true;
+		const listeners = [...this.#listeners];
+		this.#listeners.clear();
+		for (const listener of listeners) listener();
 	}
 
 	clear(): void {
-		if (this.#latch.isSet) this.#latch = new Latch();
+		this.#set = false;
 	}
 
-	wait(): Promise<void> {
-		return this.#latch.promise;
+	/** Calls listener once the signal is set, at once if it is. Returns a function that cancels it. */
+	onSet(listener: () => void): () => void {
+		if (this.#set) {
+			listener();
+			return () => {};
+		}
+		this.#listeners.add(listener);
+		return () => {
+			this.#listeners.delete(listener);
+		};
 	}
 }
 

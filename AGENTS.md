@@ -44,7 +44,7 @@ When your change needs a step after it merges (a plan and apply, an apply-role s
 - Commands for building, formatting, testing and checking the API documents and the generated Python models are under **Commands** in [README.md](README.md), with the checks that run on every pull request.
 - Skills in [`.agents/skills/`](.agents/skills/) hold the repository's conventions. Read the one that applies before changing that area:
   - `lobby-development`: Huma endpoints, application services, GORM persistence and migrations, hooks and the game API
-  - `breaking-changes`: any change to the player API, the game API, events, stored data or the Python client
+  - `breaking-changes`: any change to the player API, the game API, events, stored data or the Python or TypeScript client
 - After changing an API, re-export the API documents and regenerate the Python models and the TypeScript types in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
 - Games pin the module by version (`go get github.com/INTODAN/mpl@vX.Y.Z`) and the clients by their PyPI and npm versions. A change here reaches a game only after a release and the game's own update; say in the PR what a game must change.
 

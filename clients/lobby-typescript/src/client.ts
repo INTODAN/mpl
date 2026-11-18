@@ -15,14 +15,7 @@ import {
 	TransientError,
 } from "./errors.js";
 import type { paths } from "./generated/openapi.js";
-import {
-	Consumer,
-	Latch,
-	type RealtimeSubscription,
-	ScopeState,
-	Signal,
-	scopeKey,
-} from "./reconcile.js";
+import { Consumer, type RealtimeSubscription, ScopeState, Signal, scopeKey } from "./reconcile.js";
 import {
 	type ConnectionToken,
 	type GameSettings,
@@ -110,6 +103,24 @@ function canonicalJSON(value: unknown): string {
 	return JSON.stringify(value);
 }
 
+function backgroundFailure(): LobbyError {
+	return new LobbyError("background_failure");
+}
+
+/** The lobby's base URL, refused at once unless it is an absolute http(s) URL. */
+function baseURL(value: string): string {
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		throw new TypeError(`baseUrl must be an absolute http or https URL, not ${value}`);
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new TypeError(`baseUrl must be an absolute http or https URL, not ${value}`);
+	}
+	return value.replace(/\/+$/, "");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -162,7 +173,6 @@ export class LobbyClient {
 	readonly #leases = new Map<string, { scope: Scope; generation: number }>();
 	readonly #dirty = new Set<string>();
 	readonly #wakeup = new Signal();
-	readonly #closing = new Latch();
 	readonly #abort = new AbortController();
 	readonly #tasks = new Set<Promise<void>>();
 	#closePromise: Promise<void> | undefined;
@@ -171,7 +181,7 @@ export class LobbyClient {
 	constructor(baseUrl: string, options: LobbyClientOptions = {}) {
 		this.credential = options.credential;
 		this.#http = createFetchClient<paths>({
-			baseUrl: baseUrl.replace(/\/+$/, ""),
+			baseUrl: baseURL(baseUrl),
 			...(options.fetch ? { fetch: options.fetch } : {}),
 		});
 		this.#realtime = options.realtime ?? defaultRealtime;
@@ -196,7 +206,7 @@ export class LobbyClient {
 			() => {},
 			(error: unknown) => {
 				if (this.#closed) return;
-				const failure = error instanceof LobbyError ? error : new LobbyError("background_failure");
+				const failure = error instanceof LobbyError ? error : backgroundFailure();
 				for (const state of this.#states.values()) this.#fail(state, failure);
 			},
 		);
@@ -391,7 +401,6 @@ export class LobbyClient {
 		const old = this.#states.get(key);
 		if (old) {
 			this.#fail(old, new MembershipError("membership_replaced"));
-			this.#removeSubscription(old);
 		}
 		const state = new ScopeState(scope, result.channel, result.membership_generation);
 		this.#states.set(key, state);
@@ -415,7 +424,6 @@ export class LobbyClient {
 			const failure =
 				error instanceof LobbyError ? error : new MembershipError("synchronization_failed");
 			this.#fail(state, failure);
-			if (!(error instanceof LobbyError)) this.#removeSubscription(state);
 			throw error;
 		}
 	}
@@ -501,19 +509,47 @@ export class LobbyClient {
 
 	#fail(state: ScopeState, error: LobbyError): void {
 		state.fail(error);
+		// A stopped scope follows nothing: its channel is left at once.
+		this.#removeSubscription(state);
 		const key = scopeKey(state.scope);
 		if (this.#states.get(key) === state) this.#dirty.delete(key);
 		this.#wakeup.set();
 	}
 
-	/** Waits ms milliseconds, or until the client closes. */
-	async #pause(ms: number, wakeOn?: Promise<void>): Promise<void> {
+	/**
+	 * Waits ms milliseconds, or less when the client closes or, with
+	 * wakeable, when the worker is woken. Every listener is removed
+	 * afterwards, so repeated waits hold nothing.
+	 */
+	async #pause(ms: number, wakeable = false): Promise<void> {
 		const controller = new AbortController();
 		const stop = () => controller.abort();
-		void this.#closing.promise.then(stop);
-		void wakeOn?.then(stop);
-		await this.#sleep(ms, controller.signal);
-		controller.abort();
+		const closing = this.#abort.signal;
+		closing.addEventListener("abort", stop, { once: true });
+		const cancelWake = wakeable ? this.#wakeup.onSet(stop) : undefined;
+		try {
+			if (!closing.aborted) await this.#sleep(ms, controller.signal);
+		} finally {
+			closing.removeEventListener("abort", stop);
+			cancelWake?.();
+			controller.abort();
+		}
+	}
+
+	/** Waits until the worker is woken or the client closes. */
+	#idle(): Promise<void> {
+		return new Promise((resolve) => {
+			const closing = this.#abort.signal;
+			if (closing.aborted) return resolve();
+			let cancelWake = () => {};
+			const done = () => {
+				closing.removeEventListener("abort", done);
+				cancelWake();
+				resolve();
+			};
+			closing.addEventListener("abort", done, { once: true });
+			cancelWake = this.#wakeup.onSet(done);
+		});
 	}
 
 	static #path(scope: Scope) {
@@ -579,10 +615,10 @@ export class LobbyClient {
 				} catch (error) {
 					if (error instanceof TransientError) {
 						this.#retry(state);
-					} else if (error instanceof LobbyError) {
-						if (this.#current(state)) this.#fail(state, error);
-					} else {
-						throw error;
+					} else if (this.#current(state)) {
+						// Any other failure stops only this scope; the worker keeps
+						// serving the others and the lobbies joined later.
+						this.#fail(state, error instanceof LobbyError ? error : backgroundFailure());
 					}
 				}
 			}
@@ -592,9 +628,9 @@ export class LobbyClient {
 				.filter((state): state is ScopeState => state !== undefined)
 				.map((state) => Math.max(0, state.retryAt - this.#clock()));
 			if (delays.length > 0) {
-				await this.#pause(Math.min(...delays), this.#wakeup.wait());
+				await this.#pause(Math.min(...delays), true);
 			} else {
-				await Promise.race([this.#wakeup.wait(), this.#closing.promise]);
+				await this.#idle();
 			}
 		}
 	}
@@ -641,8 +677,9 @@ export class LobbyClient {
 			} catch (error) {
 				// A transient failure: the next heartbeat retries this same lease.
 				if (error instanceof TransientError) continue;
-				if (!(error instanceof LobbyError)) throw error;
-				if (this.#current(state)) this.#fail(state, error);
+				if (this.#current(state)) {
+					this.#fail(state, error instanceof LobbyError ? error : backgroundFailure());
+				}
 			}
 		}
 	}
@@ -925,7 +962,6 @@ export class LobbyClient {
 			);
 			this.#leases.delete(key);
 		} finally {
-			this.#removeSubscription(state);
 			if (this.#states.get(key) === state) {
 				this.#states.delete(key);
 				this.#dirty.delete(key);
@@ -955,7 +991,6 @@ export class LobbyClient {
 			this.#closed = true;
 			this.#connected = false;
 			for (const state of this.#states.values()) this.#fail(state, new ClientClosedError());
-			this.#closing.set();
 			this.#wakeup.set();
 			this.#abort.abort();
 			this.#closePromise = this.#cleanup();
@@ -984,7 +1019,6 @@ export class LobbyClient {
 				),
 			),
 		);
-		for (const state of this.#states.values()) this.#removeSubscription(state);
 		try {
 			this.#sdk?.disconnect();
 		} catch {}
