@@ -187,7 +187,7 @@ func (handler *hooksHandler) validateSeat(ctx context.Context, response http.Res
 		refuse(response, errors.New("this game has no seats that the host can add"))
 		return
 	}
-	name, err := handler.game.ValidateSeat(ctx, input.LobbyID, input.Settings)
+	name, err := handler.game.ValidateSeat(ctx, input.LobbyID, input.PlayerID, input.Settings)
 	if err != nil {
 		refuse(response, err)
 		return

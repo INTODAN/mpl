@@ -70,12 +70,16 @@ type GameStarter func(ctx context.Context, snapshot Snapshot) (gameID string, er
 type GameOverCheck func(ctx context.Context, lobbyID string, round int64) (bool, error)
 
 // SeatValidator receives the settings of a seat that the host adds, as a
-// canonical JSON object, with the lobby's ID, and returns the display name that the lobby shows
-// for the seat, such as "Bot (level 2)". To reject the settings, return an
+// canonical JSON object, with the lobby's ID and the ID of the player making
+// the request, and returns the display name that the lobby shows for the
+// seat, such as "Bot (level 2)". The lobby checks that the player is the
+// host of a waiting lobby only afterwards, inside its transaction, so a game
+// that ties a seat to a player compares the player it names with playerID
+// and leaves the host check to the lobby. To reject the settings, return an
 // error whose message is safe to show the client. To report that the check
 // itself failed, return the context's error or an error wrapping
 // ErrUnavailable.
-type SeatValidator func(ctx context.Context, lobbyID string, settings json.RawMessage) (displayName string, err error)
+type SeatValidator func(ctx context.Context, lobbyID, playerID string, settings json.RawMessage) (displayName string, err error)
 
 // MemberSettingsValidator receives the member settings that a person sets for
 // themselves in a lobby, as a canonical JSON object, with the lobby's ID. To
@@ -329,10 +333,11 @@ func (policy Policy) ValidateGameSettings(ctx context.Context, gameKey, lobbyID 
 }
 
 // ValidateSeatSettings normalizes a seat's settings and checks them with the
-// game's seat validator. It returns the canonical settings to store with the
-// seat and the seat's display name. A game without a seat validator has no
-// seats and refuses every one with CodeInvalidSeatSettings.
-func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage) (json.RawMessage, string, error) {
+// game's seat validator, for the player making the request. It returns the
+// canonical settings to store with the seat and the seat's display name. A
+// game without a seat validator has no seats and refuses every one with
+// CodeInvalidSeatSettings.
+func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey, lobbyID, playerID string, settings json.RawMessage) (json.RawMessage, string, error) {
 	game, err := policy.Game(gameKey)
 	if err != nil {
 		return nil, "", err
@@ -344,7 +349,7 @@ func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey, lobbyID 
 	if game.ValidateSeat == nil {
 		return nil, "", NewError(CodeInvalidSeatSettings, "this game has no seats that the host can add")
 	}
-	name, err := game.ValidateSeat(ctx, lobbyID, bytes.Clone(canonical))
+	name, err := game.ValidateSeat(ctx, lobbyID, playerID, bytes.Clone(canonical))
 	switch {
 	case err == nil:
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrUnavailable):

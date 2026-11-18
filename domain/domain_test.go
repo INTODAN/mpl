@@ -152,34 +152,38 @@ func TestValidateGameSettingsUsesTheGameValidator(t *testing.T) {
 	}
 }
 func TestValidateSeatSettingsUsesTheGamesSeatValidator(t *testing.T) {
+	const caller = "00000000-0000-4000-8000-000000000007"
 	policy := domain.DefaultPolicy(
 		domain.GameRegistration{Key: "no-seats"},
-		domain.GameRegistration{Key: "bots", ValidateSeat: func(_ context.Context, _ string, settings json.RawMessage) (string, error) {
+		domain.GameRegistration{Key: "bots", ValidateSeat: func(_ context.Context, _, playerID string, settings json.RawMessage) (string, error) {
+			if playerID != caller {
+				return "", errors.New("the seat check got another player: " + playerID)
+			}
 			if string(settings) != `{"bot_level":2}` {
 				return "", errors.New("bot_level must be 2")
 			}
 			return "  Bot (level 2) ", nil
 		}},
-		domain.GameRegistration{Key: "offline", ValidateSeat: func(context.Context, string, json.RawMessage) (string, error) {
+		domain.GameRegistration{Key: "offline", ValidateSeat: func(context.Context, string, string, json.RawMessage) (string, error) {
 			return "", &domain.Error{Code: domain.CodeUnavailable, Message: "offline"}
 		}},
-		domain.GameRegistration{Key: "unnamed", ValidateSeat: func(context.Context, string, json.RawMessage) (string, error) { return " ", nil }},
+		domain.GameRegistration{Key: "unnamed", ValidateSeat: func(context.Context, string, string, json.RawMessage) (string, error) { return " ", nil }},
 	)
 	ctx := context.Background()
-	settings, name, err := policy.ValidateSeatSettings(ctx, "bots", "", json.RawMessage(` { "bot_level" : 2 } `))
+	settings, name, err := policy.ValidateSeatSettings(ctx, "bots", "", caller, json.RawMessage(` { "bot_level" : 2 } `))
 	if err != nil || string(settings) != `{"bot_level":2}` || name != "Bot (level 2)" {
 		t.Fatalf("seat = %q %q, %v", settings, name, err)
 	}
 	for _, invalid := range []string{``, `null`, `[]`, `{"bot_level":3}`, `{"note":"` + strings.Repeat("a", domain.MaxSeatSettingsBytes) + `"}`} {
-		if _, _, err := policy.ValidateSeatSettings(ctx, "bots", "", json.RawMessage(invalid)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings {
+		if _, _, err := policy.ValidateSeatSettings(ctx, "bots", "", caller, json.RawMessage(invalid)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings {
 			t.Errorf("seat settings %.20q = %v", invalid, err)
 		}
 	}
-	if _, _, err := policy.ValidateSeatSettings(ctx, "no-seats", "", json.RawMessage(`{}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings {
+	if _, _, err := policy.ValidateSeatSettings(ctx, "no-seats", "", caller, json.RawMessage(`{}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings {
 		t.Fatalf("a game without seats accepted one: %v", err)
 	}
 	for _, game := range []string{"offline", "unnamed"} {
-		if _, _, err := policy.ValidateSeatSettings(ctx, game, "", json.RawMessage(`{}`)); !errors.Is(err, domain.ErrUnavailable) {
+		if _, _, err := policy.ValidateSeatSettings(ctx, game, "", caller, json.RawMessage(`{}`)); !errors.Is(err, domain.ErrUnavailable) {
 			t.Fatalf("%s = %v", game, err)
 		}
 	}

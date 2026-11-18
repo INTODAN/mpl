@@ -4,7 +4,9 @@
 // and can be told to fail or delay a hook.
 //
 //   - Its game settings are {"rounds": N}, N from 1 to 5.
-//   - Its seats are {"level": 1}, named "Mock bot (level 1)".
+//   - Its seats are {"level": 1}, named "Mock bot (level 1)". A seat may also
+//     name the player who adds it, {"level": 1, "added_by": "<player ID>"},
+//     which validate-seat accepts only from that player.
 //   - Its member settings are {"color": "<1 to 20 characters>"}, and a person
 //     needs them to get ready: ready-check refuses a member without them with
 //     the problem type ColorMissingProblemType.
@@ -256,12 +258,16 @@ func validateSettings(_ context.Context, _ string, settings json.RawMessage, _ [
 	return nil
 }
 
-func validateSeat(_ context.Context, _ string, settings json.RawMessage) (string, error) {
+func validateSeat(_ context.Context, _, playerID string, settings json.RawMessage) (string, error) {
 	var parsed struct {
-		Level *int `json:"level"`
+		Level   *int    `json:"level"`
+		AddedBy *string `json:"added_by"`
 	}
 	if err := decodeExactly(settings, &parsed); err != nil || parsed.Level == nil || *parsed.Level != 1 {
 		return "", errors.New(`seat_settings must be {"level": 1}`)
+	}
+	if parsed.AddedBy != nil && *parsed.AddedBy != playerID {
+		return "", errors.New("added_by must be the player who adds the seat")
 	}
 	return SeatName, nil
 }

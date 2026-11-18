@@ -264,8 +264,14 @@ func TestTheMockGamePlaysTheWholeLobbyLifeCycleOverHTTP(t *testing.T) {
 	if refusal.Detail != `seat_settings must be {"level": 1}` {
 		t.Fatalf("refused seat = %+v", refusal)
 	}
+	// The game learns who adds the seat, before the lobby's own host check.
+	refusal = stack.refused(http.MethodPost, stack.lobbyPath(room, "/seats"), host, map[string]any{"team_id": room.Teams[2].ID, "seat_settings": map[string]any{"level": 1, "added_by": other.playerID}}, http.StatusUnprocessableEntity, "invalid_seat_settings")
+	if refusal.Detail != "added_by must be the player who adds the seat" {
+		t.Fatalf("seat added by another player = %+v", refusal)
+	}
+	stack.refused(http.MethodPost, stack.lobbyPath(room, "/seats"), other, map[string]any{"team_id": room.Teams[2].ID, "seat_settings": map[string]any{"level": 1, "added_by": other.playerID}}, http.StatusForbidden, "not_host")
 	var seated domain.Snapshot
-	stack.call(http.MethodPost, stack.lobbyPath(room, "/seats"), host, map[string]any{"team_id": room.Teams[2].ID, "seat_settings": map[string]any{"level": 1}}, http.StatusOK, &seated)
+	stack.call(http.MethodPost, stack.lobbyPath(room, "/seats"), host, map[string]any{"team_id": room.Teams[2].ID, "seat_settings": map[string]any{"level": 1, "added_by": host.playerID}}, http.StatusOK, &seated)
 	if seat := seated.Members[2]; !seat.IsSeat() || seat.DisplayName != mockgame.SeatName {
 		t.Fatalf("seat = %+v", seat)
 	}
