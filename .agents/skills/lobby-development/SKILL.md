@@ -14,7 +14,7 @@ The lobby knows no game. Game settings, seat settings and member settings are op
 - `domain/` holds records, request types, errors, policies, pure state rules and the repository ports. It imports no adapter, Huma, GORM or gocent, and does no I/O.
 - `application/` holds the commands and coordinates the domain contracts. Each command runs in one `Store.Transact` through `TransactNormalized`, whose callback makes no network calls: hooks that a command needs run before the transaction, except `ready-check`, which runs inside it and must answer quickly.
 - `httpapi/` registers the player API's Huma operations in `routes.go`, keeps handlers in `handlers.go` and the DTOs in `dto.go`, and the game API in `game_api.go`. `postgres/` holds persistence; `realtime/` Centrifugo; `auth/` and `playertoken/` credentials and tokens; `gamehooks/` the HTTP side of games; `app/` the wiring from `LOBBY_*` configuration, which every command and an in-process host share.
-- When an endpoint's public behavior changes, update its Huma `Summary` and `Description` to match, then export the API documents and regenerate the Python models (README, **Commands**). Never edit `api/*.json` or `clients/lobby-python/lobby_api_client/` by hand.
+- When an endpoint's public behavior changes, update its Huma `Summary` and `Description` to match, then export the API documents and regenerate the Python models and the TypeScript types (README, **Commands**). Never edit `api/*.json`, `clients/lobby-python/lobby_api_client/` or `clients/lobby-typescript/src/generated/` by hand.
 
 ## Persistence and migrations
 

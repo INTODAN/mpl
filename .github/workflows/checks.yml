@@ -110,6 +110,41 @@ jobs:
       - name: Python client tests
         run: uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests
 
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clients/lobby-typescript
+    steps:
+      - uses: actions/checkout@v5
+
+      # Keep this version in step with bun.lock's and the release workflow's.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # Biome's format and lint, the type check, and the generated API types
+      # against api/openapi.json.
+      - name: Check
+        run: bun run check
+
+      - name: Tests
+        run: bun test
+
+      # The package that the release would publish: it builds, and holds the
+      # module and its declarations.
+      - name: Pack
+        run: |
+          npm pack --dry-run --json >"$RUNNER_TEMP/pack.json"
+          for file in dist/index.js dist/index.d.ts LICENSE README.md package.json; do
+            jq -e --arg file "$file" '.[0].files | map(.path) | index($file)' "$RUNNER_TEMP/pack.json" >/dev/null
+          done
+
   js:
     name: JS
     runs-on: ubuntu-24.04

@@ -2,7 +2,7 @@
 
 `mpl` is a lobby service for casual multiplayer games: guest players, join codes, teams, readiness, reconnect leases, seats that the game plays, watchers, and playing again in the same lobby. A game binds to it over HTTP, with signed hooks and a signed game API, and verifies its players with short-lived player tokens. The lobby knows nothing of any game: it stores each game's settings as opaque JSON and asks the game's hooks. [Island Battles](https://github.com/INTODAN/island-battles-go) is the first game that uses it, and appears in this README only as an example.
 
-This repository holds the Go module `github.com/INTODAN/mpl`, its API contracts, the Python client `mpl-lobby-client`, the lobby page, a mock game for the lobby's own tests, transport configuration and documentation. Its history starts in the Island Battles repository, where the lobby was the `lobby/` directory.
+This repository holds the Go module `github.com/INTODAN/mpl`, its API contracts, the Python and TypeScript clients `mpl-lobby-client`, the lobby page, a mock game for the lobby's own tests, transport configuration and documentation. Its history starts in the Island Battles repository, where the lobby was the `lobby/` directory.
 
 ```text
 go.mod, go.sum      The Go module github.com/INTODAN/mpl
@@ -21,7 +21,7 @@ realtime/           Centrifugo authorization and the push publisher
 internal/           Shared implementation helpers and test fixtures
 api/                OpenAPI and event schema artifacts
 cmd/                The lobby's local server, Lambda and migrate command, the OpenAPI exporter, the mock game's server
-clients/            Go example and the Python client, its CLI and generator
+clients/            Go example, the Python client with its CLI and generator, and the TypeScript client
 centrifugo/         Centrifugo configuration
 integration/        Live tests and the configurable runner
 deploy/             The deployment: Terraform, the VM's Ansible, the plan checker and their tests
@@ -41,11 +41,11 @@ go get github.com/INTODAN/mpl@vX.Y.Z
 
 Go consumers import `github.com/INTODAN/mpl/domain` for contracts, `github.com/INTODAN/mpl/application` for services, `github.com/INTODAN/mpl/app` to run the whole lobby in their own process, `github.com/INTODAN/mpl/gamehooks` to serve a game's hooks and read the game API, and `github.com/INTODAN/mpl/playertoken` to verify players. There is no root Go package. A game's repository can also run the lobby from the pinned module version, for development and live tests, with `go run github.com/INTODAN/mpl/cmd/lobby` and `go run github.com/INTODAN/mpl/cmd/migrate`, and copy the API documents for its own code generators from `go list -m -f '{{.Dir}}' github.com/INTODAN/mpl`.
 
-Python clients install `mpl-lobby-client` from PyPI ([its README](clients/lobby-python/README.md)).
+Python clients install `mpl-lobby-client` from PyPI ([its README](clients/lobby-python/README.md)), and TypeScript and JavaScript clients install `mpl-lobby-client` from npm ([its README](clients/lobby-typescript/README.md)).
 
 ## Commands
 
-All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ with [uv](https://docs.astral.sh/uv/) for the Python client and the live tests; Node 22 for the lobby page's tests.
+All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ with [uv](https://docs.astral.sh/uv/) for the Python client and the live tests; Node 22 for the lobby page's tests; [Bun](https://bun.sh) 1.4 for the TypeScript client (run `bun install --frozen-lockfile` in `clients/lobby-typescript` first).
 
 *   **Lint/Verify (Go):** `go vet ./...` and `golangci-lint run --timeout=5m ./...` (v2.5.0, the version `checks.yml` pins)
 *   **Format:** `go fmt ./...` (`gofmt -l .` lists the files that need it)
@@ -53,6 +53,7 @@ All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ 
 *   **Check the API documents:** `go run ./cmd/export-lobby-openapi --output api/openapi.json --events-output api/events.json --game-api-output api/game-api.openapi.json --check`; without `--check`, it writes them
 *   **Check the generated Python models:** `uv run --project clients/lobby-python/tools --locked python clients/lobby-python/scripts/generate.py --check`; without `--check`, it regenerates them
 *   **Python client tests:** `uv run --project clients/lobby-python --locked pytest clients/lobby-python/tests`
+*   **TypeScript client:** in `clients/lobby-typescript`, `bun run check` (Biome, the type check, and the generated API types against `api/openapi.json`) and `bun test`; `bun run generate` regenerates the types, and `bun run format` formats
 *   **Lobby page tests:** `node --test frontend/*.test.mjs`
 *   **Live tests with the mock game (Linux Docker or Podman):** `./scripts/test-acceptance.sh --mock-game` ([the acceptance runner](integration/README.md))
 *   **Deploy tests (the plan checker, the deploy bucket's sync, the VM's templates rendered by Ansible):** `python3 -I -m unittest discover -s deploy -p 'test_*.py'`; they need `ansible-playbook` ([deploy README](deploy/README.md#checks))
@@ -60,7 +61,7 @@ All commands run from the repository root. Go comes from `go.mod`; Python 3.14+ 
 
 Go database tests use disposable PostgreSQL containers through Testcontainers. On rootless Podman, run `systemctl --user enable --now podman.socket` once, then export `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` and `TESTCONTAINERS_RYUK_DISABLED=true` before running them. Live tests run the lobby's own server, `cmd/lobby`, with the mock game or a game's host beside it; see [the acceptance runner](integration/README.md). Game-specific endpoint checks belong to the game host's suite.
 
-After changing the player API, the game API or the events, export the API documents and regenerate the Python models in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
+After changing the player API, the game API or the events, export the API documents, regenerate the Python models and the TypeScript types in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
 
 ### Checks on every pull request
 
@@ -71,6 +72,7 @@ After changing the player API, the game API or the events, export the API docume
 | Go | `go vet`, `golangci-lint` (pinned to the version in the workflow), a `gofmt -l` check, and `go test` with Testcontainers on the runner's Docker |
 | API contract | the API documents' `--check` and the generated Python models' `--check` |
 | Python | the Python client's tests, with `uv --locked` |
+| TypeScript | in `clients/lobby-typescript`, `bun run check`, `bun test`, and `npm pack --dry-run`, which builds the package that a release would publish |
 | JS | `node --test` for the lobby page's tests in `frontend/` |
 | Live (mock game) | `./scripts/test-acceptance.sh --mock-game`: the lobby, its migrate command and the mock game against disposable PostgreSQL and Centrifugo containers |
 | Deploy | the deploy tests, Ansible's syntax check and lint, and Terraform's format check, validation and tests with mocked providers; nothing reaches AWS |
@@ -79,9 +81,11 @@ It also has a `workflow_call` trigger, so the release workflow runs the same che
 
 ## Releases
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) releases the lobby. It runs only when someone with write access starts it by hand, from `main` (`workflow_dispatch`, with the version to release, higher than every earlier one); merging to `main` releases nothing. It runs the checks, then tags the commit `vX.Y.Z`, which is the version `go get github.com/INTODAN/mpl@vX.Y.Z` resolves, creates the GitHub release, and publishes `mpl-lobby-client` at the same version to PyPI with trusted publishing, in the GitHub environment `pypi`; no PyPI token exists. Versions continue the lobby's versions from the Island Battles repository, where it was tagged `lobby/vX.Y.Z`; the first release here is `v0.3.0`.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) releases the lobby. It runs only when someone with write access starts it by hand, from `main` (`workflow_dispatch`, with the version to release, higher than every earlier one); merging to `main` releases nothing. It runs the checks, then tags the commit `vX.Y.Z`, which is the version `go get github.com/INTODAN/mpl@vX.Y.Z` resolves, creates the GitHub release, and publishes `mpl-lobby-client` at the same version to PyPI with trusted publishing, in the GitHub environment `pypi`, and to npm, the TypeScript client, with trusted publishing and provenance, in the GitHub environment `npm`; no PyPI or npm token exists. Versions continue the lobby's versions from the Island Battles repository, where it was tagged `lobby/vX.Y.Z`; the first release here is `v0.3.0`.
 
 Before the first release, the PyPI project's trusted publisher must name this repository, the workflow `release.yml` and the environment `pypi`, and the environment should be limited to `main`.
+
+npm lets a package have a trusted publisher only once it exists, so the first npm version is published by hand: from the release's tag, in `clients/lobby-typescript`, `npm version --no-git-tag-version X.Y.Z` and `npm publish --access public --provenance=false` with the owner's npm login (provenance needs CI, so only the workflow's versions have it). Then the package's settings on npmjs.com name the trusted publisher: the GitHub repository `INTODAN/mpl`, the workflow `release.yml` and the environment `npm`, which should be limited to `main` too. The workflow's npm job skips a version that npm has already.
 
 ## Deploying
 

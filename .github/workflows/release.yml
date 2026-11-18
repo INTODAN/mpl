@@ -4,8 +4,9 @@
 # Starting it is the approval: only people with write access can, only from
 # main. It runs the checks, then tags the commit vX.Y.Z (the version that
 # `go get github.com/INTODAN/mpl@vX.Y.Z` resolves), creates the GitHub release,
-# and publishes the Python client `mpl-lobby-client` at the same version to
-# PyPI. A failed check leaves no tag, no release and nothing on PyPI.
+# and publishes the clients `mpl-lobby-client` at the same version to PyPI
+# (Python) and npm (TypeScript). A failed check leaves no tag, no release and
+# nothing on PyPI or npm.
 name: Release
 
 on:
@@ -93,7 +94,7 @@ jobs:
           start=()
           [[ -z "$previous" ]] || start=(--notes-start-tag "$previous")
           gh release create "$VERSION" --verify-tag --title "$VERSION" --generate-notes "${start[@]}" \
-            --notes "Go: go get github.com/INTODAN/mpl@$VERSION. Python: pip install mpl-lobby-client==${VERSION#v}."
+            --notes "Go: go get github.com/INTODAN/mpl@$VERSION. Python: pip install mpl-lobby-client==${VERSION#v}. TypeScript: npm install mpl-lobby-client@${VERSION#v}."
 
   # Publishes the Python client at the release's version, after the tag and the
   # GitHub release exist, so a PyPI version never lacks its tag. A failure
@@ -145,6 +146,69 @@ jobs:
         with:
           packages-dir: ${{ runner.temp }}/dist
           skip-existing: true
+
+  # Publishes the TypeScript client at the release's version, after the tag and
+  # the GitHub release exist, like the Python client. A failure fails only this
+  # job and the run; fix the cause and re-run this job alone: a version npm
+  # has already is skipped.
+  # Trusted publishing: no npm token exists. The package's trusted publisher on
+  # npmjs.com names this repository and this workflow (README.md, "Releases"),
+  # and npm adds provenance.
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/mpl-lobby-client
+    permissions:
+      contents: read
+      # npm exchanges this token for a short-lived publish token.
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+    defaults:
+      run:
+        working-directory: clients/lobby-typescript
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # Trusted publishing needs npm 11.5.1 or newer, which Node 24 ships.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          check-latest: true
+          registry-url: https://registry.npmjs.org
+
+      - name: Check npm can publish with trusted publishing
+        run: |
+          version="$(npm --version)"
+          if [[ "$(printf '%s\n%s\n' 11.5.1 "$version" | sort -V | head -n 1)" != 11.5.1 ]]; then
+            echo "::error::npm $version can't publish with trusted publishing; it needs 11.5.1 or newer."
+            exit 1
+          fi
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # The version comes from the tag and is set in this run's working copy
+      # only, never committed: `v0.3.0` becomes `0.3.0`.
+      - name: Set the release version
+        run: npm version --no-git-tag-version "${VERSION#v}"
+
+      # prepack copies the repository's LICENSE and builds dist/.
+      - name: Publish to npm
+        run: |
+          v="${VERSION#v}"
+          if [[ "$(npm view "mpl-lobby-client@$v" version 2>/dev/null)" == "$v" ]]; then
+            echo "mpl-lobby-client@$v is on npm already; nothing to publish."
+            exit 0
+          fi
+          npm publish --provenance --access public
 
   # Says why nothing was released. The failed job above is the cause.
   not_released:
