@@ -35,7 +35,7 @@ Each issue is written to be implemented on its own: read the whole issue, plus t
 
 When your change needs a step after it merges (a plan and apply, an apply-role script, a setting, a release, a check), write it in the PR. Name who does it, and assume an agent does it with the owner's `gh` login and `aws login`, asking in chat before an apply, a release, or anything irreversible. Only these go to the owner's checklist, INTODAN/island-battles-go#119:
 
-- sign-ins an agent can't make: PyPI's website, DNS, the owner's inbox;
+- sign-ins an agent can't make: PyPI's and npm's websites, DNS, the owner's inbox;
 - checks on real devices;
 - decisions.
 
@@ -45,8 +45,8 @@ When your change needs a step after it merges (a plan and apply, an apply-role s
 - Skills in [`.agents/skills/`](.agents/skills/) hold the repository's conventions. Read the one that applies before changing that area:
   - `lobby-development`: Huma endpoints, application services, GORM persistence and migrations, hooks and the game API
   - `breaking-changes`: any change to the player API, the game API, events, stored data or the Python client
-- After changing an API, re-export the API documents and regenerate the Python models in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
-- Games pin the module by version (`go get github.com/INTODAN/mpl@vX.Y.Z`) and the Python client by its PyPI version. A change here reaches a game only after a release and the game's own update; say in the PR what a game must change.
+- After changing an API, re-export the API documents and regenerate the Python models and the TypeScript types in the same change. On a rebase conflict in generated files, regenerate them instead of merging by hand.
+- Games pin the module by version (`go get github.com/INTODAN/mpl@vX.Y.Z`) and the clients by their PyPI and npm versions. A change here reaches a game only after a release and the game's own update; say in the PR what a game must change.
 
 ## Deploying
 

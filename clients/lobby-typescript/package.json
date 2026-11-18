@@ -1,0 +1,62 @@
+{
+	"name": "mpl-lobby-client",
+	"version": "0.0.0-dev",
+	"description": "TypeScript client for the generic multiplayer lobby: guest sessions, lobbies, leases and live snapshots over Centrifugo.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/INTODAN/mpl.git",
+		"directory": "clients/lobby-typescript"
+	},
+	"homepage": "https://github.com/INTODAN/mpl/tree/main/clients/lobby-typescript#readme",
+	"bugs": "https://github.com/INTODAN/mpl/issues",
+	"keywords": [
+		"lobby",
+		"multiplayer",
+		"matchmaking",
+		"centrifugo",
+		"game"
+	],
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts"
+	],
+	"sideEffects": false,
+	"engines": {
+		"node": ">=20.3"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"build": "rm -rf dist && bun build src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked && tsc -p tsconfig.build.json",
+		"check": "biome ci . && tsc -p . && bun run generate --check",
+		"format": "biome check --write .",
+		"generate": "bun scripts/generate.ts",
+		"test": "bun test",
+		"typecheck": "tsc -p .",
+		"prepack": "cp ../../LICENSE LICENSE && bun run build >&2"
+	},
+	"dependencies": {
+		"centrifuge": "^5.8.0",
+		"openapi-fetch": "^0.17.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.6.8",
+		"@types/bun": "1.4.4",
+		"openapi-typescript": "7.13.0",
+		"typescript": "5.9.3"
+	}
+}
