@@ -44,4 +44,4 @@ The local environment has Podman rather than Docker. Go database tests use a tem
 
 ## Scope limits
 
-Guest credentials expire after 24 hours and have no account recovery mechanism. Starting freezes a roster; the explicit Island binding creates the linked game and team mapping only. Lambda routing, simulation startup, round timers, C#/TypeScript SDKs and unrelated game-command authorization remain outside this extraction.
+Guest credentials expire after 24 hours and have no account recovery mechanism; a person who signs in with Google has an account that outlives sessions (root README, "Accounts"). Starting freezes a roster; the explicit Island binding creates the linked game and team mapping only. Lambda routing, simulation startup, round timers, C#/TypeScript SDKs and unrelated game-command authorization remain outside this extraction.

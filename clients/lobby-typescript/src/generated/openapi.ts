@@ -2,6 +2,34 @@
 // Regenerate: bun run generate (in clients/lobby-typescript).
 
 export interface paths {
+    "/lobby/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read your account
+         * @description Returns the account of your signed-in session. A guest session gets 403 sign_in_required.
+         */
+        get: operations["getLobbyAccount"];
+        /**
+         * Rename your account
+         * @description Renames your account, and your session's player, and returns the account. Lobbies you already joined keep the name you had when you joined them. The name is 3 to 24 characters of letters, digits, spaces, - and _ (otherwise 422 invalid_input), unique among accounts without regard to case (otherwise 409 display_name_taken). A guest session gets 403 sign_in_required.
+         */
+        put: operations["updateLobbyAccount"];
+        post?: never;
+        /**
+         * Delete your account
+         * @description Deletes your account and ends every session of its players, this one included, at once. The players stay, without an account, in the lobbies and rosters that name them, and are deleted later as a guest's are. Signing in again with the same Google account creates a new account. A guest session gets 403 sign_in_required.
+         */
+        delete: operations["deleteLobbyAccount"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/lobby/v1/connection-token": {
         parameters: {
             query?: never;
@@ -422,6 +450,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lobby/v1/sessions/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign in with Google
+         * @description Signs in with the ID token that Google Identity Services gave the page, and opens a session: a new player of the account, with a bearer credential that works on every route a guest's does and lasts as long. The lobby verifies the token's signature with Google's keys, its iss, its aud, which must be one of the lobby's Google client IDs (getLobbySignIn), and its exp; an invalid token is 401. It keeps Google's account ID (sub) and nothing else of Google's: no name, picture or email. An account's first sign-in creates it and needs display_name: without one it fails with 422 display_name_required, and the client asks for a name and posts the same credential again. A name another account holds, without regard to case, is 409 display_name_taken, and a name that breaks the rule is 422 invalid_input. Later sign-ins ignore display_name. While sign-in is off, the route answers 404.
+         */
+        post: operations["createLobbyGoogleSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lobby/v1/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how to sign in
+         * @description Tells a client whether to offer Sign in with Google: google_client_id is the Google OAuth client ID that its button uses, or null while sign-in is off. Sign-in is offered, never required: guest sessions (createLobbySession) work either way.
+         */
+        get: operations["getLobbySignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/lobby/v1/watches": {
         parameters: {
             query?: never;
@@ -446,6 +514,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Account: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/Account.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            created_at: string;
+            display_name: string;
+            /** Format: uuid */
+            id: string;
+        };
+        AccountSession: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/AccountSession.json
+             */
+            readonly $schema?: string;
+            access_token: string;
+            account: components["schemas"]["Account"];
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            player_id: string;
+        };
         AddSeatBody: {
             /**
              * Format: uri
@@ -502,6 +597,18 @@ export interface components {
              * @example https://example.com/ConnectionTokenInputBody.json
              */
             readonly $schema?: string;
+        };
+        CreateGoogleSessionBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/CreateGoogleSessionBody.json
+             */
+            readonly $schema?: string;
+            /** @description The ID token that Google Identity Services gave the page. */
+            credential: string;
+            /** @description The display name of a new account: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case. Required on an account's first sign-in, ignored after it. */
+            display_name?: string;
         };
         CreateLobbyBody: {
             /**
@@ -776,7 +883,7 @@ export interface components {
         };
         Problem: {
             /** @enum {string} */
-            code: "unauthenticated" | "not_found" | "not_host" | "lobby_full" | "team_full" | "phase_conflict" | "not_ready" | "empty_teams" | "stale_membership" | "idempotency_conflict" | "invalid_input" | "invalid_game_settings" | "invalid_seat_settings" | "invalid_member_settings" | "game_requirement" | "game_running" | "game_unavailable" | "watcher_kicked" | "watchers_full" | "unavailable" | "internal_error";
+            code: "unauthenticated" | "not_found" | "not_host" | "lobby_full" | "team_full" | "phase_conflict" | "not_ready" | "empty_teams" | "stale_membership" | "idempotency_conflict" | "invalid_input" | "invalid_game_settings" | "invalid_seat_settings" | "invalid_member_settings" | "game_requirement" | "game_running" | "game_unavailable" | "watcher_kicked" | "watchers_full" | "sign_in_required" | "display_name_required" | "display_name_taken" | "unavailable" | "internal_error";
             detail: string;
             /** Format: int64 */
             status: number;
@@ -804,6 +911,16 @@ export interface components {
             readonly $schema?: string;
             /** Format: uuid */
             team_id: string | null;
+        };
+        SignInSettings: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/SignInSettings.json
+             */
+            readonly $schema?: string;
+            /** @description The Google OAuth client ID that a Sign in with Google button uses, or null while sign-in is off. */
+            google_client_id: string | null;
         };
         Snapshot: {
             /**
@@ -853,6 +970,16 @@ export interface components {
         };
         TeamDefinition: {
             name: string;
+        };
+        UpdateAccountBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/UpdateAccountBody.json
+             */
+            readonly $schema?: string;
+            /** @description The account's new display name: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case. */
+            display_name: string;
         };
         WatchAccess: {
             /**
@@ -911,6 +1038,257 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getLobbyAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateLobbyAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteLobbyAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     createLobbyConnectionToken: {
         parameters: {
             query?: never;
@@ -2689,6 +3067,176 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuestSession"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createLobbyGoogleSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGoogleSessionBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSession"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getLobbySignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInSettings"];
                 };
             };
             /** @description Unauthorized */

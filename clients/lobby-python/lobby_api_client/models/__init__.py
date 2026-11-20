@@ -1,11 +1,14 @@
 """Contains all the data models used in inputs/outputs"""
 
+from .account import Account
+from .account_session import AccountSession
 from .add_seat_body import AddSeatBody
 from .add_seat_body_seat_settings import AddSeatBodySeatSettings
 from .change_settings_body import ChangeSettingsBody
 from .change_settings_body_game_settings import ChangeSettingsBodyGameSettings
 from .connection_token import ConnectionToken
 from .connection_token_input_body import ConnectionTokenInputBody
+from .create_google_session_body import CreateGoogleSessionBody
 from .create_lobby_body import CreateLobbyBody
 from .create_lobby_body_game_settings import CreateLobbyBodyGameSettings
 from .create_session_body import CreateSessionBody
@@ -38,24 +41,29 @@ from .problem import Problem
 from .problem_code import ProblemCode
 from .ready_body import ReadyBody
 from .select_team_body import SelectTeamBody
+from .sign_in_settings import SignInSettings
 from .snapshot import Snapshot
 from .start_input_body import StartInputBody
 from .start_roster_entry import StartRosterEntry
 from .start_rules import StartRules
 from .team import Team
 from .team_definition import TeamDefinition
+from .update_account_body import UpdateAccountBody
 from .watch_access import WatchAccess
 from .watch_lobby_body import WatchLobbyBody
 from .watcher import Watcher
 from .watcher_list import WatcherList
 
 __all__ = (
+    "Account",
+    "AccountSession",
     "AddSeatBody",
     "AddSeatBodySeatSettings",
     "ChangeSettingsBody",
     "ChangeSettingsBodyGameSettings",
     "ConnectionToken",
     "ConnectionTokenInputBody",
+    "CreateGoogleSessionBody",
     "CreateLobbyBody",
     "CreateLobbyBodyGameSettings",
     "CreateSessionBody",
@@ -88,12 +96,14 @@ __all__ = (
     "ProblemCode",
     "ReadyBody",
     "SelectTeamBody",
+    "SignInSettings",
     "Snapshot",
     "StartInputBody",
     "StartRosterEntry",
     "StartRules",
     "Team",
     "TeamDefinition",
+    "UpdateAccountBody",
     "WatchAccess",
     "Watcher",
     "WatcherList",

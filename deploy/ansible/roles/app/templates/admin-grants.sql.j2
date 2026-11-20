@@ -19,6 +19,8 @@ BEGIN
 END
 $$;
 GRANT USAGE ON SCHEMA public TO "{{ postgres_admin_role }}";
+-- Every table but lobby_sessions, lobby_accounts included: an account holds
+-- Google's subject and the display name its owner chose, no credential.
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{{ postgres_admin_role }}";
 {% if not (item.lobby | default(false)) %}
 

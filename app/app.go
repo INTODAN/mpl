@@ -15,6 +15,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/INTODAN/mpl/application"
 	"github.com/INTODAN/mpl/auth"
@@ -73,6 +74,7 @@ type Lobby struct {
 	service        *application.Service
 	authentication observedAuthentication
 	playerTokens   *auth.PlayerTokens
+	accounts       *auth.Accounts
 	retention      *application.Retention
 	proxy          *realtime.Proxy
 	gameAPI        http.Handler
@@ -130,6 +132,10 @@ func New(config Config, database *gorm.DB, centrifugo *gocent.Client, logger *sl
 	if err != nil {
 		return nil, err
 	}
+	accounts, err := newAccounts(config, authentication, identities, clock)
+	if err != nil {
+		return nil, err
+	}
 	service, err := application.NewService(store, clock, identifiers, policy)
 	if err != nil {
 		return nil, err
@@ -167,10 +173,27 @@ func New(config Config, database *gorm.DB, centrifugo *gocent.Client, logger *sl
 	gameAPIRouter := chi.NewMux()
 	httpapi.RegisterGameAPI(humachi.New(gameAPIRouter, undocumented("Lobby game API")), service, gamehooks.Secrets(games))
 	return &Lobby{
-		service: service, authentication: observedAuthentication{authentication, selected.observer}, playerTokens: playerTokens,
+		service: service, authentication: observedAuthentication{authentication, selected.observer}, playerTokens: playerTokens, accounts: accounts,
 		retention: retention, proxy: proxy, gameAPI: gameAPIRouter, catalog: catalog, keys: config.PlayerTokenKeys,
 		allowedOrigins: config.AllowedOrigins,
 	}, nil
+}
+
+// newAccounts signs players in with Google when config names Google client
+// IDs, and turns sign-in off otherwise.
+func newAccounts(config Config, sessions *auth.Service, store domain.AccountStore, clock domain.Clock) (*auth.Accounts, error) {
+	if len(config.GoogleClientIDs) == 0 {
+		return auth.NewAccounts(sessions, store, nil, "")
+	}
+	certsURL := config.GoogleCertsURL
+	if certsURL == "" {
+		certsURL = auth.GoogleCertsURL
+	}
+	verifier, err := auth.NewGoogleVerifier(config.GoogleClientIDs, certsURL, &http.Client{Timeout: 5 * time.Second}, clock)
+	if err != nil {
+		return nil, err
+	}
+	return auth.NewAccounts(sessions, store, verifier, config.GoogleClientIDs[0])
 }
 
 // Register serves the lobby on router: the player API, under /lobby/v1, on
@@ -179,7 +202,7 @@ func New(config Config, database *gorm.DB, centrifugo *gocent.Client, logger *sl
 // under UIPath. A host that runs the lobby in its own process registers it
 // on its own router and API; the lobby's own hosts serve Handler.
 func (lobby *Lobby) Register(router chi.Router, api huma.API) error {
-	httpapi.Register(api, lobby.service, lobby.authentication, lobby.authentication, lobby.playerTokens, lobby.retention)
+	httpapi.Register(api, lobby.service, lobby.authentication, lobby.authentication, lobby.playerTokens, lobby.accounts, lobby.retention)
 	router.Handle(gamehooks.GameAPIPath+"/*", lobby.gameAPI)
 	lobby.proxy.Register(router)
 	page, err := frontend.Handler(lobby.catalog)

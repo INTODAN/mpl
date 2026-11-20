@@ -11,6 +11,7 @@ type handlers struct {
 	authenticator domain.Authenticator
 	issuer        domain.ConnectionTokenIssuer
 	playerTokens  domain.PlayerTokenIssuer
+	accounts      domain.Accounts
 }
 
 func (handler handlers) session(ctx context.Context, input *CreateSessionInput) (*CreateSessionOutput, error) {

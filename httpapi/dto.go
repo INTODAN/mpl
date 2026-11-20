@@ -406,3 +406,47 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 	room := source.Lobby
 	return Snapshot{Lobby: Lobby{ID: room.ID, GameKey: room.GameKey, Name: room.Name, JoinCode: room.JoinCode, Capacity: room.Capacity, Phase: room.Phase, Round: room.Round, Version: room.Version, HostPlayerID: room.HostPlayerID, CreatedAt: room.CreatedAt, GameSettings: GameSettings(room.GameSettings)}, Teams: teams, Members: members, StartRoster: roster, MembershipGeneration: source.MembershipGeneration, Channel: source.Channel, StartRules: StartRules{EveryTeamNeedsMember: source.StartRules.EveryTeamNeedsMember}, WatcherCount: source.WatcherCount}
 }
+
+type SignInSettingsInput struct{}
+type SignInSettingsOutput struct {
+	Body SignInSettings `json:"-"`
+}
+type SignInSettings struct {
+	GoogleClientID *string `json:"google_client_id" doc:"The Google OAuth client ID that a Sign in with Google button uses, or null while sign-in is off."`
+}
+
+type CreateGoogleSessionInput struct {
+	Body CreateGoogleSessionBody `json:"-"`
+}
+type CreateGoogleSessionBody struct {
+	Credential  string `json:"credential" minLength:"1" maxLength:"8192" doc:"The ID token that Google Identity Services gave the page."`
+	DisplayName string `json:"display_name,omitempty" maxLength:"40" doc:"The display name of a new account: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case. Required on an account's first sign-in, ignored after it."`
+}
+type CreateGoogleSessionOutput struct {
+	Body AccountSession `json:"-"`
+}
+type AccountSession struct {
+	PlayerID    string    `json:"player_id" format:"uuid"`
+	AccessToken string    `json:"access_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Account     Account   `json:"account"`
+}
+
+// Account is a signed-in person's account as its owner sees it.
+type Account struct {
+	ID          string    `json:"id" format:"uuid"`
+	DisplayName string    `json:"display_name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type AccountInput struct{}
+type AccountOutput struct {
+	Body Account `json:"-"`
+}
+type UpdateAccountInput struct {
+	Body UpdateAccountBody `json:"-"`
+}
+type UpdateAccountBody struct {
+	DisplayName string `json:"display_name" minLength:"1" maxLength:"40" doc:"The account's new display name: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case."`
+}
+type DeleteAccountInput struct{}

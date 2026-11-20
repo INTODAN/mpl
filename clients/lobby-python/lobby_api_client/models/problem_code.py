@@ -2,6 +2,8 @@ from enum import Enum
 
 
 class ProblemCode(str, Enum):
+    DISPLAY_NAME_REQUIRED = "display_name_required"
+    DISPLAY_NAME_TAKEN = "display_name_taken"
     EMPTY_TEAMS = "empty_teams"
     GAME_REQUIREMENT = "game_requirement"
     GAME_RUNNING = "game_running"
@@ -17,6 +19,7 @@ class ProblemCode(str, Enum):
     NOT_HOST = "not_host"
     NOT_READY = "not_ready"
     PHASE_CONFLICT = "phase_conflict"
+    SIGN_IN_REQUIRED = "sign_in_required"
     STALE_MEMBERSHIP = "stale_membership"
     TEAM_FULL = "team_full"
     UNAUTHENTICATED = "unauthenticated"

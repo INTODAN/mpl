@@ -50,6 +50,8 @@ A host creates a lobby with `createLobby({ gameKey, name, teams, requestId, game
 
 To call a game's API, get a player token with `issuePlayerToken(gameKey)` and send it as `Authorization: Bearer <token>`.
 
+A person can sign in with Google instead of playing as a guest ([Accounts](../../README.md#accounts)). `signInSettings()` says whether the lobby offers it: `google_client_id` is the client ID for Google Identity Services' button, or null. Post the ID token that the button gives with `signInWithGoogle(credential, displayName?)`, which keeps the new session's credential as `createSession` does. An account's first sign-in needs a display name: without one it throws `display_name_required`, so ask for a name and call again with the same credential; `display_name_taken` means another account holds it. `account()`, `renameAccount(name)` and `deleteAccount()` manage the signed-in session's account, and throw `sign_in_required` for a guest.
+
 ## Errors
 
 Every error is a `LobbyError`, with the API's `code` and the HTTP `status`:

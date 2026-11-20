@@ -91,6 +91,8 @@ class RenderedTemplatesTest(unittest.TestCase):
         key = self.secret("lobby_player_token_key")
         self.assertRegex(values["LOBBY_PLAYER_TOKEN_KEYS"], f"^[0-9a-f]{{12}}:{key}$")
         self.assertEqual(values["LOBBY_ALLOWED_ORIGINS"], "https://game.example.org,https://second.example.org")
+        # Sign-in stays off unless vm.yml names Google client IDs.
+        self.assertNotIn("LOBBY_GOOGLE_CLIENT_IDS", values)
         games = json.loads(values["LOBBY_GAMES"])
         self.assertEqual([game["key"] for game in games], ["example-game", "second-game"])
         self.assertEqual(games, [tenant["lobby_game"] for tenant in sample_tenants()])
@@ -223,6 +225,16 @@ class SettingsChecksTest(unittest.TestCase):
         tenants = copy.deepcopy(self.tenants)
         tenants[0].update(changes)
         return {"tenants": tenants}
+
+    def test_refuses_google_client_ids_that_arent_a_list_of_ids(self):
+        self.refused({"google_client_ids": "one.apps.googleusercontent.com"}, "google_client_ids")
+        self.refused({"google_client_ids": ["one,two"]}, "google_client_ids")
+
+    def test_lists_the_google_client_ids_in_the_lobbys_settings(self):
+        result = render(self.directory, {"google_client_ids": ["1-a.apps.googleusercontent.com", "2-b.apps.googleusercontent.com"]})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        values = settings((self.directory / "out" / "vm" / "lobby.env").read_text())
+        self.assertEqual(values["LOBBY_GOOGLE_CLIENT_IDS"], "1-a.apps.googleusercontent.com,2-b.apps.googleusercontent.com")
 
     def test_needs_a_tenant(self):
         self.refused({"tenants": []}, "at least one tenant")

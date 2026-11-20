@@ -37,6 +37,14 @@ const (
 	// CodeWatchersFull refuses a new watcher once the lobby has
 	// MaxWatchersPerLobby of them.
 	CodeWatchersFull ErrorCode = "watchers_full"
+	// CodeSignInRequired refuses a guest an account's route.
+	CodeSignInRequired ErrorCode = "sign_in_required"
+	// CodeDisplayNameRequired asks for a display name to create an account
+	// on its first sign-in.
+	CodeDisplayNameRequired ErrorCode = "display_name_required"
+	// CodeDisplayNameTaken refuses an account's display name that another
+	// account holds, without regard to case.
+	CodeDisplayNameTaken ErrorCode = "display_name_taken"
 	// PermissionDenied is private proxy authorization only, not a player API code.
 	CodePermissionDenied ErrorCode = "permission_denied"
 )
@@ -96,6 +104,18 @@ var (
 	ErrWatcherKicked       = NewError(CodeWatcherKicked, "the host removed you from this lobby's watchers")
 	ErrWatchersFull        = NewError(CodeWatchersFull, "this lobby has as many watchers as it allows")
 	ErrPermissionDenied    = NewError(CodePermissionDenied, "permission denied")
+	ErrSignInRequired      = NewError(CodeSignInRequired, "sign in to use an account")
+	ErrDisplayNameRequired = NewError(CodeDisplayNameRequired, "choose a display name for your new account")
+	ErrDisplayNameTaken    = NewError(CodeDisplayNameTaken, "another account has this display name")
+	// ErrSignInOff answers a sign-in while the lobby has no sign-in
+	// configured; the player API answers it with 404.
+	ErrSignInOff = NewError(CodeNotFound, "sign-in is off")
+	// ErrAccountExists is an AccountStore's sentinel for a subject that an
+	// account already holds, never returned through player HTTP.
+	ErrAccountExists = errors.New("lobby account already exists")
+	// ErrAccountGone is an AccountStore's sentinel for a sign-in whose
+	// account was deleted meanwhile, never returned through player HTTP.
+	ErrAccountGone = errors.New("lobby account was deleted")
 	// Internal storage sentinel, never returned directly through player HTTP.
 	ErrJoinCodeCollision = errors.New("lobby join code collision")
 )

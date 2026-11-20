@@ -18,12 +18,13 @@ import httpx
 from centrifuge.exceptions import CentrifugeError, OperationTimeoutError
 from lobby_api_client.client import AuthenticatedClient
 from lobby_api_client.api.lobby import (
-    add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_session,
-    get_lobby, heartbeat_lobby, issue_player_token, join_lobby, leave_lobby, release_lobby_lease,
+    add_lobby_seat, change_lobby_settings, create_lobby, create_lobby_connection_token, create_lobby_google_session,
+    create_lobby_session, delete_lobby_account, get_lobby, get_lobby_account, get_lobby_sign_in, heartbeat_lobby, issue_player_token, join_lobby, leave_lobby, release_lobby_lease,
     kick_lobby_watcher, list_lobby_watchers, remove_lobby_seat, reopen_lobby, select_lobby_team,
-    set_lobby_member_settings, set_lobby_ready, start_lobby, unwatch_lobby, watch_lobby,
+    set_lobby_member_settings, set_lobby_ready, start_lobby, unwatch_lobby, update_lobby_account, watch_lobby,
 )
 from lobby_api_client.models import (
+    Account, AccountSession, CreateGoogleSessionBody, SignInSettings, UpdateAccountBody,
     AddSeatBody, AddSeatBodySeatSettings, ChangeSettingsBody, ChangeSettingsBodyGameSettings,
     ConnectionTokenInputBody, CreateLobbyBody,
     CreateLobbyBodyGameSettings, CreateSessionBody, GuestSession, HeartbeatBody,
@@ -206,6 +207,47 @@ class LobbyClient:
         self.credential = session.access_token
         self._auth_error = None
         return session
+
+    async def sign_in_settings(self) -> SignInSettings:
+        """Read whether the lobby offers Sign in with Google: google_client_id
+        is the client ID for Google's button, or None while sign-in is off."""
+        self._check_open()
+        return await self._request(get_lobby_sign_in, protected=False)
+
+    async def sign_in_with_google(self, credential: str, display_name: str | None = None) -> AccountSession:
+        """Sign in with a Google ID token and keep the new session's credential.
+
+        An account's first sign-in needs display_name: without one it raises
+        LobbyError display_name_required, and the caller asks for a name and
+        calls again with the same credential. A name another account holds
+        raises LobbyError display_name_taken. Later sign-ins ignore it.
+        """
+        self._check_open()
+        if self.credential:
+            raise LobbyError("session_already_set")
+        body = CreateGoogleSessionBody(credential=credential)
+        if display_name is not None:
+            body.display_name = display_name
+        session = await self._request(create_lobby_google_session, protected=False, body=body)
+        self.credential = session.access_token
+        self._auth_error = None
+        return session
+
+    async def account(self) -> Account:
+        """The signed-in session's account; a guest's raises sign_in_required."""
+        self._require_auth()
+        return await self._request(get_lobby_account)
+
+    async def rename_account(self, display_name: str) -> Account:
+        """Rename the account and this session's player."""
+        self._require_auth()
+        return await self._request(update_lobby_account, body=UpdateAccountBody(display_name=display_name))
+
+    async def delete_account(self) -> None:
+        """Delete the account, which ends every session of it, this one too."""
+        self._require_auth()
+        await self._request(delete_lobby_account)
+        self.credential = None
 
     async def _connection_token(self):
         self._require_auth()

@@ -37,6 +37,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/INTODAN/mpl/auth/googletest"
 	"github.com/INTODAN/mpl/domain"
 	"github.com/INTODAN/mpl/gamehooks"
 )
@@ -98,7 +99,17 @@ type Game struct {
 	calls  map[string]int
 	lobby  *gamehooks.GameAPIClient
 	secret []byte
+	google *googletest.Issuer
 }
+
+// The mock game's stand-in for Google, for live tests of Sign in with Google:
+// GoogleCertsPath serves its keys, which a lobby verifies ID tokens with when
+// its LOBBY_GOOGLE_CERTS_URL points there, and GoogleIDTokenPath signs an ID
+// token for the JSON body {"subject", "audience"}, as {"credential"}.
+const (
+	GoogleCertsPath   = "/google/certs"
+	GoogleIDTokenPath = "/google/id-token"
+)
 
 // New returns a mock game with key, whose hooks verify signatures with
 // secret.
@@ -114,7 +125,30 @@ func New(key string, secret []byte) (*Game, error) {
 	game.mux.Handle("POST "+HooksPath+"/{hook}", game.injectFaults(hooks))
 	game.mux.HandleFunc("POST /finish/{lobby_id}", game.finish)
 	game.mux.HandleFunc("GET /watch/{lobby_id}", game.watch)
+	if game.google, err = googletest.NewIssuer("mock-google"); err != nil {
+		return nil, err
+	}
+	game.mux.Handle("GET "+GoogleCertsPath, game.google.Handler(time.Hour))
+	game.mux.HandleFunc("POST "+GoogleIDTokenPath, game.googleIDToken)
 	return game, nil
+}
+
+func (game *Game) googleIDToken(response http.ResponseWriter, request *http.Request) {
+	var body struct {
+		Subject  string `json:"subject"`
+		Audience string `json:"audience"`
+	}
+	if err := json.NewDecoder(request.Body).Decode(&body); err != nil || body.Subject == "" || body.Audience == "" {
+		http.Error(response, "send {\"subject\", \"audience\"}", http.StatusBadRequest)
+		return
+	}
+	credential, err := game.google.GoogleToken(body.Subject, body.Audience, time.Now())
+	if err != nil {
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	response.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(response).Encode(map[string]string{"credential": credential})
 }
 
 func (game *Game) ServeHTTP(response http.ResponseWriter, request *http.Request) {

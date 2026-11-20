@@ -8,14 +8,31 @@ import (
 	"gorm.io/datatypes"
 )
 
-// PlayerRecord is the durable identity label used by lobby sessions and members.
+// PlayerRecord is the durable identity label used by lobby sessions and
+// members. AccountID is migration 0012's: the account a signed-in player
+// belongs to, null for a guest and once the account is deleted.
 type PlayerRecord struct {
 	ID          string    `gorm:"column:id;type:uuid;primaryKey"`
 	DisplayName string    `gorm:"column:display_name;not null"`
 	CreatedAt   time.Time `gorm:"column:created_at;not null"`
+	AccountID   *string   `gorm:"column:account_id;type:uuid"`
 }
 
 func (PlayerRecord) TableName() string { return "lobby_players" }
+
+// AccountRecord is migration 0012's account of a person who signed in. It
+// holds Google's subject and the display name the person chose, whose
+// case-folded key is unique, and nothing else of Google's.
+type AccountRecord struct {
+	ID             string    `gorm:"column:id;type:uuid;primaryKey"`
+	GoogleSubject  string    `gorm:"column:google_subject;not null"`
+	DisplayName    string    `gorm:"column:display_name;not null"`
+	DisplayNameKey string    `gorm:"column:display_name_key;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (AccountRecord) TableName() string { return "lobby_accounts" }
 
 // SessionRecord deliberately stores only a digest of the bearer credential.
 type SessionRecord struct {

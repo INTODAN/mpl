@@ -59,37 +59,57 @@ func (service *Service) CreateGuest(ctx context.Context, request domain.CreateGu
 	if err != nil {
 		return domain.GuestSession{}, err
 	}
+	credential, err := service.newCredential()
+	if err != nil {
+		return domain.GuestSession{}, err
+	}
+	player := domain.Player{ID: credential.session.PlayerID, DisplayName: displayName, CreatedAt: credential.session.CreatedAt}
+	if err := service.identities.CreateGuest(ctx, player, credential.session); err != nil {
+		return domain.GuestSession{}, unavailable(err)
+	}
+	return credential.guestSession(), nil
+}
+
+// credential is a new player's session and the bearer credential that the
+// session stores the digest of.
+type credential struct {
+	session domain.Session
+	bearer  string
+}
+
+func (credential credential) guestSession() domain.GuestSession {
+	return domain.GuestSession{PlayerID: credential.session.PlayerID, AccessToken: credential.bearer, ExpiresAt: credential.session.ExpiresAt}
+}
+
+// newCredential makes a new player ID and its session, which starts now and
+// lasts the policy's SessionDuration.
+func (service *Service) newCredential() (credential, error) {
 	now := service.clock.Now().UTC()
 	playerID, err := service.identifiers.UUID()
 	if err != nil {
-		return domain.GuestSession{}, unavailable(err)
+		return credential{}, unavailable(err)
 	}
 	sessionID, err := service.identifiers.UUID()
 	if err != nil {
-		return domain.GuestSession{}, unavailable(err)
+		return credential{}, unavailable(err)
 	}
 	if playerID == sessionID {
-		return domain.GuestSession{}, unavailable(errors.New("identifier source reused a UUID"))
+		return credential{}, unavailable(errors.New("identifier source reused a UUID"))
 	}
 	bearerBytes, err := service.identifiers.Bytes(32)
 	if err != nil {
-		return domain.GuestSession{}, unavailable(err)
+		return credential{}, unavailable(err)
 	}
 	if len(bearerBytes) < 32 {
-		return domain.GuestSession{}, unavailable(errors.New("identifier source returned too few credential bytes"))
+		return credential{}, unavailable(errors.New("identifier source returned too few credential bytes"))
 	}
 	// Retain exactly 256 credential bits even when a custom source returns a
 	// larger buffer. Authenticate enforces that same canonical size.
 	bearer := encodeBearer(bearerBytes[:32])
-	hash := hashBearer(bearer)
-	expiresAt := now.Add(service.policy.SessionDuration).UTC()
-	if err := service.identities.CreateGuest(ctx,
-		domain.Player{ID: playerID, DisplayName: displayName, CreatedAt: now},
-		domain.Session{ID: sessionID, PlayerID: playerID, BearerHash: hash, CreatedAt: now, ExpiresAt: expiresAt},
-	); err != nil {
-		return domain.GuestSession{}, unavailable(err)
-	}
-	return domain.GuestSession{PlayerID: playerID, AccessToken: bearer, ExpiresAt: expiresAt}, nil
+	return credential{
+		session: domain.Session{ID: sessionID, PlayerID: playerID, BearerHash: hashBearer(bearer), CreatedAt: now, ExpiresAt: now.Add(service.policy.SessionDuration).UTC()},
+		bearer:  bearer,
+	}, nil
 }
 
 func (service *Service) Authenticate(ctx context.Context, authorization string) (domain.SessionVerification, error) {
