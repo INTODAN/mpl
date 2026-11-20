@@ -188,6 +188,9 @@ func TestTheLobbyServesEverythingOnItsOwn(t *testing.T) {
 	if header := lobby.call(http.MethodGet, "/", "", nil, http.StatusTemporaryRedirect, nil); header.Get("Location") != app.UIPath {
 		t.Fatalf("/ redirects to %q", header.Get("Location"))
 	}
+	if header := lobby.call(http.MethodGet, "/privacy", "", nil, http.StatusTemporaryRedirect, nil); header.Get("Location") != app.PrivacyPolicyPath {
+		t.Fatalf("/privacy redirects to %q, want %q", header.Get("Location"), app.PrivacyPolicyPath)
+	}
 	lobby.call(http.MethodGet, "/healthz", "", nil, http.StatusNoContent, nil)
 	var catalog []map[string]any
 	lobby.call(http.MethodGet, app.UIPath+"games.json", "", nil, http.StatusOK, &catalog)

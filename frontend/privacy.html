@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy – Game lobby</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="privacy">
+    <header class="page-header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">L</span> Lobby</div>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">Privacy policy</p>
+      <h1>What the lobby keeps.</h1>
+      <p>This lobby lets players create rooms, join or watch them and start games. It keeps as little about you as it can, and deletes most of it on its own. Last updated 21 November 2026.</p>
+    </section>
+
+    <section class="card">
+      <h2>Who runs it</h2>
+      <p>This lobby is run by the operator of the site you reached it on. If you signed in with Google, Google's sign-in screen shows the operator's support email; write to it with any question about your data.</p>
+
+      <h2>If you play or watch as a guest</h2>
+      <p>The lobby stores the display name you choose, the rooms you create, join or watch, your team, your ready state, the settings you pick for the game, and any seats added for the game. It stores a hash of your session key, never the key itself. Sessions last up to a day and are deleted an hour after they expire.</p>
+
+      <h2>If you sign in with Google</h2>
+      <p>The game's page signs you in with Google and hands the lobby the token Google issues. That token may contain your name, email address and picture, but the lobby keeps only your Google account's ID (Google calls it the <code>sub</code>) and discards the rest. You choose a display name for your account, which the lobby keeps with it. The lobby keeps your account until you delete it.</p>
+
+      <h2>How long rooms are kept</h2>
+      <p>Rooms, with their members, watchers and the copies of your display name and account ID in them, are deleted automatically. By default that is an hour after a room goes idle, or a day after its current round started, whichever comes first; a game may set longer or shorter periods for its own rooms. Players are deleted once no room or session refers to them. Backups and logs of the operator's hosting may keep data for a short time longer, as the operator configures.</p>
+
+      <h2>Who sees your data</h2>
+      <p>Other players in your room, and anyone who watches it with its code, see your display name, team, ready state, game settings, whether you signed in and whether you are connected. The game you play receives the room's state, including each member's player ID, display name, team, ready state, settings and account ID if they signed in (never the Google ID), so it can run the match and report results. Each game is run by its own operator, and its own privacy policy covers what it keeps, such as results or rankings. The operator's hosting providers process the data to run the service. The lobby does not sell your data or share it with anyone else.</p>
+
+      <h2>In your browser</h2>
+      <p>The lobby's own code keeps your session in the tab's session storage, which your browser clears when you close the tab. It sets no cookies and uses no analytics or advertising. Games load their own code into the lobby page; their policies cover it.</p>
+
+      <h2>Deleting your data</h2>
+      <p>You can delete your account at any time with the lobby API's <code>DELETE /lobby/v1/account</code>, which games may offer as a button. This ends your sessions and deletes your account, with its Google ID and name, at once. Copies of your display name and account ID in rooms and players are deleted on their own, within about a day after nothing refers to them. Data a game kept is covered by that game's policy; ask the game to delete it. Guest data is deleted on its own.</p>
+
+      <h2>Google user data</h2>
+      <p>The lobby's use of information received from Google follows the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including its Limited Use requirements.</p>
+    </section>
+  </main>
+</body>
+</html>

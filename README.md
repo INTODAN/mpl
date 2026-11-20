@@ -162,6 +162,8 @@ A person can sign in with Google instead of playing as a guest. The lobby then k
 | `PUT /lobby/v1/account` (`updateLobbyAccount`) | Renames the account and the caller's own player, with `{"display_name": "…"}`. Lobbies the player already joined keep the name they copied. |
 | `DELETE /lobby/v1/account` (`deleteLobbyAccount`) | Deletes the account and ends every session of its players at once, in one transaction: 204. The players stay, without an account, in the lobbies and rosters that name them, and [retention](#deleting-old-data) deletes them later as it does a guest's. The same Google account can sign in again, as a new account. |
 
+The lobby page has a privacy policy at `/lobby/ui/privacy.html` (`app.PrivacyPolicyPath`), and the lobby's own host redirects `/privacy` to it; give that address to the Google OAuth consent screen. A game that registers the lobby on its own router serves it at `app.PrivacyPolicyPath`.
+
 Retention never deletes an account. The admin tools' `find_players` gives each player's `account_id`.
 
 **Turning it on.** Create a Google OAuth client of the *Web application* type, add the game's sites to its authorized JavaScript origins, and set `LOBBY_GOOGLE_CLIENT_IDS` to its client ID ([Configuration](#configuration)); on the VM, `google_client_ids` in `vm.yml` ([deploy README](deploy/README.md)). Tests sign their own ID tokens with [`auth/googletest`](auth/googletest/googletest.go) and point `LOBBY_GOOGLE_CERTS_URL` at its keys: the mock game serves them for the live suite.
