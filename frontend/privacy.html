@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy – Game lobby</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="privacy">
+    <header class="page-header">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">L</span> Lobby</div>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">Privacy policy</p>
+      <h1>What the lobby keeps.</h1>
+      <p>This lobby lets players create rooms, join them and start games. It keeps as little about you as it can, and deletes most of it on its own.</p>
+    </section>
+
+    <section class="card">
+      <h2>If you play as a guest</h2>
+      <p>The lobby stores the display name you choose, the rooms you join, your team and ready state, and the settings you pick for the game. It stores a hash of your session key, never the key itself. Rooms and their players are deleted automatically a while after they go idle, as the lobby's operator configures, usually within a day.</p>
+
+      <h2>If you sign in with Google</h2>
+      <p>The lobby receives a token from Google and keeps only your Google account's ID (Google calls it the <code>sub</code>). It does not store your name, email address or picture. Instead, you choose a display name for your account, which the lobby keeps with it. The lobby asks Google for nothing beyond sign-in.</p>
+
+      <h2>What games receive</h2>
+      <p>The game you play gets your player ID, your display name, your account ID if you signed in (not your Google ID), your team and the settings you picked, so it can run the match and report its results. Each game is run by its own operator, and its own privacy policy covers what it keeps, such as results or rankings.</p>
+
+      <h2>In your browser</h2>
+      <p>The lobby page keeps your session in the tab's session storage, which your browser clears when you close the tab. It sets no cookies and uses no analytics or advertising.</p>
+
+      <h2>Logs</h2>
+      <p>The servers may log technical details of requests, such as IP addresses, to run and protect the service. These logs are kept only briefly.</p>
+
+      <h2>Deleting your data</h2>
+      <p>You can delete your account at any time from the game you signed in with, or with the lobby API's <code>DELETE /lobby/v1/account</code>. This ends your sessions and deletes your account, with its Google account ID and name, at once. Your players stay, without an account, in the rooms that name them until those are deleted on their own, as a guest's are.</p>
+
+      <h2>Sharing</h2>
+      <p>The lobby does not sell your data or share it with anyone other than the game you play.</p>
+    </section>
+  </main>
+</body>
+</html>

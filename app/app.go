@@ -216,7 +216,8 @@ func (lobby *Lobby) Register(router chi.Router, api huma.API) error {
 
 // Handler is the lobby on its own: Register's routes, with the player API's
 // OpenAPI document at /openapi.json and its documentation at /docs, a
-// redirect from / to the lobby page, and GET /healthz, which answers 204.
+// redirect from / to the lobby page, a redirect from /privacy to its privacy
+// policy, and GET /healthz, which answers 204.
 // The player API answers the configured AllowedOrigins with CORS.
 func (lobby *Lobby) Handler() (http.Handler, error) {
 	router := chi.NewMux()
@@ -225,6 +226,7 @@ func (lobby *Lobby) Handler() (http.Handler, error) {
 		return nil, err
 	}
 	router.Get("/", toPage)
+	router.Get("/privacy", toPrivacyPolicy)
 	router.Get("/healthz", func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNoContent)
 	})
@@ -242,6 +244,14 @@ func (lobby *Lobby) PlayerTokenKeys() *playertoken.KeySet { return lobby.keys }
 
 func toPage(response http.ResponseWriter, request *http.Request) {
 	http.Redirect(response, request, UIPath, http.StatusTemporaryRedirect)
+}
+
+// PrivacyPolicyPath is the lobby page's privacy policy, which Handler also
+// serves at /privacy, the address to give Google's OAuth consent screen.
+const PrivacyPolicyPath = UIPath + "privacy.html"
+
+func toPrivacyPolicy(response http.ResponseWriter, request *http.Request) {
+	http.Redirect(response, request, PrivacyPolicyPath, http.StatusTemporaryRedirect)
 }
 
 // undocumented is an API's configuration without documentation routes, for

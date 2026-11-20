@@ -132,3 +132,4 @@ h3 { font-size: 1rem; margin: 0; }
 .watchers-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid #e0e5ee; border-radius: 10px; font-size: .9rem; }
 .watchers-list .watcher-name { overflow-wrap: anywhere; font-weight: 600; }
 .watchers-list .text-button { padding: 0; font-size: .8rem; }
+.privacy h2 { margin-top: 26px; } .privacy .card h2:first-child { margin-top: 0; } .privacy code { font-size: .9em; }
