@@ -19,7 +19,6 @@ import (
 type choiceSettingsGame struct {
 	mutex   sync.Mutex
 	lobbies []string
-	members []domain.MemberIdentity
 }
 
 var settingsGame = &choiceSettingsGame{}
@@ -38,10 +37,9 @@ func decodeChoice(settings json.RawMessage) (string, error) {
 	return decoded.Choice, nil
 }
 
-func (game *choiceSettingsGame) validate(_ context.Context, lobbyID string, member domain.MemberIdentity, settings json.RawMessage) error {
+func (game *choiceSettingsGame) validate(_ context.Context, lobbyID string, _ domain.MemberIdentity, settings json.RawMessage) error {
 	game.mutex.Lock()
 	game.lobbies = append(game.lobbies, lobbyID)
-	game.members = append(game.members, member)
 	game.mutex.Unlock()
 	_, err := decodeChoice(settings)
 	return err
