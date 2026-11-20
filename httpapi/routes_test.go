@@ -439,7 +439,7 @@ func newTestAPI(t *testing.T) (http.Handler, humatest.TestAPI) {
 }
 func newTestAPIWithApp(t *testing.T, application *fakeApplication) (http.Handler, humatest.TestAPI) {
 	handler, api := humatest.New(t, huma.DefaultConfig("Lobby", "1.0.0"))
-	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, testPlayerTokens(t), nil)
+	Register(api, application, fakeAuthenticator{}, fakeIssuer{}, testPlayerTokens(t), nil, nil)
 	return handler, api
 }
 

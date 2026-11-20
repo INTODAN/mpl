@@ -36,6 +36,13 @@ const (
 	// AllowedOriginsEnv lists the games' sites whose own lobby UI calls the
 	// player API from another origin, separated by commas.
 	AllowedOriginsEnv = "LOBBY_ALLOWED_ORIGINS"
+	// GoogleClientIDsEnv lists the Google OAuth client IDs whose ID tokens
+	// sign players in, separated by commas. Unset, sign-in is off.
+	GoogleClientIDsEnv = "LOBBY_GOOGLE_CLIENT_IDS"
+	// GoogleCertsURLEnv replaces Google's keys (auth.GoogleCertsURL) with a
+	// test's own, for a live suite that signs its own ID tokens. Production
+	// leaves it unset.
+	GoogleCertsURLEnv = "LOBBY_GOOGLE_CERTS_URL"
 	// GamesEnv lists the games, gamehooks.GamesEnv.
 	GamesEnv = gamehooks.GamesEnv
 	// The retention settings, domain.RetentionPolicy; each one unset keeps
@@ -110,6 +117,13 @@ type Config struct {
 	// runs the lobby in its own process serves its pages on the lobby's
 	// origin and needs none.
 	AllowedOrigins []string
+	// GoogleClientIDs are the Google OAuth client IDs whose ID tokens sign
+	// players in; the first is the one that clients' sign-in buttons use.
+	// Empty, sign-in is off.
+	GoogleClientIDs []string
+	// GoogleCertsURL is where the keys that sign Google's ID tokens are,
+	// auth.GoogleCertsURL when empty. Only tests set it.
+	GoogleCertsURL string
 }
 
 // LookupGameSecret reads a game's shared secret by the variable that its
@@ -152,8 +166,8 @@ func LoadConfig() (Config, error) {
 // LoadConfigFromLookup reads and checks the lobby's settings through lookup,
 // such as os.LookupEnv. Every setting is required except the pool limits,
 // the player token lifetime and the retention settings, which have
-// defaults, and the allowed origins, without which no other site may call
-// the player API. Errors name variables, never their values.
+// defaults, the allowed origins, without which no other site may call
+// the player API, and the Google client IDs, without which sign-in is off. Errors name variables, never their values.
 func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if err := requireEnvironment(lookup, DatabaseURLEnv, PublicURLEnv, CentrifugoAPIURLEnv, CentrifugoAPIKeyEnv,
 		CentrifugoPublicURLEnv, ConnectionTokenSecretEnv, ProxySecretEnv, PlayerTokenKeysEnv, GamesEnv); err != nil {
@@ -183,7 +197,16 @@ func LoadConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", AllowedOriginsEnv, err)
 	}
+	googleClientIDs := ParseList(read(lookup, GoogleClientIDsEnv))
+	googleCertsURL := read(lookup, GoogleCertsURLEnv)
+	if googleCertsURL != "" {
+		if err := validateURL(GoogleCertsURLEnv, googleCertsURL, "http", "https"); err != nil {
+			return Config{}, err
+		}
+	}
 	config := Config{
+		GoogleClientIDs:       googleClientIDs,
+		GoogleCertsURL:        googleCertsURL,
 		Database:              database,
 		PublicURL:             strings.TrimRight(read(lookup, PublicURLEnv), "/"),
 		CentrifugoAPIURL:      read(lookup, CentrifugoAPIURLEnv),
@@ -265,6 +288,17 @@ func ParseOrigins(value string) ([]string, error) {
 		origins = append(origins, origin)
 	}
 	return origins, nil
+}
+
+// ParseList reads a list of values separated by commas, without empty ones.
+func ParseList(value string) []string {
+	var values []string
+	for item := range strings.SplitSeq(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }
 
 // LoadHTTPAddr reads the address that the local server listens on,

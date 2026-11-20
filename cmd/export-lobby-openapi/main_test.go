@@ -36,6 +36,9 @@ func TestExportPublicOperations(t *testing.T) {
 	paths := document["paths"].(map[string]any)
 	want := map[string]string{
 		"/lobby/v1/sessions":                                                        "createLobbySession",
+		"/lobby/v1/sessions/google":                                                 "createLobbyGoogleSession",
+		"/lobby/v1/sign-in":                                                         "getLobbySignIn",
+		"/lobby/v1/account":                                                         "getLobbyAccount",
 		"/lobby/v1/connection-token":                                                "createLobbyConnectionToken",
 		"/lobby/v1/lobbies":                                                         "createLobby",
 		"/lobby/v1/memberships":                                                     "joinLobby",
@@ -111,7 +114,7 @@ func TestExportSecurityAndResponses(t *testing.T) {
 				continue
 			}
 			security, hasSecurity := operation["security"]
-			if path == "/lobby/v1/sessions" || path == "/lobby/v1/jwks.json" {
+			if path == "/lobby/v1/sessions" || path == "/lobby/v1/sessions/google" || path == "/lobby/v1/sign-in" || path == "/lobby/v1/jwks.json" {
 				if hasSecurity {
 					t.Fatalf("%s unexpectedly has security metadata", path)
 				}
@@ -121,6 +124,9 @@ func TestExportSecurityAndResponses(t *testing.T) {
 		}
 	}
 	assertResponse(t, paths, "/lobby/v1/sessions", "post", "201")
+	assertResponse(t, paths, "/lobby/v1/sessions/google", "post", "201")
+	assertResponse(t, paths, "/lobby/v1/account", "put", "200")
+	assertResponse(t, paths, "/lobby/v1/account", "delete", "204")
 	assertResponse(t, paths, "/lobby/v1/lobbies", "post", "201")
 	assertResponse(t, paths, "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/membership", "delete", "204")
 	assertResponse(t, paths, "/lobby/v1/games/{game_key}/lobbies/{lobby_id}/leases/{client_instance_id}", "delete", "204")

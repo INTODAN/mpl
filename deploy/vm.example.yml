@@ -42,5 +42,11 @@ tenants:
         origin: https://<game>.<your-domain>
         result_url: https://<game>.<your-domain>/<result path>
 
+# Optional: the Google OAuth client IDs whose ID tokens sign players in
+# (README.md, "Accounts"); the first is the one the games' sign-in buttons
+# use. Left out, sign-in is off.
+# google_client_ids:
+#   - <id>.apps.googleusercontent.com
+
 # Optional: a contact address for the Let's Encrypt account.
 # app_letsencrypt_email: <you@your-domain>

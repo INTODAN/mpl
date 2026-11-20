@@ -159,6 +159,15 @@ def main() -> int:
                           # The lobby page lists every game; nothing here opens the result.
                           "frontend": {"result_url": "/mock-game/{lobby_id}/result"}})
             environment.update({"LOBBY_GAMES": json.dumps(games), "LOBBY_GAME_SECRET_MOCK_GAME": mock_secret})
+            # The mock game stands in for Google: the lobby verifies the ID
+            # tokens that it signs, and the suite signs in with them.
+            if not environment.get("LOBBY_GOOGLE_CLIENT_IDS"):
+                environment.update({
+                    "LOBBY_GOOGLE_CLIENT_IDS": "mock-google-client",
+                    "LOBBY_GOOGLE_CERTS_URL": f"http://127.0.0.1:{mock_port}/google/certs",
+                    "LOBBY_TEST_GOOGLE_CLIENT_ID": "mock-google-client",
+                    "LOBBY_TEST_GOOGLE_ID_TOKEN_URL": f"http://127.0.0.1:{mock_port}/google/id-token",
+                })
             command("go", "build", "-o", str(temporary / "mock-game"), "./cmd/mock-game", cwd=ROOT, env=environment)
             mock_game = subprocess.Popen([str(temporary / "mock-game")], cwd=ROOT, stdout=log_file, stderr=subprocess.STDOUT, text=True,
                                          env={**environment, "MOCK_GAME_ADDR": f"127.0.0.1:{mock_port}", "MOCK_GAME_SECRET": mock_secret,

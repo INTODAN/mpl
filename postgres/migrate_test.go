@@ -574,7 +574,7 @@ func TestRecordsMatchMigratedColumns(t *testing.T) {
 	records := []any{
 		&lobbypostgres.PlayerRecord{}, &lobbypostgres.SessionRecord{}, &lobbypostgres.RoomRecord{},
 		&lobbypostgres.TeamRecord{}, &lobbypostgres.MembershipRecord{}, &lobbypostgres.LeaseRecord{},
-		&lobbypostgres.StartRosterRecord{}, &lobbypostgres.CreateRequestRecord{},
+		&lobbypostgres.StartRosterRecord{}, &lobbypostgres.CreateRequestRecord{}, &lobbypostgres.AccountRecord{},
 	}
 	for _, record := range records {
 		statement := &gorm.Statement{DB: db}

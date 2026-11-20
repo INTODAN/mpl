@@ -45,6 +45,7 @@ type Player struct {
 	ID           string        `json:"id"`
 	DisplayName  string        `json:"display_name"`
 	CreatedAt    time.Time     `json:"created_at"`
+	AccountID    *string       `json:"account_id" jsonschema:"The account the player signed in to, or null for a guest and once the account is deleted."`
 	LiveSessions []Session     `json:"live_sessions"`
 	Lobbies      []PlayerLobby `json:"lobbies"`
 	RosterPlaces []RosterPlace `json:"roster_places" jsonschema:"The player's places on started lobbies' start rosters."`
@@ -144,7 +145,7 @@ func (reader lobbyReader) findPlayers(transaction *gorm.DB, input FindPlayersInp
 	}
 	for _, record := range players {
 		player := Player{
-			ID: record.ID, DisplayName: record.DisplayName, CreatedAt: record.CreatedAt.UTC(),
+			ID: record.ID, DisplayName: record.DisplayName, CreatedAt: record.CreatedAt.UTC(), AccountID: record.AccountID,
 			LiveSessions: []Session{}, Lobbies: []PlayerLobby{}, RosterPlaces: []RosterPlace{},
 		}
 		for _, session := range sessions {

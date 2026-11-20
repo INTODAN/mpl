@@ -130,6 +130,8 @@ Both commands read the same environment; every name starts with `LOBBY_`. [`.env
 | `LOBBY_PLAYER_TOKEN_KEYS`, `LOBBY_PLAYER_TOKEN_LIFETIME` | The [player token](#player-tokens) keys, required, and their lifetime, `15m` by default. |
 | `LOBBY_GAMES` | The games, at least one ([Configuration](#configuration-1) of HTTP games), with each game's secret in the variable its `secret_env` names. Required. |
 | `LOBBY_ALLOWED_ORIGINS` | The games' sites, separated by commas, whose own lobby UI, such as a game's web client, calls the player API from another origin, such as `https://island-battles.example.org`: each an origin without a path. The player API under `/lobby/v1/` answers them with CORS: `Access-Control-Allow-Origin` set to the request's origin (never `*`), `Vary: Origin` and `Access-Control-Expose-Headers: Retry-After`, and a preflight with 204, `GET, POST, PUT, DELETE`, `Authorization, Content-Type` and `Access-Control-Max-Age: 600`. Any other origin, and the game API, the Centrifugo proxy and the lobby page, get no CORS headers. Optional; unset, no other site may call the player API. |
+| `LOBBY_GOOGLE_CLIENT_IDS` | The Google OAuth client IDs whose ID tokens sign players in ([Accounts](#accounts)), separated by commas; the first is the one that `GET /lobby/v1/sign-in` gives clients for their button. A client ID isn't a secret. Optional; unset, sign-in is off. |
+| `LOBBY_GOOGLE_CERTS_URL` | Where the keys that sign ID tokens are, Google's `https://www.googleapis.com/oauth2/v3/certs` by default. Only a test that signs its own ID tokens sets it, such as the live suite with the mock game; never set it in production. |
 | `LOBBY_RETENTION_IDLE_PERIOD`, `LOBBY_RETENTION_MAXIMUM_AGE`, `LOBBY_RETENTION_CREATE_REQUESTS`, `LOBBY_RETENTION_EXPIRED_SESSIONS`, `LOBBY_RETENTION_BATCH_SIZE`, `LOBBY_RETENTION_PASS_INTERVAL` | [Retention](#deleting-old-data): the lobbies' idle period and maximum age, the create requests' idempotency window, how long expired sessions are kept, the rows a pass deletes of each kind and the least time between passes. Each unset keeps `DefaultRetention()`'s value. |
 
 A setting that is missing or invalid stops the lobby from starting, and the error names the variables, never their values.
@@ -137,6 +139,32 @@ A setting that is missing or invalid stops the lobby from starting, and the erro
 ### Starting a game while the lobby is locked
 
 A ready or start request holds a database connection, and the room's lock, while the lobby calls the game's `ready-check` hook, and a game may read the same lobby through the game API before it answers, as Island Battles does at the start. The game API reads without the lock (`Service.GameSnapshot`), so a start never waits on itself: its transaction holds one connection, and the game's read takes another (`app` tests this on a pool of 2). On Lambda an instance serves one request at a time, so the game's read reaches another instance. The local server serves many requests at once, and other requests to the same lobby hold their connections while they wait for the lock, so its pool is wider: 10 connections.
+
+## Accounts
+
+A person can sign in with Google instead of playing as a guest. The lobby then knows them across sessions and devices, as an **account** with a display name they chose. Sign-in is offered, never required: guests play as before. The lobby keeps accounts game-neutral: a game learns nothing of them here.
+
+**What an account is.** An account is keyed by Google's account ID (the ID token's `sub`) and holds the display name its owner chose, and nothing else of Google's: no name, picture or email (`lobby_accounts`). Each sign-in creates a new player of the account, with one session that lasts as long as a guest's, 24 hours, and works on every route a guest's does. One account can so have several live players, one per device or sign-in. A player's `account_id` names its account; a guest's is null.
+
+**Signing in.** A game's own client, such as Island Battles' 3D client, offers the button; the lobby page doesn't.
+
+1. The client reads `GET /lobby/v1/sign-in` (`getLobbySignIn`), with no credential: `{"google_client_id": "…"}`, or `null` while sign-in is off, and shows Google Identity Services' **Sign in with Google** button with that client ID.
+2. Google gives the page an ID token, which the client posts to `POST /lobby/v1/sessions/google` (`createLobbyGoogleSession`) as `{"credential": "<ID token>"}`. The lobby checks its RS256 signature with Google's keys (cached as their `Cache-Control` says), `iss` (`accounts.google.com` or `https://accounts.google.com`), `aud` (one of `LOBBY_GOOGLE_CLIENT_IDS`) and `exp`, and trusts no claim but `sub`. An invalid token is 401; while sign-in is off the route is 404.
+3. A known account gets its session at once: 201 with `{"player_id", "access_token", "expires_at", "account": {"id", "display_name"}}`. A new account needs a name: the lobby answers 422 `display_name_required`, and the client asks for one and posts the same credential again with `display_name`. A name another account holds is 409 `display_name_taken`.
+
+**The display name** of an account is 3 to 24 characters after trimming, of letters, digits, spaces, `-` and `_`, unique among accounts without regard to case (otherwise 422 `invalid_input`, or 409 `display_name_taken`). A guest's name keeps its own rule, 1 to 40 characters of any kind, and may equal an account's. The session's player takes the account's name, and a lobby shows the name a member had when they joined.
+
+**The caller's account**, with a signed-in session's credential; a guest's gets 403 `sign_in_required`:
+
+| Route | |
+|---|---|
+| `GET /lobby/v1/account` (`getLobbyAccount`) | `{"id", "display_name", "created_at"}` |
+| `PUT /lobby/v1/account` (`updateLobbyAccount`) | Renames the account and the caller's own player, with `{"display_name": "…"}`. Lobbies the player already joined keep the name they copied. |
+| `DELETE /lobby/v1/account` (`deleteLobbyAccount`) | Deletes the account and ends every session of its players at once, in one transaction: 204. The players stay, without an account, in the lobbies and rosters that name them, and [retention](#deleting-old-data) deletes them later as it does a guest's. The same Google account can sign in again, as a new account. |
+
+Retention never deletes an account. The admin tools' `find_players` gives each player's `account_id`.
+
+**Turning it on.** Create a Google OAuth client of the *Web application* type, add the game's sites to its authorized JavaScript origins, and set `LOBBY_GOOGLE_CLIENT_IDS` to its client ID ([Configuration](#configuration)); on the VM, `google_client_ids` in `vm.yml` ([deploy README](deploy/README.md)). Tests sign their own ID tokens with [`auth/googletest`](auth/googletest/googletest.go) and point `LOBBY_GOOGLE_CERTS_URL` at its keys: the mock game serves them for the live suite.
 
 ## Schema migrations
 

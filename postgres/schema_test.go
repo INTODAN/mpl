@@ -23,7 +23,7 @@ func TestSchemaCreatesOnlyLobbyTables(t *testing.T) {
 	expected := []string{
 		"lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
 		"lobby_memberships", "lobby_leases", "lobby_start_roster",
-		"lobby_create_requests", "lobby_watchers", "lobby_schema_migrations",
+		"lobby_create_requests", "lobby_watchers", "lobby_accounts", "lobby_schema_migrations",
 	}
 	slices.Sort(tables)
 	slices.Sort(expected)
@@ -239,7 +239,11 @@ func TestSchemaPreservesNullAndFalse(t *testing.T) {
 func seedPlayer(t *testing.T, db *gorm.DB) lobbypostgres.PlayerRecord {
 	t.Helper()
 	player := lobbypostgres.PlayerRecord{ID: uuid.NewString(), DisplayName: "Guest", CreatedAt: time.Now().UTC()}
-	mustCreate(t, db, &player)
+	// Omitting account_id lets the helper seed schemas from before
+	// migration 0012.
+	if err := db.Omit("AccountID").Create(&player).Error; err != nil {
+		t.Fatal(err)
+	}
 	return player
 }
 

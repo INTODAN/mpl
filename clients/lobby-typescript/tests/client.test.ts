@@ -319,6 +319,61 @@ describe("sessions", () => {
 	});
 });
 
+describe("accounts", () => {
+	const account = {
+		id: "66666666-6666-4666-8666-666666666666",
+		display_name: "Dana",
+		created_at: "2026-11-20T12:00:00Z",
+	};
+
+	test("signing in with Google keeps the session and manages its account", async () => {
+		const fresh = new Harness(null);
+		fresh.hook = (call) => {
+			if (call.path.endsWith("/sign-in")) return json(200, { google_client_id: "client-id" });
+			if (call.path.endsWith("/sessions/google")) {
+				const body = call.body as { display_name?: string };
+				if (body.display_name === undefined) return problem(422, "display_name_required");
+				return json(201, {
+					player_id: LOBBY,
+					access_token: "signed-in-secret",
+					expires_at: "2026-11-21T12:00:00Z",
+					account,
+				});
+			}
+			if (call.path.endsWith("/account")) {
+				if (call.method === "DELETE") return new Response(null, { status: 204 });
+				if (call.method === "PUT") return json(200, { ...account, ...(call.body as object) });
+				return json(200, account);
+			}
+			return undefined;
+		};
+		expect((await fresh.client.signInSettings()).google_client_id).toBe("client-id");
+		await expect(fresh.client.signInWithGoogle("id-token")).rejects.toMatchObject({
+			code: "display_name_required",
+			status: 422,
+		});
+		const session = await fresh.client.signInWithGoogle("id-token", "Dana");
+		expect(session.account.display_name).toBe("Dana");
+		expect(fresh.client.credential).toBe("signed-in-secret");
+		const signIns = fresh.callsTo("/sessions/google");
+		expect(signIns.map((call) => [call.authorization, call.body])).toEqual([
+			[null, { credential: "id-token" }],
+			[null, { credential: "id-token", display_name: "Dana" }],
+		]);
+		await expect(fresh.client.signInWithGoogle("id-token")).rejects.toThrow("session_already_set");
+		expect((await fresh.client.account()).display_name).toBe("Dana");
+		expect((await fresh.client.renameAccount("Kraken")).display_name).toBe("Kraken");
+		await fresh.client.deleteAccount();
+		expect(fresh.callsTo("/account").map((call) => [call.method, call.authorization])).toEqual([
+			["GET", "Bearer signed-in-secret"],
+			["PUT", "Bearer signed-in-secret"],
+			["DELETE", "Bearer signed-in-secret"],
+		]);
+		expect(fresh.client.credential).toBeUndefined();
+		await fresh.client.close();
+	});
+});
+
 describe("commands", () => {
 	const request = "44444444-4444-4444-8444-444444444444";
 	const SEAT = "55555555-5555-4555-8555-555555555555";

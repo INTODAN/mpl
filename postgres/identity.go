@@ -9,7 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// IdentityStore persists guest players and their single v1 session. It has no
+// IdentityStore persists players, guests and those of accounts, their single
+// v1 session, and accounts. It has no
 // connection or migration side effects; callers own database setup.
 type IdentityStore struct {
 	db *gorm.DB
@@ -26,13 +27,7 @@ func NewIdentityStore(db *gorm.DB) (*IdentityStore, error) {
 // constraint is still retained at the database layer for direct callers.
 func (store *IdentityStore) CreateGuest(ctx context.Context, player domain.Player, session domain.Session) error {
 	playerRecord := PlayerRecord{ID: player.ID, DisplayName: player.DisplayName, CreatedAt: player.CreatedAt.UTC()}
-	sessionRecord := SessionRecord{
-		ID:         session.ID,
-		PlayerID:   session.PlayerID,
-		BearerHash: append([]byte(nil), session.BearerHash[:]...),
-		CreatedAt:  session.CreatedAt.UTC(),
-		ExpiresAt:  session.ExpiresAt.UTC(),
-	}
+	sessionRecord := newSessionRecord(session)
 	return store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&playerRecord).Error; err != nil {
 			return err
@@ -73,8 +68,12 @@ func (store *IdentityStore) verificationForSession(ctx context.Context, session 
 		// unavailable instead of accidentally granting an empty identity.
 		return nil, errors.New("lobby postgres: session player is missing")
 	}
+	var accountID string
+	if players[0].AccountID != nil {
+		accountID = *players[0].AccountID
+	}
 	return &domain.SessionVerification{
-		Principal: domain.Principal{PlayerID: players[0].ID, SessionID: session.ID, DisplayName: players[0].DisplayName},
+		Principal: domain.Principal{PlayerID: players[0].ID, SessionID: session.ID, DisplayName: players[0].DisplayName, AccountID: accountID},
 		ExpiresAt: session.ExpiresAt.UTC(),
 	}, nil
 }

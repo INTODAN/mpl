@@ -19,6 +19,7 @@ var SchemaTables = []string{
 	"lobby_start_roster",
 	"lobby_create_requests",
 	"lobby_watchers",
+	"lobby_accounts",
 }
 
 //go:embed migrations/*.sql

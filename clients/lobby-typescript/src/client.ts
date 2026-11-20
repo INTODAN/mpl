@@ -17,11 +17,14 @@ import {
 import type { paths } from "./generated/openapi.js";
 import { Consumer, type RealtimeSubscription, ScopeState, Signal, scopeKey } from "./reconcile.js";
 import {
+	type Account,
+	type AccountSession,
 	type ConnectionToken,
 	type GameSettings,
 	type GuestSession,
 	type PlayerToken,
 	type Scope,
+	type SignInSettings,
 	type Snapshot,
 	scopeOf,
 	type TeamDefinition,
@@ -274,6 +277,59 @@ export class LobbyClient {
 		this.credential = session.access_token;
 		this.#authError = undefined;
 		return session;
+	}
+
+	/**
+	 * Reads whether the lobby offers Sign in with Google: `google_client_id`
+	 * is the client ID for Google's button, or null while sign-in is off.
+	 */
+	async signInSettings(): Promise<SignInSettings> {
+		this.#checkOpen();
+		return await this.#request((init) => this.#http.GET("/lobby/v1/sign-in", { ...init }), {
+			authenticated: false,
+		});
+	}
+
+	/**
+	 * Signs in with a Google ID token and keeps the new session's credential
+	 * in `credential`. An account's first sign-in needs `displayName`: without
+	 * one it throws display_name_required, and the caller asks for a name and
+	 * calls again with the same credential. A name another account holds
+	 * throws display_name_taken. Later sign-ins ignore it.
+	 */
+	async signInWithGoogle(credential: string, displayName?: string): Promise<AccountSession> {
+		this.#checkOpen();
+		if (this.credential) throw new LobbyError("session_already_set");
+		const body =
+			displayName === undefined ? { credential } : { credential, display_name: displayName };
+		const session = await this.#request(
+			(init) => this.#http.POST("/lobby/v1/sessions/google", { ...init, body }),
+			{ authenticated: false },
+		);
+		this.credential = session.access_token;
+		this.#authError = undefined;
+		return session;
+	}
+
+	/** The signed-in session's account; a guest's throws sign_in_required. */
+	async account(): Promise<Account> {
+		this.#requireAuth();
+		return await this.#request((init) => this.#http.GET("/lobby/v1/account", { ...init }));
+	}
+
+	/** Renames the account and this session's player. */
+	async renameAccount(displayName: string): Promise<Account> {
+		this.#requireAuth();
+		return await this.#request((init) =>
+			this.#http.PUT("/lobby/v1/account", { ...init, body: { display_name: displayName } }),
+		);
+	}
+
+	/** Deletes the account, which ends every session of it, this one too. */
+	async deleteAccount(): Promise<void> {
+		this.#requireAuth();
+		await this.#request((init) => this.#http.DELETE("/lobby/v1/account", { ...init }));
+		this.credential = undefined;
 	}
 
 	async #connectionToken(): Promise<ConnectionToken> {

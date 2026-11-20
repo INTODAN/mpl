@@ -16,18 +16,21 @@ const basePath = "/lobby/v1"
 var lobbyBearer = []map[string][]string{{"LobbyBearer": {}}}
 
 // Register installs the public lobby API. app, authenticator, issuer,
-// playerTokens and retention are invoked only while serving requests, so
-// offline OpenAPI export may use fakes. After each lobby request, retention
-// runs a pass if one is due; a nil retention deletes nothing.
-func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer, playerTokens domain.PlayerTokenIssuer, retention domain.RetentionRunner) {
+// playerTokens, accounts and retention are invoked only while serving
+// requests, so offline OpenAPI export may use fakes. After each lobby
+// request, retention runs a pass if one is due; a nil retention deletes
+// nothing. A nil accounts turns sign-in off.
+func Register(api huma.API, app domain.Application, authenticator domain.Authenticator, issuer domain.ConnectionTokenIssuer, playerTokens domain.PlayerTokenIssuer, accounts domain.Accounts, retention domain.RetentionRunner) {
 	registerSchemas(api)
-	handler := handlers{app: app, authenticator: authenticator, issuer: issuer, playerTokens: playerTokens}
+	handler := handlers{app: app, authenticator: authenticator, issuer: issuer, playerTokens: playerTokens, accounts: accounts}
 	// The public keys read no lobby data, so they skip the retention pass.
 	keys := huma.NewGroup(api, basePath)
 	keys.UseMiddleware(validationProblems)
 	keys.UseTransformer(BoundErrorDetails)
 	huma.Register(keys, operation(http.MethodGet, "/jwks.json", "getLobbyPublicKeys", http.StatusOK, nil, "Read the lobby's public keys",
 		"Returns the JWKS (RFC 7517) of the Ed25519 keys that verify player tokens (issuePlayerToken): the key that signs new tokens, and any previous key that still verifies tokens issued before a rotation. A key is published before it signs and kept for 15 minutes after it stops, the longest a token lasts. A game caches the keys for the response's max-age, 300 seconds, and fetches them again, at most once a minute, when a token names a kid it doesn't have."), handler.publicKeys)
+	huma.Register(keys, operation(http.MethodGet, "/sign-in", "getLobbySignIn", http.StatusOK, nil, "Read how to sign in",
+		"Tells a client whether to offer Sign in with Google: google_client_id is the Google OAuth client ID that its button uses, or null while sign-in is off. Sign-in is offered, never required: guest sessions (createLobbySession) work either way."), handler.signInSettings)
 	group := huma.NewGroup(api, basePath)
 	group.UseMiddleware(validationProblems)
 	group.UseTransformer(BoundErrorDetails)
@@ -37,6 +40,15 @@ func Register(api huma.API, app domain.Application, authenticator domain.Authent
 	protected := huma.NewGroup(group)
 	protected.UseMiddleware(authenticate(authenticator))
 	huma.Register(group, operation(http.MethodPost, "/sessions", "createLobbySession", http.StatusCreated, nil, "Create a guest session", "Creates one guest identity and bearer credential."), handler.session)
+	huma.Register(group, operation(http.MethodPost, "/sessions/google", "createLobbyGoogleSession", http.StatusCreated, nil, "Sign in with Google",
+		"Signs in with the ID token that Google Identity Services gave the page, and opens a session: a new player of the account, with a bearer credential that works on every route a guest's does and lasts as long. The lobby verifies the token's signature with Google's keys, its iss, its aud, which must be one of the lobby's Google client IDs (getLobbySignIn), and its exp; an invalid token is 401. It keeps Google's account ID (sub) and nothing else of Google's: no name, picture or email. "+
+			"An account's first sign-in creates it and needs display_name: without one it fails with 422 display_name_required, and the client asks for a name and posts the same credential again. A name another account holds, without regard to case, is 409 display_name_taken, and a name that breaks the rule is 422 invalid_input. Later sign-ins ignore display_name. While sign-in is off, the route answers 404."), handler.googleSession)
+	huma.Register(protected, operation(http.MethodGet, "/account", "getLobbyAccount", http.StatusOK, lobbyBearer, "Read your account",
+		"Returns the account of your signed-in session. A guest session gets 403 sign_in_required."), handler.account)
+	huma.Register(protected, operation(http.MethodPut, "/account", "updateLobbyAccount", http.StatusOK, lobbyBearer, "Rename your account",
+		"Renames your account, and your session's player, and returns the account. Lobbies you already joined keep the name you had when you joined them. The name is 3 to 24 characters of letters, digits, spaces, - and _ (otherwise 422 invalid_input), unique among accounts without regard to case (otherwise 409 display_name_taken). A guest session gets 403 sign_in_required."), handler.updateAccount)
+	huma.Register(protected, operation(http.MethodDelete, "/account", "deleteLobbyAccount", http.StatusNoContent, lobbyBearer, "Delete your account",
+		"Deletes your account and ends every session of its players, this one included, at once. The players stay, without an account, in the lobbies and rosters that name them, and are deleted later as a guest's are. Signing in again with the same Google account creates a new account. A guest session gets 403 sign_in_required."), handler.deleteAccount)
 	huma.Register(protected, operation(http.MethodPost, "/connection-token", "createLobbyConnectionToken", http.StatusOK, lobbyBearer, "Create a connection token", "Creates an authenticated Centrifugo connection token; it never creates or joins a lobby."), handler.token)
 	huma.Register(protected, operation(http.MethodPost, "/player-tokens", "issuePlayerToken", http.StatusOK, lobbyBearer, "Issue a player token for a game",
 		"Issues a short-lived player token for one game: a JWT signed with EdDSA (Ed25519), which the game verifies with the lobby's public keys (getLobbyPublicKeys), without the lobby's database or a call to the lobby. Its claims are iss, the lobby's public URL; sub, your player ID; aud, game_key; iat and exp; and name, your display name. "+
@@ -98,6 +110,6 @@ func registerSchemas(api huma.API) {
 	if specification.Components.SecuritySchemes == nil {
 		specification.Components.SecuritySchemes = map[string]*huma.SecurityScheme{}
 	}
-	specification.Components.SecuritySchemes["LobbyBearer"] = &huma.SecurityScheme{Type: "http", Scheme: "bearer", Description: "Guest bearer credential issued by POST /lobby/v1/sessions. This is distinct from a Centrifugo connection JWT."}
+	specification.Components.SecuritySchemes["LobbyBearer"] = &huma.SecurityScheme{Type: "http", Scheme: "bearer", Description: "Bearer credential of a session, issued by POST /lobby/v1/sessions to a guest or by POST /lobby/v1/sessions/google to a signed-in player. This is distinct from a Centrifugo connection JWT."}
 	registerInvalidationSchema(specification.Components.Schemas)
 }

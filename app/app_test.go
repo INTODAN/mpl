@@ -65,8 +65,8 @@ type server struct {
 
 // newServer serves the lobby as cmd/lobby does, from its LOBBY_* settings,
 // on a pool of maxOpen connections, with one game, readingGame, at a server
-// of its own.
-func newServer(t *testing.T, maxOpen int) (*server, *readingGame) {
+// of its own. configure changes the LOBBY_* settings first.
+func newServer(t *testing.T, maxOpen int, configure ...func(map[string]string)) (*server, *readingGame) {
 	t.Helper()
 	database := testutil.NewPostgresFixture(t)
 	pool, err := database.DB()
@@ -90,6 +90,9 @@ func newServer(t *testing.T, maxOpen int) (*server, *readingGame) {
 	environment[app.CentrifugoAPIURLEnv] = centrifugo.URL + "/api"
 	environment[app.GamesEnv] = fmt.Sprintf(`[{"key": "mock-game", "name": "Mock game", "hooks_url": %q, "secret_env": "LOBBY_GAME_SECRET_MOCK_GAME",
 		"frontend": {"result_url": "/mock/{lobby_id}/result"}}]`, gameServer.URL+"/hooks")
+	for _, change := range configure {
+		change(environment)
+	}
 	config, err := load(environment)
 	if err != nil {
 		t.Fatal(err)

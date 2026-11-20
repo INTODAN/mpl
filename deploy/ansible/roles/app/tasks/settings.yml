@@ -19,6 +19,17 @@
       least one tenant: the lobby needs a game to start.
     quiet: true
 
+- name: Check the Google client IDs
+  ansible.builtin.assert:
+    that:
+      - google_client_ids | default([]) is ansible.builtin.sequence
+      - google_client_ids | default([]) is not ansible.builtin.string
+      - google_client_ids | default([]) | reject('ansible.builtin.match', '^[A-Za-z0-9._-]+$') | list | length == 0
+    fail_msg: >-
+      google_client_ids, when set, is a list of Google OAuth client IDs such as
+      123-abc.apps.googleusercontent.com, which turn on Sign in with Google (README.md, "Accounts").
+    quiet: true
+
 - name: Check each tenant
   vars:
     app_expected_secret_env: "{{ app_game_secret_env_prefix ~ (item.key | default('') | upper | replace('-', '_')) }}"

@@ -1,6 +1,72 @@
 {
   "components": {
     "schemas": {
+      "Account": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/Account.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "AccountSession": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/AccountSession.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "access_token": {
+            "type": "string"
+          },
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "player_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id",
+          "access_token",
+          "expires_at",
+          "account"
+        ],
+        "type": "object"
+      },
       "AddSeatBody": {
         "additionalProperties": false,
         "properties": {
@@ -114,6 +180,35 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "CreateGoogleSessionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/CreateGoogleSessionBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "credential": {
+            "description": "The ID token that Google Identity Services gave the page.",
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The display name of a new account: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case. Required on an account's first sign-in, ignored after it.",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential"
+        ],
         "type": "object"
       },
       "CreateLobbyBody": {
@@ -774,6 +869,9 @@
               "game_unavailable",
               "watcher_kicked",
               "watchers_full",
+              "sign_in_required",
+              "display_name_required",
+              "display_name_taken",
               "unavailable",
               "internal_error"
             ],
@@ -855,6 +953,31 @@
         },
         "required": [
           "team_id"
+        ],
+        "type": "object"
+      },
+      "SignInSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/SignInSettings.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "google_client_id": {
+            "description": "The Google OAuth client ID that a Sign in with Google button uses, or null while sign-in is off.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "google_client_id"
         ],
         "type": "object"
       },
@@ -1017,6 +1140,30 @@
         ],
         "type": "object"
       },
+      "UpdateAccountBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/UpdateAccountBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The account's new display name: 3 to 24 characters of letters, digits, spaces, - and _, unique among accounts without regard to case.",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "type": "object"
+      },
       "WatchAccess": {
         "additionalProperties": false,
         "properties": {
@@ -1133,7 +1280,7 @@
     },
     "securitySchemes": {
       "LobbyBearer": {
-        "description": "Guest bearer credential issued by POST /lobby/v1/sessions. This is distinct from a Centrifugo connection JWT.",
+        "description": "Bearer credential of a session, issued by POST /lobby/v1/sessions to a guest or by POST /lobby/v1/sessions/google to a signed-in player. This is distinct from a Centrifugo connection JWT.",
         "scheme": "bearer",
         "type": "http"
       }
@@ -1145,6 +1292,296 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/lobby/v1/account": {
+      "delete": {
+        "description": "Deletes your account and ends every session of its players, this one included, at once. The players stay, without an account, in the lobbies and rosters that name them, and are deleted later as a guest's are. Signing in again with the same Google account creates a new account. A guest session gets 403 sign_in_required.",
+        "operationId": "deleteLobbyAccount",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Delete your account",
+        "tags": [
+          "Lobby"
+        ]
+      },
+      "get": {
+        "description": "Returns the account of your signed-in session. A guest session gets 403 sign_in_required.",
+        "operationId": "getLobbyAccount",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Read your account",
+        "tags": [
+          "Lobby"
+        ]
+      },
+      "put": {
+        "description": "Renames your account, and your session's player, and returns the account. Lobbies you already joined keep the name you had when you joined them. The name is 3 to 24 characters of letters, digits, spaces, - and _ (otherwise 422 invalid_input), unique among accounts without regard to case (otherwise 409 display_name_taken). A guest session gets 403 sign_in_required.",
+        "operationId": "updateLobbyAccount",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LobbyBearer": []
+          }
+        ],
+        "summary": "Rename your account",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
     "/lobby/v1/connection-token": {
       "post": {
         "description": "Creates an authenticated Centrifugo connection token; it never creates or joins a lobby.",
@@ -3618,6 +4055,200 @@
           }
         },
         "summary": "Create a guest session",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/sessions/google": {
+      "post": {
+        "description": "Signs in with the ID token that Google Identity Services gave the page, and opens a session: a new player of the account, with a bearer credential that works on every route a guest's does and lasts as long. The lobby verifies the token's signature with Google's keys, its iss, its aud, which must be one of the lobby's Google client IDs (getLobbySignIn), and its exp; an invalid token is 401. It keeps Google's account ID (sub) and nothing else of Google's: no name, picture or email. An account's first sign-in creates it and needs display_name: without one it fails with 422 display_name_required, and the client asks for a name and posts the same credential again. A name another account holds, without regard to case, is 409 display_name_taken, and a name that breaks the rule is 422 invalid_input. Later sign-ins ignore display_name. While sign-in is off, the route answers 404.",
+        "operationId": "createLobbyGoogleSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGoogleSessionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSession"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Sign in with Google",
+        "tags": [
+          "Lobby"
+        ]
+      }
+    },
+    "/lobby/v1/sign-in": {
+      "get": {
+        "description": "Tells a client whether to offer Sign in with Google: google_client_id is the Google OAuth client ID that its button uses, or null while sign-in is off. Sign-in is offered, never required: guest sessions (createLobbySession) work either way.",
+        "operationId": "getLobbySignIn",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Read how to sign in",
         "tags": [
           "Lobby"
         ]

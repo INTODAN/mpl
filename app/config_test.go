@@ -89,6 +89,8 @@ func TestOptionalSettingsOverrideTheDefaults(t *testing.T) {
 		app.RetentionBatchSizeEnv:            "100",
 		app.RetentionPassIntervalEnv:         "30s",
 		app.AllowedOriginsEnv:                " https://game.example.org, http://localhost:3000 ",
+		app.GoogleClientIDsEnv:               " one.apps.googleusercontent.com,, two.apps.googleusercontent.com ",
+		app.GoogleCertsURLEnv:                "http://127.0.0.1:9999/certs",
 	} {
 		environment[name] = value
 	}
@@ -100,7 +102,9 @@ func TestOptionalSettingsOverrideTheDefaults(t *testing.T) {
 		Lobbies: domain.LobbyRetention{IdlePeriod: 3 * time.Hour, MaximumAge: 48 * time.Hour}, BatchSize: 100, PassInterval: 30 * time.Second}
 	if config.Database.MaxOpenConnections != 10 || config.Database.MaxIdleConnections != 4 || config.Database.ConnectionMaxIdleTime != 30*time.Second ||
 		config.PlayerTokenLifetime != 2*time.Minute || config.Retention != want ||
-		strings.Join(config.AllowedOrigins, " ") != "https://game.example.org http://localhost:3000" {
+		strings.Join(config.AllowedOrigins, " ") != "https://game.example.org http://localhost:3000" ||
+		strings.Join(config.GoogleClientIDs, " ") != "one.apps.googleusercontent.com two.apps.googleusercontent.com" ||
+		config.GoogleCertsURL != "http://127.0.0.1:9999/certs" {
 		t.Fatalf("config = %+v", config)
 	}
 }
@@ -119,6 +123,7 @@ func TestInvalidSettingsAreRefused(t *testing.T) {
 		app.RetentionIdlePeriodEnv:        {"-1h", "1m"},
 		app.RetentionBatchSizeEnv:         {"0", "1001"},
 		"LOBBY_GAME_SECRET_MOCK_GAME":     {"short"},
+		app.GoogleCertsURLEnv:             {"certs", "ftp://certs.example.org"},
 		app.AllowedOriginsEnv: {"*", "game.example.org", "https://game.example.org/", "https://game.example.org/play", "https://Game.example.org",
 			"ftp://game.example.org", "https://game.example.org:443", "https://game.example.org, null"},
 	} {

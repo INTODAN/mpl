@@ -273,7 +273,7 @@ async def test_schema_initialization_is_repeatable(guests):
     assert lobby_tables == {
         "lobby_players", "lobby_sessions", "lobby_rooms", "lobby_teams",
         "lobby_memberships", "lobby_leases", "lobby_start_roster",
-        "lobby_create_requests", "lobby_watchers", "lobby_schema_migrations",
+        "lobby_create_requests", "lobby_watchers", "lobby_accounts", "lobby_schema_migrations",
     }
     await control_backend(signal.SIGUSR1)
     assert await sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename") == tables
@@ -281,3 +281,48 @@ async def test_schema_initialization_is_repeatable(guests):
     assert observed.lobby.id == room.lobby.id
     assert observed.lobby.host_player_id == room.lobby.host_player_id
     assert observed.membership_generation == room.membership_generation
+
+
+GOOGLE_ID_TOKEN_URL = os.environ.get("LOBBY_TEST_GOOGLE_ID_TOKEN_URL")
+GOOGLE_CLIENT_ID = os.environ.get("LOBBY_TEST_GOOGLE_CLIENT_ID")
+
+
+async def google_id_token(subject: str) -> str:
+    """An ID token that the mock game signs as Google would."""
+    async with httpx.AsyncClient() as http:
+        response = await http.post(GOOGLE_ID_TOKEN_URL, json={"subject": subject, "audience": GOOGLE_CLIENT_ID})
+        response.raise_for_status()
+        return response.json()["credential"]
+
+
+@pytest.mark.skipif(not GOOGLE_ID_TOKEN_URL, reason="sign-in needs the runner's --mock-game, which stands in for Google")
+async def test_sign_in_with_google_opens_an_account_session(guests):
+    from lobby_client import AuthenticationError, LobbyError
+
+    subject = f"live-{uuid4()}"
+    name = f"Live {uuid4().hex[:8]}"
+    first = await guests(credential="")
+    first.credential = None
+    assert (await first.sign_in_settings()).google_client_id == GOOGLE_CLIENT_ID
+    with pytest.raises(LobbyError) as needs_name:
+        await first.sign_in_with_google(await google_id_token(subject))
+    assert needs_name.value.code == "display_name_required"
+    session = await first.sign_in_with_google(await google_id_token(subject), name)
+    assert session.account.display_name == name
+
+    # The account's session plays as a guest's does.
+    room = await create(first)
+    assert room.members[0].display_name == name
+
+    second = await guests(credential="")
+    second.credential = None
+    again = await second.sign_in_with_google(await google_id_token(subject))
+    assert again.account.id == session.account.id and again.player_id != session.player_id
+    assert await sql(f"SELECT count(*) FROM lobby_players WHERE account_id = '{session.account.id}'") == "2"
+
+    await second.delete_account()
+    for client, credential in ((first, session.access_token), (second, again.access_token)):
+        client.credential = credential
+        client._auth_error = None
+        with pytest.raises(AuthenticationError):
+            await client.account()

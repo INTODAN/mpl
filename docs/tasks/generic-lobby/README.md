@@ -12,7 +12,7 @@ Read [the architecture decision](../../multiplayer-architecture.md), [architectu
 
 Included: guest identity, explicit create/join/leave, team selection, host/ready/start lifecycle, durable membership and reconnect grace, authorized Centrifugo delivery, fresh PostgreSQL schema initialization, an Island Battles adapter, reproducible Python generation, and a runnable multi-player Python example.
 
-Deferred: account/password/OAuth management, matchmaking, invitations beyond join codes, spectators, kicking/banning, multiple backend deployments, Lambda dispatch, game round timers, game action authorization overhaul, C#/TypeScript SDKs, and game-specific Python commands. Starting a lobby freezes its roster for game creation; it does not invoke Lambda or begin simulation.
+Deferred: password accounts and sign-in providers other than Google (Google sign-in and accounts landed later; see the root README's "Accounts"), matchmaking, invitations beyond join codes, spectators, kicking/banning, multiple backend deployments, Lambda dispatch, game round timers, game action authorization overhaul, C#/TypeScript SDKs, and game-specific Python commands. Starting a lobby freezes its roster for game creation; it does not invoke Lambda or begin simulation.
 
 The guest credential is a bearer capability issued by this backend. Display names and join codes are not identities, and callers cannot select a player ID.
 

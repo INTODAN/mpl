@@ -603,3 +603,46 @@ async def test_repeated_server_unsubscribe_backs_off(h):
     assert sub.calls == 3
     await h.time.advance(.011)
     assert sub.calls == 4
+
+
+async def test_sign_in_with_google_keeps_the_new_session_and_manages_its_account(h):
+    seen = []
+    account = {"id": "6b7f0f5e-6a49-4b8e-9d27-4b1f8a0e0c11", "display_name": "Dana", "created_at": "2026-11-20T12:00:00Z"}
+
+    async def accounts(request):
+        path = request.url.path
+        if path.endswith("/sign-in"):
+            return httpx.Response(200, json={"google_client_id": "client.apps.googleusercontent.com"})
+        if path.endswith("/sessions/google"):
+            sent = json.loads(request.content)
+            seen.append(("sign-in", "Authorization" in request.headers, sent))
+            if "display_name" not in sent:
+                return problem(422, "display_name_required")
+            return httpx.Response(201, json={"player_id": str(uuid4()), "access_token": "signed-in-secret",
+                                             "expires_at": "2026-11-21T12:00:00Z", "account": account})
+        if path.endswith("/account"):
+            seen.append((request.method, request.headers["Authorization"], request.content and json.loads(request.content)))
+            if request.method == "DELETE":
+                return httpx.Response(204)
+            renamed = dict(account, display_name=json.loads(request.content)["display_name"]) if request.method == "PUT" else account
+            return httpx.Response(200, json=renamed)
+        return None
+    h.hook = accounts
+    h.client.credential = None
+    assert (await h.client.sign_in_settings()).google_client_id == "client.apps.googleusercontent.com"
+    with pytest.raises(LobbyError) as needs_name:
+        await h.client.sign_in_with_google("google-id-token")
+    assert (needs_name.value.code, needs_name.value.status) == ("display_name_required", 422)
+    session = await h.client.sign_in_with_google("google-id-token", "Dana")
+    assert session.account.display_name == "Dana" and h.client.credential == "signed-in-secret"
+    assert seen[:2] == [("sign-in", False, {"credential": "google-id-token"}),
+                        ("sign-in", False, {"credential": "google-id-token", "display_name": "Dana"})]
+    with pytest.raises(LobbyError) as twice:
+        await h.client.sign_in_with_google("google-id-token")
+    assert twice.value.code == "session_already_set"
+    assert (await h.client.account()).display_name == "Dana"
+    assert (await h.client.rename_account("Kraken")).display_name == "Kraken"
+    await h.client.delete_account()
+    assert seen[2:] == [("GET", "Bearer signed-in-secret", b""), ("PUT", "Bearer signed-in-secret", {"display_name": "Kraken"}),
+                        ("DELETE", "Bearer signed-in-secret", b"")]
+    assert h.client.credential is None

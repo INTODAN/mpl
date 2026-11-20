@@ -23,6 +23,8 @@ type Principal struct {
 	PlayerID    string `json:"player_id"`
 	SessionID   string `json:"-"`
 	DisplayName string `json:"display_name"`
+	// AccountID is the player's account, empty for a guest.
+	AccountID string `json:"-"`
 }
 type Lobby struct {
 	ID       string `json:"id"`
@@ -233,7 +235,9 @@ func (change Change) HasWrites() bool {
 type Player struct {
 	ID          string
 	DisplayName string
-	CreatedAt   time.Time
+	// AccountID is the player's account, empty for a guest.
+	AccountID string
+	CreatedAt time.Time
 }
 
 // CredentialHash is a SHA-256 bearer digest, never the raw bearer.
