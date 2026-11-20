@@ -306,22 +306,56 @@ func validateSeat(_ context.Context, _, playerID string, settings json.RawMessag
 	return SeatName, nil
 }
 
+// memberSettings are the mock game's member settings: a color, and
+// signed_in, which only a member who signed in may set, so tests see that the
+// lobby says who sets them.
+type memberSettings struct {
+	Color    *string `json:"color"`
+	SignedIn *bool   `json:"signed_in"`
+}
+
+func parseMemberSettings(settings json.RawMessage) (memberSettings, bool) {
+	var parsed memberSettings
+	if len(settings) == 0 || decodeExactly(settings, &parsed) != nil {
+		return memberSettings{}, false
+	}
+	return parsed, true
+}
+
 // color returns the color in member settings, or false when they don't hold
 // one.
 func color(settings json.RawMessage) (string, bool) {
-	var parsed struct {
-		Color *string `json:"color"`
-	}
-	if len(settings) == 0 || decodeExactly(settings, &parsed) != nil || parsed.Color == nil {
+	parsed, valid := parseMemberSettings(settings)
+	if !valid || parsed.Color == nil {
 		return "", false
 	}
 	length := utf8.RuneCountInString(*parsed.Color)
 	return *parsed.Color, length >= 1 && length <= 20
 }
 
-func validateMemberSettings(_ context.Context, _ string, settings json.RawMessage) error {
+// errGuestSignedIn refuses signed_in from a guest.
+var errGuestSignedIn = errors.New(`sign in to set "signed_in"`)
+
+func validateMemberSettings(_ context.Context, _ string, member domain.MemberIdentity, settings json.RawMessage) error {
 	if _, valid := color(settings); !valid {
-		return errors.New(`member_settings must be {"color": "<1 to 20 characters>"}`)
+		return errors.New(`member_settings must be {"color": "<1 to 20 characters>"}, with "signed_in": true for a member who signed in`)
+	}
+	if parsed, _ := parseMemberSettings(settings); parsed.SignedIn != nil && *parsed.SignedIn && member.AccountID == "" {
+		return errGuestSignedIn
+	}
+	return nil
+}
+
+// ValidateSignedInOnly is the mock game's member settings check without its
+// rules: it takes only {"signed_in": true}, and only from a member who signed
+// in, so a live suite proves that the lobby tells the game who sets them.
+func ValidateSignedInOnly(_ context.Context, _ string, member domain.MemberIdentity, settings json.RawMessage) error {
+	parsed, valid := parseMemberSettings(settings)
+	if !valid || parsed.Color != nil || parsed.SignedIn == nil || !*parsed.SignedIn {
+		return errors.New(`member_settings must be {"signed_in": true}`)
+	}
+	if member.AccountID == "" {
+		return errGuestSignedIn
 	}
 	return nil
 }

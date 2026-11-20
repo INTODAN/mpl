@@ -225,7 +225,7 @@ async def test_seats_send_the_games_settings_and_show_their_kind(h):
     def member(kind, settings):
         return dict(id=seat, player_id=str(uuid4()), display_name="Bot (level 2)", generation=1, active=True,
                     team_id=team, ready=True, joined_at="2026-09-20T00:00:00Z", join_sequence=2,
-                    disconnected_until=None, kind=kind, seat_settings=settings, member_settings=None)
+                    disconnected_until=None, kind=kind, seat_settings=settings, member_settings=None, signed_in=False)
 
     async def seats(request):
         if "/seats" not in request.url.path:
@@ -275,7 +275,7 @@ async def test_member_settings_send_your_own_settings_for_the_game(h):
         body = snapshot(5)
         body["members"] = [dict(id=str(uuid4()), player_id=str(uuid4()), display_name="Alice", generation=1, active=True,
                                 team_id=None, ready=False, joined_at="2026-09-20T00:00:00Z", join_sequence=1,
-                                disconnected_until=None, kind="human", seat_settings=None, member_settings=sent["member_settings"])]
+                                disconnected_until=None, kind="human", seat_settings=None, member_settings=sent["member_settings"], signed_in=True)]
         return httpx.Response(200, json=body)
     h.hook = member_settings
     await h.join()

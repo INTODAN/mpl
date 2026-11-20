@@ -51,6 +51,9 @@ type Player struct {
 	ID string
 	// Name is the player's display name when the token was issued.
 	Name string
+	// AccountID is the account of a player who signed in, the token's
+	// account_id, and empty for a guest.
+	AccountID string
 }
 
 // Claims are a token's claims, as they are signed.
@@ -61,6 +64,8 @@ type Claims struct {
 	IssuedAt int64  `json:"iat"`
 	Expires  int64  `json:"exp"`
 	Name     string `json:"name"`
+	// AccountID is the player's account, left out for a guest.
+	AccountID string `json:"account_id,omitempty"`
 }
 
 // header is a token's JOSE header.
@@ -153,7 +158,7 @@ func (verifier *Verifier) Verify(ctx context.Context, token, audience string) (P
 	if !verifier.now().Before(time.Unix(claims.Expires, 0).Add(Leeway)) {
 		return Player{}, ErrInvalid
 	}
-	return Player{ID: claims.Subject, Name: claims.Name}, nil
+	return Player{ID: claims.Subject, Name: claims.Name, AccountID: claims.AccountID}, nil
 }
 
 // FromAuthorization returns the credential of an Authorization header with

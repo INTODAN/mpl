@@ -37,7 +37,7 @@ func decodeChoice(settings json.RawMessage) (string, error) {
 	return decoded.Choice, nil
 }
 
-func (game *choiceSettingsGame) validate(_ context.Context, lobbyID string, settings json.RawMessage) error {
+func (game *choiceSettingsGame) validate(_ context.Context, lobbyID string, _ domain.MemberIdentity, settings json.RawMessage) error {
 	game.mutex.Lock()
 	game.lobbies = append(game.lobbies, lobbyID)
 	game.mutex.Unlock()

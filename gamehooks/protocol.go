@@ -67,10 +67,15 @@ type ValidateSeatResponse struct {
 	DisplayName string `json:"display_name"`
 }
 
-// ValidateMemberSettingsRequest is the body of validate-member-settings.
+// ValidateMemberSettingsRequest is the body of validate-member-settings: the
+// member who sets the settings, by their player ID, their account ID, empty
+// for a guest, and their display name, and the settings.
 type ValidateMemberSettingsRequest struct {
-	LobbyID  string          `json:"lobby_id"`
-	Settings json.RawMessage `json:"settings"`
+	LobbyID     string          `json:"lobby_id"`
+	PlayerID    string          `json:"player_id"`
+	AccountID   string          `json:"account_id"`
+	DisplayName string          `json:"display_name"`
+	Settings    json.RawMessage `json:"settings"`
 }
 
 // ReadyCheckRequest is the body of ready-check: the one member getting
@@ -82,11 +87,13 @@ type ReadyCheckRequest struct {
 	AtStart bool          `json:"at_start"`
 }
 
-// ReadyMember is a member that ready-check decides about. Settings are the
-// member's member settings, or null when they set none.
+// ReadyMember is a member that ready-check decides about. AccountID is the
+// member's account from when they joined, empty for a guest. Settings are
+// the member's member settings, or null when they set none.
 type ReadyMember struct {
 	PlayerID    string          `json:"player_id"`
 	DisplayName string          `json:"display_name"`
+	AccountID   string          `json:"account_id"`
 	Settings    json.RawMessage `json:"settings"`
 }
 

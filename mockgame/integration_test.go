@@ -282,8 +282,13 @@ func TestTheMockGamePlaysTheWholeLobbyLifeCycleOverHTTP(t *testing.T) {
 		t.Fatalf("ready without a color = %+v", refusal)
 	}
 	refusal = stack.refused(http.MethodPut, stack.lobbyPath(room, "/member-settings"), host, map[string]any{"member_settings": map[string]any{"colour": "red"}}, http.StatusUnprocessableEntity, "invalid_member_settings")
-	if refusal.Detail != `member_settings must be {"color": "<1 to 20 characters>"}` {
+	if refusal.Detail != `member_settings must be {"color": "<1 to 20 characters>"}, with "signed_in": true for a member who signed in` {
 		t.Fatalf("refused member settings = %+v", refusal)
+	}
+	// The hook names who sets the settings: a guest may not set signed_in.
+	refusal = stack.refused(http.MethodPut, stack.lobbyPath(room, "/member-settings"), host, map[string]any{"member_settings": map[string]any{"color": "red", "signed_in": true}}, http.StatusUnprocessableEntity, "invalid_member_settings")
+	if refusal.Detail != `sign in to set "signed_in"` {
+		t.Fatalf("a guest's signed_in = %+v", refusal)
 	}
 	for index, member := range []*guest{host, other} {
 		stack.call(http.MethodPut, stack.lobbyPath(room, "/member-settings"), member, map[string]any{"member_settings": map[string]any{"color": []string{"red", "blue"}[index]}}, http.StatusOK, nil)
@@ -310,6 +315,12 @@ func TestTheMockGamePlaysTheWholeLobbyLifeCycleOverHTTP(t *testing.T) {
 	snapshot, err := stack.gameAPI.Snapshot(context.Background(), room.Lobby.ID)
 	if err != nil || snapshot.Lobby.ID != room.Lobby.ID || len(snapshot.StartRoster) != 3 || snapshot.MembershipGeneration != 0 || string(snapshot.Members[0].MemberSettings) != `{"color":"red"}` || snapshot.Members[2].MemberSettings != nil {
 		t.Fatalf("game API snapshot = %+v, %v", snapshot, err)
+	}
+	// Guests and a seat have no account.
+	for _, member := range snapshot.Members {
+		if member.AccountID != nil {
+			t.Fatalf("%s has account %s", member.DisplayName, *member.AccountID)
+		}
 	}
 
 	// A watcher is authorized through the game API; a stranger isn't, and

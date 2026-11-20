@@ -78,7 +78,7 @@ func (service *Service) SetReady(ctx context.Context, principal domain.Principal
 			return domain.Change{}, nil
 		}
 		if check != nil {
-			if err := check([]domain.ReadyMember{{PlayerID: member.PlayerID, DisplayName: member.DisplayName, Settings: bytes.Clone(member.MemberSettings)}}, false); err != nil {
+			if err := check([]domain.ReadyMember{{PlayerID: member.PlayerID, DisplayName: member.DisplayName, AccountID: deref(member.AccountID), Settings: bytes.Clone(member.MemberSettings)}}, false); err != nil {
 				return domain.Change{}, err
 			}
 		}

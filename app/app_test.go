@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +40,12 @@ type readingGame struct {
 	lobby  *gamehooks.GameAPIClient
 	reads  atomic.Int32
 	starts atomic.Int32
+	// What the game was told, last: who set member settings, the members
+	// that a ready check decided about, and the start's snapshot.
+	mutex          sync.Mutex
+	settingsMember domain.MemberIdentity
+	readyMembers   []domain.ReadyMember
+	started        domain.Snapshot
 }
 
 func (game *readingGame) registration() domain.GameRegistration {
@@ -49,9 +56,23 @@ func (game *readingGame) registration() domain.GameRegistration {
 				return nil, fmt.Errorf("%w: %w", domain.ErrUnavailable, err)
 			}
 			game.reads.Add(1)
-			return func([]domain.ReadyMember, bool) error { return nil }, nil
+			return func(members []domain.ReadyMember, _ bool) error {
+				game.mutex.Lock()
+				defer game.mutex.Unlock()
+				game.readyMembers = members
+				return nil
+			}, nil
+		},
+		ValidateMemberSettings: func(_ context.Context, _ string, member domain.MemberIdentity, _ json.RawMessage) error {
+			game.mutex.Lock()
+			defer game.mutex.Unlock()
+			game.settingsMember = member
+			return nil
 		},
 		StartGame: func(ctx context.Context, snapshot domain.Snapshot) (string, error) {
+			game.mutex.Lock()
+			game.started = snapshot
+			game.mutex.Unlock()
 			game.starts.Add(1)
 			return "game-" + snapshot.Lobby.ID, nil
 		},

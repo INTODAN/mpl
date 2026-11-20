@@ -22,7 +22,8 @@ func (service *Service) SetMemberSettings(ctx context.Context, principal domain.
 	if err := service.policy.ValidateScope(scope); err != nil {
 		return domain.Snapshot{}, err
 	}
-	settings, err := service.policy.ValidateMemberSettings(ctx, scope.GameKey, scope.LobbyID, request.MemberSettings)
+	member := domain.MemberIdentity{PlayerID: principal.PlayerID, AccountID: principal.AccountID, DisplayName: principal.DisplayName}
+	settings, err := service.policy.ValidateMemberSettings(ctx, scope.GameKey, scope.LobbyID, member, request.MemberSettings)
 	if err != nil {
 		return domain.Snapshot{}, err
 	}
@@ -45,4 +46,12 @@ func (service *Service) SetMemberSettings(ctx context.Context, principal domain.
 		return domain.Snapshot{}, err
 	}
 	return service.snapshot(aggregate, principal.PlayerID)
+}
+
+// deref is the account ID that a member's pointer holds, or empty.
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

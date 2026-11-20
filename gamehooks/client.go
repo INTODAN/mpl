@@ -95,8 +95,8 @@ func (client *Client) ValidateSeat(ctx context.Context, lobbyID, playerID string
 
 // ValidateMemberSettings calls validate-member-settings; it is a
 // domain.MemberSettingsValidator.
-func (client *Client) ValidateMemberSettings(ctx context.Context, lobbyID string, settings json.RawMessage) error {
-	return client.validate(ctx, HookValidateMemberSettings, ValidateMemberSettingsRequest{LobbyID: lobbyID, Settings: settings}, nil)
+func (client *Client) ValidateMemberSettings(ctx context.Context, lobbyID string, member domain.MemberIdentity, settings json.RawMessage) error {
+	return client.validate(ctx, HookValidateMemberSettings, ValidateMemberSettingsRequest{LobbyID: lobbyID, PlayerID: member.PlayerID, AccountID: member.AccountID, DisplayName: member.DisplayName, Settings: settings}, nil)
 }
 
 // ReadyGate is a domain.ReadyGate whose check calls ready-check. The lobby
@@ -115,7 +115,7 @@ func (client *Client) ReadyGate(ctx context.Context, lobbyID string) (domain.Rea
 func (client *Client) ReadyCheck(ctx context.Context, lobbyID string, members []domain.ReadyMember, atStart bool) error {
 	request := ReadyCheckRequest{LobbyID: lobbyID, Members: make([]ReadyMember, 0, len(members)), AtStart: atStart}
 	for _, member := range members {
-		request.Members = append(request.Members, ReadyMember{PlayerID: member.PlayerID, DisplayName: member.DisplayName, Settings: member.Settings})
+		request.Members = append(request.Members, ReadyMember{PlayerID: member.PlayerID, DisplayName: member.DisplayName, AccountID: member.AccountID, Settings: member.Settings})
 	}
 	answer, err := client.transport.send(ctx, http.MethodPost, []string{HookReadyCheck}, request)
 	if err != nil {

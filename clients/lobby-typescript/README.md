@@ -19,6 +19,8 @@ npm install mpl-lobby-client@X.Y.Z   # or: bun add mpl-lobby-client@X.Y.Z
 
 Each release publishes it at the release's version, the same as the Go module's tag and the Python client's version. It is an ES module for browsers, Node 22 or newer, Bun and Deno, and needs `fetch`, `WebSocket`, `crypto.randomUUID` and `AbortSignal.any`. Where the runtime has no `WebSocket`, a join fails with `CompatibilityError` `realtime_unavailable`.
 
+**Telling games which account a member is, is a breaking change; clients must upgrade.** Every snapshot member has a new required field, `signed_in`: whether the person had signed in with an account when they joined, always false for a seat. Players never see account IDs. What to do: regenerate or upgrade the client, which needs `signed_in` in every snapshot. Games get the account itself: see the lobby README's "Hooks: the lobby calls the game".
+
 ## Using it
 
 ```ts

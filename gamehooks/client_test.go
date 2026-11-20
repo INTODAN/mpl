@@ -22,6 +22,7 @@ type recordingGame struct {
 	seatPlayer    string
 	teams         []domain.TeamDefinition
 	members       []domain.ReadyMember
+	member        domain.MemberIdentity
 	atStart       bool
 	started       domain.Snapshot
 }
@@ -46,7 +47,10 @@ func (game *recordingGame) registration() domain.GameRegistration {
 			}
 			return "Robot", nil
 		},
-		ValidateMemberSettings: func(context.Context, string, json.RawMessage) error { return errors.New("no member settings here") },
+		ValidateMemberSettings: func(_ context.Context, _ string, member domain.MemberIdentity, _ json.RawMessage) error {
+			game.member = member
+			return errors.New("no member settings here")
+		},
 		ReadyGate: func(context.Context, string) (domain.ReadyCheck, error) {
 			return func(members []domain.ReadyMember, atStart bool) error {
 				game.members, game.atStart = members, atStart
@@ -116,8 +120,12 @@ func TestTheClientCallsAGoGameThroughTheHandler(t *testing.T) {
 	if _, _, err := policy.ValidateSeatSettings(ctx, "example-game", "", "", json.RawMessage(`{"level":2}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidSeatSettings || err.Error() != "level must be 1" {
 		t.Fatalf("refused seat = %v", err)
 	}
-	if _, err := policy.ValidateMemberSettings(ctx, "example-game", "", json.RawMessage(`{}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidMemberSettings || err.Error() != "no member settings here" {
+	if _, err := policy.ValidateMemberSettings(ctx, "example-game", "", domain.MemberIdentity{PlayerID: "player-1", AccountID: "account-1", DisplayName: "Dana"}, json.RawMessage(`{}`)); domain.ErrorCodeOf(err) != domain.CodeInvalidMemberSettings || err.Error() != "no member settings here" {
 		t.Fatalf("refused member settings = %v", err)
+	}
+	// The hook names the member who sets the settings.
+	if game.member != (domain.MemberIdentity{PlayerID: "player-1", AccountID: "account-1", DisplayName: "Dana"}) {
+		t.Fatalf("the game got member %+v", game.member)
 	}
 
 	// The ready check passes the game's refusal through unchanged.
@@ -125,7 +133,7 @@ func TestTheClientCallsAGoGameThroughTheHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := check([]domain.ReadyMember{{PlayerID: "p1", DisplayName: "Ada", Settings: json.RawMessage(`{"x":1}`)}}, false); err != nil || game.atStart || string(game.members[0].Settings) != `{"x":1}` {
+	if err := check([]domain.ReadyMember{{PlayerID: "p1", DisplayName: "Ada", AccountID: "account-1", Settings: json.RawMessage(`{"x":1}`)}}, false); err != nil || game.atStart || string(game.members[0].Settings) != `{"x":1}` || game.members[0].AccountID != "account-1" {
 		t.Fatalf("ready = %v, members %+v", err, game.members)
 	}
 	err = check([]domain.ReadyMember{{PlayerID: "p1", DisplayName: "Ada", Settings: json.RawMessage(`{"x":1}`)}, {PlayerID: "p2", DisplayName: "Grace"}}, true)
@@ -168,7 +176,7 @@ func TestNilHooksAnswerAsTheLobbyTreatsThem(t *testing.T) {
 	if _, err := client.ValidateSeat(ctx, "", "", json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("seat = %v", err)
 	}
-	if err := client.ValidateMemberSettings(ctx, "", json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
+	if err := client.ValidateMemberSettings(ctx, "", domain.MemberIdentity{}, json.RawMessage(`{}`)); err == nil || errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("member settings = %v", err)
 	}
 	if err := client.ReadyCheck(ctx, "", []domain.ReadyMember{{PlayerID: "p"}}, true); err != nil {
@@ -223,13 +231,13 @@ func TestFailedCallsAreUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := unreachable.ValidateMemberSettings(context.Background(), "", json.RawMessage(`{}`)); !errors.Is(err, domain.ErrUnavailable) {
+	if err := unreachable.ValidateMemberSettings(context.Background(), "", domain.MemberIdentity{}, json.RawMessage(`{}`)); !errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("unreachable = %v", err)
 	}
 	// The caller's own cancellation stays the caller's.
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := unreachable.ValidateMemberSettings(canceled, "", json.RawMessage(`{}`)); !errors.Is(err, context.Canceled) {
+	if err := unreachable.ValidateMemberSettings(canceled, "", domain.MemberIdentity{}, json.RawMessage(`{}`)); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled = %v", err)
 	}
 }

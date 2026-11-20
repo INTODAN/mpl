@@ -37,6 +37,8 @@ class Member:
         ready (bool):
         seat_settings (MemberSeatSettingsType0 | None): For a seat, the settings the host added it with, compacted with
             sorted keys, which only the game reads. Null for a person.
+        signed_in (bool): Whether the person had signed in, with an account, when they joined. Always false for a seat.
+            The lobby tells the game which account a member is; other players see only this.
         team_id (None | str):
     """
 
@@ -52,6 +54,7 @@ class Member:
     player_id: str
     ready: bool
     seat_settings: MemberSeatSettingsType0 | None
+    signed_in: bool
     team_id: None | str
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +97,8 @@ class Member:
         else:
             seat_settings = self.seat_settings
 
+        signed_in = self.signed_in
+
         team_id: None | str
         team_id = self.team_id
 
@@ -113,6 +118,7 @@ class Member:
                 "player_id": player_id,
                 "ready": ready,
                 "seat_settings": seat_settings,
+                "signed_in": signed_in,
                 "team_id": team_id,
             }
         )
@@ -188,6 +194,8 @@ class Member:
 
         seat_settings = _parse_seat_settings(d.pop("seat_settings"))
 
+        signed_in = d.pop("signed_in")
+
         def _parse_team_id(data: object) -> None | str:
             if data is None:
                 return data
@@ -208,6 +216,7 @@ class Member:
             player_id=player_id,
             ready=ready,
             seat_settings=seat_settings,
+            signed_in=signed_in,
             team_id=team_id,
         )
 

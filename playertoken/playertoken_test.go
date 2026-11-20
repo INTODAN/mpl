@@ -83,6 +83,25 @@ func TestAnIssuedTokenVerifiesAsItsPlayer(t *testing.T) {
 	}
 }
 
+func TestASignedInPlayersTokenNamesTheirAccount(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	set := keySet(t, "k1:"+firstSeed)
+	signedIn := claims(now)
+	signedIn.AccountID = "9d1b6a4e-1f6c-4c3e-8a43-2f3b5f6c7d8e"
+	token := sign(t, set, signedIn)
+	player, err := verifier(t, set, &now).Verify(context.Background(), token, "island-battles")
+	if err != nil || player.AccountID != signedIn.AccountID || player.ID != signedIn.Subject {
+		t.Fatalf("player = %+v, %v", player, err)
+	}
+	// A guest's token has no account_id claim at all.
+	_, guestClaims, _ := strings.Cut(sign(t, set, claims(now)), ".")
+	guestClaims, _, _ = strings.Cut(guestClaims, ".")
+	decoded, _ := base64.RawURLEncoding.DecodeString(guestClaims)
+	if strings.Contains(string(decoded), "account_id") {
+		t.Fatalf("a guest's claims = %s", decoded)
+	}
+}
+
 func TestVerifyRefusesWhatTheLobbyDidNotIssueForThisGame(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	set := keySet(t, "k1:"+firstSeed)

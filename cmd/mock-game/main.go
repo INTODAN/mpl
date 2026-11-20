@@ -9,9 +9,11 @@
 //	MOCK_GAME_RULES      on (the default) or off
 //
 // The hooks are served under mockgame.HooksPath. With MOCK_GAME_RULES=off the
-// game keeps its start and round end, but takes no game settings and no member
-// settings, has no seats, and lets everyone get ready, as a game without
-// rules of its own does, so the lobby's generic live suite plays it.
+// game keeps its start and round end, but takes no game settings, has no
+// seats, and lets everyone get ready, as a game without rules of its own does,
+// so the lobby's generic live suite plays it. Its only member settings are
+// {"signed_in": true}, which it takes from a member who signed in alone, so
+// the suite sees that the lobby tells the game who sets them.
 package main
 
 import (
@@ -66,8 +68,10 @@ func newHandler(getenv func(string) string) (http.Handler, error) {
 	}
 	registration := game.Registration()
 	// Nil hooks answer as the lobby's defaults: only `{}` as settings, no
-	// member settings or seats, and everyone may get ready.
-	registration.ValidateSettings, registration.ValidateMemberSettings, registration.ValidateSeat, registration.ReadyGate = nil, nil, nil, nil
+	// seats, and everyone may get ready. The only member settings are
+	// {"signed_in": true}, from a member who signed in.
+	registration.ValidateSettings, registration.ValidateSeat, registration.ReadyGate = nil, nil, nil
+	registration.ValidateMemberSettings = mockgame.ValidateSignedInOnly
 	hooks, err := gamehooks.NewHandler(secret, registration)
 	if err != nil {
 		return nil, err

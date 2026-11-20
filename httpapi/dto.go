@@ -370,6 +370,7 @@ type Member struct {
 	Kind              domain.MemberKind    `json:"kind" enum:"human,seat" doc:"human: a person who joined. seat: a seat that no person plays, such as the game's bot, which the host added to a team; it is always ready, never disconnects or hosts, and the game plays it from seat_settings. Its id is the seat ID for removing it."`
 	SeatSettings      MemberSeatSettings   `json:"seat_settings"`
 	MemberSettings    MemberMemberSettings `json:"member_settings"`
+	SignedIn          bool                 `json:"signed_in" doc:"Whether the person had signed in, with an account, when they joined. Always false for a seat. The lobby tells the game which account a member is; other players see only this."`
 }
 type StartRosterEntry struct {
 	PlayerID  string `json:"player_id"`
@@ -397,7 +398,7 @@ func snapshotFromDomain(source domain.Snapshot) Snapshot {
 		if member.IsSeat() {
 			kind, settings = domain.MemberSeat, MemberSeatSettings(member.SeatSettings)
 		}
-		members[index] = Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: kind, SeatSettings: settings, MemberSettings: MemberMemberSettings(member.MemberSettings)}
+		members[index] = Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: kind, SeatSettings: settings, MemberSettings: MemberMemberSettings(member.MemberSettings), SignedIn: member.AccountID != nil}
 	}
 	roster := make([]StartRosterEntry, len(source.StartRoster))
 	for index, entry := range source.StartRoster {

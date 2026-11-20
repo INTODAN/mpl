@@ -61,6 +61,7 @@ func (tokens *PlayerTokens) IssuePlayerToken(ctx context.Context, verification d
 	token, err := tokens.keys.Sign(playertoken.Claims{
 		Issuer: tokens.issuer, Subject: verification.Principal.PlayerID, Audience: gameKey,
 		IssuedAt: now.Unix(), Expires: expires.Unix(), Name: verification.Principal.DisplayName,
+		AccountID: verification.Principal.AccountID,
 	})
 	if err != nil {
 		return domain.PlayerToken{}, unavailable(err)
