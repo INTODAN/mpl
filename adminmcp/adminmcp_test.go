@@ -70,8 +70,15 @@ func seedLobbies(t *testing.T, database *gorm.DB) seed {
 		waiting: uuid.NewString(), started: uuid.NewString(), closed: uuid.NewString(),
 		blue: uuid.NewString(), red: uuid.NewString(), green: uuid.NewString(),
 	}
+	// Alice signed in: her player belongs to an account.
+	aliceAccount := uuid.NewString()
+	create(t, database, &lobbypostgres.AccountRecord{ID: aliceAccount, GoogleSubject: "alice-subject", DisplayName: "Alice", DisplayNameKey: "alice", CreatedAt: now, UpdatedAt: now})
 	for index, player := range []struct{ id, name string }{{ids.alice, "Alice"}, {ids.bob, "Bob"}, {ids.carol, "Carol"}, {ids.dave, "Dave"}, {ids.eve, "Eve"}} {
-		create(t, database, &lobbypostgres.PlayerRecord{ID: player.id, DisplayName: player.name, CreatedAt: now.Add(-time.Duration(index+1) * time.Hour)})
+		record := &lobbypostgres.PlayerRecord{ID: player.id, DisplayName: player.name, CreatedAt: now.Add(-time.Duration(index+1) * time.Hour)}
+		if player.id == ids.alice {
+			record.AccountID = &aliceAccount
+		}
+		create(t, database, record)
 	}
 	create(t, database, &lobbypostgres.SessionRecord{ID: uuid.NewString(), PlayerID: ids.alice, BearerHash: bearerHash, CreatedAt: now.Add(-time.Hour), ExpiresAt: now.Add(23 * time.Hour)})
 	create(t, database, &lobbypostgres.SessionRecord{ID: uuid.NewString(), PlayerID: ids.bob, BearerHash: bytes.Repeat([]byte{1}, 32), CreatedAt: now.Add(-25 * time.Hour), ExpiresAt: now.Add(-time.Hour)})
@@ -357,12 +364,12 @@ func TestLobbyTools(t *testing.T) {
 			t.Fatalf("players = %+v", byID)
 		}
 		alice := byID.Players[0]
-		if alice.DisplayName != "Alice" || len(alice.LiveSessions) != 1 || !alice.LiveSessions[0].ExpiresAt.Equal(now.Add(23*time.Hour)) ||
+		if alice.DisplayName != "Alice" || alice.AccountID == nil || len(alice.LiveSessions) != 1 || !alice.LiveSessions[0].ExpiresAt.Equal(now.Add(23*time.Hour)) ||
 			len(alice.Lobbies) != 1 || alice.Lobbies[0].LobbyID != ids.waiting || alice.Lobbies[0].Kind != "human" || !alice.Lobbies[0].Connected || len(alice.RosterPlaces) != 0 {
 			t.Errorf("Alice = %+v", alice)
 		}
 		bob := call[adminmcp.PlayerList](t, session, collected, "find_players", map[string]any{"player_id": ids.bob}).Players[0]
-		if len(bob.LiveSessions) != 0 || bob.Lobbies[0].Connected {
+		if len(bob.LiveSessions) != 0 || bob.Lobbies[0].Connected || bob.AccountID != nil {
 			t.Errorf("Bob = %+v, want his expired session left out and him not connected", bob)
 		}
 

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/INTODAN/mpl/domain"
@@ -53,14 +54,15 @@ func (accounts *Accounts) SignInWithGoogle(ctx context.Context, request domain.S
 		return domain.AccountSession{}, err
 	}
 	// A first sign-in that races another of the same account finds the
-	// account on its second look.
+	// account on its second look, and one that races the account's deletion
+	// finds none and creates a new account.
 	for attempt := 0; attempt < 2; attempt++ {
 		session, err := accounts.signIn(ctx, subject, request.DisplayName)
-		if !errors.Is(err, domain.ErrAccountExists) {
+		if !errors.Is(err, domain.ErrAccountExists) && !errors.Is(err, domain.ErrAccountGone) {
 			return session, err
 		}
 	}
-	return domain.AccountSession{}, unavailable(domain.ErrAccountExists)
+	return domain.AccountSession{}, unavailable(errors.New("the account changed during every attempt to sign in"))
 }
 
 func (accounts *Accounts) signIn(ctx context.Context, subject, displayName string) (domain.AccountSession, error) {
@@ -74,7 +76,7 @@ func (accounts *Accounts) signIn(ctx context.Context, subject, displayName strin
 		return domain.AccountSession{}, err
 	}
 	if create {
-		if displayName == "" {
+		if strings.TrimSpace(displayName) == "" {
 			return domain.AccountSession{}, domain.ErrDisplayNameRequired
 		}
 		name, err := domain.NormalizeAccountName(displayName)
@@ -133,7 +135,7 @@ func (accounts *Accounts) DeleteAccount(ctx context.Context, principal domain.Pr
 // storeError passes the domain's errors and ErrAccountExists through, and
 // makes any other store error unavailable.
 func storeError(err error) error {
-	if err == nil || domain.ErrorCodeOf(err) != "" || errors.Is(err, domain.ErrAccountExists) {
+	if err == nil || domain.ErrorCodeOf(err) != "" || errors.Is(err, domain.ErrAccountExists) || errors.Is(err, domain.ErrAccountGone) {
 		return err
 	}
 	return unavailable(err)

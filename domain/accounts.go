@@ -71,7 +71,7 @@ type AccountStore interface {
 	// true, a new player of it and the player's session. A name that another
 	// account holds is ErrDisplayNameTaken, and a subject that another
 	// account holds, which a concurrent first sign-in can cause,
-	// ErrAccountExists.
+	// ErrAccountExists, and an account deleted meanwhile ErrAccountGone.
 	CreateAccountSession(ctx context.Context, account Account, subject string, create bool, player Player, session Session) error
 	// RenameAccount renames the account and one of its players.
 	RenameAccount(ctx context.Context, accountID, playerID, displayName string, updatedAt time.Time) error

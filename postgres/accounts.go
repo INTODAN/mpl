@@ -12,23 +12,30 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// The unique indexes of lobby_accounts, migration 0012's.
+// The unique indexes and the players' foreign key of lobby_accounts,
+// migration 0012's.
 const (
 	accountSubjectIndex = "ux_lobby_accounts_google_subject"
 	accountNameIndex    = "ux_lobby_accounts_display_name_key"
+	playerAccountKey    = "fk_lobby_players_account"
 )
 
 func (store *IdentityStore) AccountBySubject(ctx context.Context, subject string) (*domain.Account, error) {
-	return store.findAccount(ctx, &AccountRecord{GoogleSubject: subject})
+	return store.findAccount(ctx, "google_subject", subject)
 }
 
 func (store *IdentityStore) AccountByID(ctx context.Context, id string) (*domain.Account, error) {
-	return store.findAccount(ctx, &AccountRecord{ID: id})
+	return store.findAccount(ctx, "id", id)
 }
 
-func (store *IdentityStore) findAccount(ctx context.Context, filter *AccountRecord) (*domain.Account, error) {
+// findAccount looks an account up by one column. An empty value finds none:
+// a struct filter would drop it and match any account.
+func (store *IdentityStore) findAccount(ctx context.Context, column, value string) (*domain.Account, error) {
+	if value == "" {
+		return nil, nil
+	}
 	var accounts []AccountRecord
-	if err := store.db.WithContext(ctx).Where(filter).Limit(1).Find(&accounts).Error; err != nil {
+	if err := store.db.WithContext(ctx).Where(clause.Eq{Column: clause.Column{Name: column}, Value: value}).Limit(1).Find(&accounts).Error; err != nil {
 		return nil, err
 	}
 	if len(accounts) == 0 {
@@ -60,6 +67,9 @@ func (store *IdentityStore) CreateAccountSession(ctx context.Context, account do
 }
 
 func (store *IdentityStore) RenameAccount(ctx context.Context, accountID, playerID, displayName string, updatedAt time.Time) error {
+	if accountID == "" {
+		return domain.ErrSignInRequired
+	}
 	err := store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		renamed := tx.Model(&AccountRecord{}).Where(&AccountRecord{ID: accountID}).Updates(map[string]any{
 			"display_name": displayName, "display_name_key": domain.AccountNameKey(displayName), "updated_at": updatedAt.UTC(),
@@ -76,6 +86,9 @@ func (store *IdentityStore) RenameAccount(ctx context.Context, accountID, player
 }
 
 func (store *IdentityStore) DeleteAccount(ctx context.Context, accountID string) error {
+	if accountID == "" {
+		return domain.ErrSignInRequired
+	}
 	return store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Locking the account first makes a concurrent sign-in, whose new
 		// player's foreign key needs the row, wait for the deletion and fail,
@@ -106,14 +119,17 @@ func (store *IdentityStore) DeleteAccount(ctx context.Context, accountID string)
 // domain's errors.
 func accountConflict(err error) error {
 	var postgresError *pgconn.PgError
-	if err == nil || !errors.As(err, &postgresError) || postgresError.Code != "23505" {
+	if err == nil || !errors.As(err, &postgresError) {
 		return err
 	}
-	switch postgresError.ConstraintName {
-	case accountNameIndex:
+	switch {
+	case postgresError.Code == "23505" && postgresError.ConstraintName == accountNameIndex:
 		return domain.ErrDisplayNameTaken
-	case accountSubjectIndex:
+	case postgresError.Code == "23505" && postgresError.ConstraintName == accountSubjectIndex:
 		return domain.ErrAccountExists
+	case postgresError.Code == "23503" && postgresError.ConstraintName == playerAccountKey:
+		// The account was deleted while its new player was added.
+		return domain.ErrAccountGone
 	}
 	return err
 }

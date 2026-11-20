@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"slices"
 	"testing"
@@ -45,7 +46,7 @@ func TestDeletingAnAccountDeletesItsSessionsAndKeepsItsPlayers(t *testing.T) {
 		playerID := uuid.NewString()
 		if err := store.CreateAccountSession(ctx, account, "subject", create,
 			domain.Player{ID: playerID, DisplayName: account.DisplayName, AccountID: account.ID, CreatedAt: now},
-			domain.Session{ID: uuid.NewString(), PlayerID: playerID, BearerHash: domain.CredentialHash{byte(len(playerID)), byte(now.Second())}, CreatedAt: now, ExpiresAt: now.Add(time.Hour)},
+			domain.Session{ID: uuid.NewString(), PlayerID: playerID, BearerHash: randomHash(t), CreatedAt: now, ExpiresAt: now.Add(time.Hour)},
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -84,10 +85,36 @@ func TestDeletingAnAccountDeletesItsSessionsAndKeepsItsPlayers(t *testing.T) {
 	if verification, err := store.LookupByPlayer(ctx, guestID); err != nil || verification == nil || verification.Principal.AccountID != "" {
 		t.Fatalf("a guest after deleting another's account = %+v, %v", verification, err)
 	}
+	// A sign-in that adds a player to the deleted account finds it gone.
+	if err := store.CreateAccountSession(ctx, account, "subject", false,
+		domain.Player{ID: uuid.NewString(), DisplayName: account.DisplayName, AccountID: account.ID, CreatedAt: now}, domain.Session{}); !errors.Is(err, domain.ErrAccountGone) {
+		t.Fatalf("a sign-in to the deleted account = %v, want ErrAccountGone", err)
+	}
 	if found, err := store.AccountBySubject(ctx, "subject"); err != nil || found != nil {
 		t.Fatalf("the deleted account = %+v, %v", found, err)
 	}
 	if err := store.DeleteAccount(ctx, account.ID); !errors.Is(err, domain.ErrSignInRequired) {
 		t.Fatalf("deleting it again = %v", err)
 	}
+	// An empty key finds no account, even while there are some.
+	keptID, keptPlayer := uuid.NewString(), uuid.NewString()
+	if err := store.CreateAccountSession(ctx, domain.Account{ID: keptID, DisplayName: "Kept", CreatedAt: now}, "kept", true,
+		domain.Player{ID: keptPlayer, DisplayName: "Kept", AccountID: keptID, CreatedAt: now},
+		domain.Session{ID: uuid.NewString(), PlayerID: keptPlayer, BearerHash: randomHash(t), CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for name, lookup := range map[string]func(context.Context, string) (*domain.Account, error){"subject": store.AccountBySubject, "ID": store.AccountByID} {
+		if found, err := lookup(ctx, ""); err != nil || found != nil {
+			t.Fatalf("an account by an empty %s = %+v, %v", name, found, err)
+		}
+	}
+}
+
+func randomHash(t *testing.T) domain.CredentialHash {
+	t.Helper()
+	var hash domain.CredentialHash
+	if _, err := rand.Read(hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }

@@ -113,6 +113,9 @@ var (
 	// ErrAccountExists is an AccountStore's sentinel for a subject that an
 	// account already holds, never returned through player HTTP.
 	ErrAccountExists = errors.New("lobby account already exists")
+	// ErrAccountGone is an AccountStore's sentinel for a sign-in whose
+	// account was deleted meanwhile, never returned through player HTTP.
+	ErrAccountGone = errors.New("lobby account was deleted")
 	// Internal storage sentinel, never returned directly through player HTTP.
 	ErrJoinCodeCollision = errors.New("lobby join code collision")
 )

@@ -45,10 +45,13 @@ type GoogleVerifier struct {
 	client    *http.Client
 	clock     domain.Clock
 
-	mutex     sync.Mutex
-	keys      map[string]*rsa.PublicKey
-	expiresAt time.Time
-	fetchedAt time.Time
+	// fetching lets one fetch run at a time; mutex guards the fields below.
+	fetching    sync.Mutex
+	mutex       sync.Mutex
+	keys        map[string]*rsa.PublicKey
+	expiresAt   time.Time
+	attemptedAt time.Time
+	failed      bool
 }
 
 // NewGoogleVerifier verifies the ID tokens of clientIDs with the keys at
@@ -122,28 +125,52 @@ func decodeSegment(segment string, into any) error {
 	return decoder.Decode(into)
 }
 
-// key returns the cached key named kid, fetching the keys when they expired,
-// or, at most once a minute, when kid is unknown.
+// key returns the cached key named kid. It fetches the keys when they
+// expired, or, when kid is unknown, at most once a minute. After a failed
+// fetch it answers unavailable for a minute without fetching again. Lookups of
+// cached keys never wait for a fetch.
 func (verifier *GoogleVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
-	verifier.mutex.Lock()
-	defer verifier.mutex.Unlock()
-	now := verifier.clock.Now()
-	key, known := verifier.keys[kid]
-	if known && now.Before(verifier.expiresAt) {
+	if key, found := verifier.cached(kid); found {
 		return key, nil
 	}
-	if verifier.keys != nil && now.Before(verifier.expiresAt) && now.Sub(verifier.fetchedAt) < keyRefetchInterval {
+	// One fetch at a time; a lookup that waited here sees its result.
+	verifier.fetching.Lock()
+	defer verifier.fetching.Unlock()
+	verifier.mutex.Lock()
+	now := verifier.clock.Now()
+	key, known := verifier.keys[kid]
+	fresh := now.Before(verifier.expiresAt)
+	recent := !verifier.attemptedAt.IsZero() && now.Sub(verifier.attemptedAt) < keyRefetchInterval
+	failed := verifier.failed
+	verifier.mutex.Unlock()
+	switch {
+	case known && fresh:
+		return key, nil
+	case recent && failed:
+		return nil, &domain.Error{Code: domain.CodeUnavailable, Message: domain.ErrUnavailable.Message, Cause: errors.New("google's keys could not be fetched a moment ago")}
+	case recent && fresh:
 		return nil, domain.ErrUnauthenticated
 	}
 	keys, maxAge, err := verifier.fetch(ctx)
+	verifier.mutex.Lock()
+	defer verifier.mutex.Unlock()
+	verifier.attemptedAt, verifier.failed = now, err != nil
 	if err != nil {
 		return nil, &domain.Error{Code: domain.CodeUnavailable, Message: domain.ErrUnavailable.Message, Cause: err}
 	}
-	verifier.keys, verifier.fetchedAt, verifier.expiresAt = keys, now, now.Add(maxAge)
+	verifier.keys, verifier.expiresAt = keys, now.Add(maxAge)
 	if key, known = keys[kid]; !known {
 		return nil, domain.ErrUnauthenticated
 	}
 	return key, nil
+}
+
+// cached returns the key named kid while the keys haven't expired.
+func (verifier *GoogleVerifier) cached(kid string) (*rsa.PublicKey, bool) {
+	verifier.mutex.Lock()
+	defer verifier.mutex.Unlock()
+	key, known := verifier.keys[kid]
+	return key, known && verifier.clock.Now().Before(verifier.expiresAt)
 }
 
 func (verifier *GoogleVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, time.Duration, error) {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -159,7 +161,9 @@ func TestGoogleVerifierFetchesAgainForAnUnknownKeyAtMostOnceAMinute(t *testing.T
 }
 
 func TestGoogleVerifierReportsUnreachableKeysAsUnavailable(t *testing.T) {
+	var fetches atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
 		response.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -176,7 +180,41 @@ func TestGoogleVerifierReportsUnreachableKeysAsUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := verifier.Verify(context.Background(), token); domain.ErrorCodeOf(err) != domain.CodeUnavailable {
-		t.Fatalf("Verify = %v, want unavailable", err)
+	// A failed fetch isn't tried again for a minute, whatever kid tokens name.
+	for range 3 {
+		if _, err := verifier.Verify(context.Background(), token); domain.ErrorCodeOf(err) != domain.CodeUnavailable {
+			t.Fatalf("Verify = %v, want unavailable", err)
+		}
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("fetches = %d, want 1", got)
+	}
+	clock.now = clock.now.Add(2 * time.Minute)
+	if _, err := verifier.Verify(context.Background(), token); domain.ErrorCodeOf(err) != domain.CodeUnavailable || fetches.Load() != 2 {
+		t.Fatalf("Verify a minute later = %v after %d fetches", err, fetches.Load())
+	}
+}
+
+func TestGoogleVerifierRefusesOtherAlgorithmsAndAudienceLists(t *testing.T) {
+	verifier, issuer, clock, _ := newTestVerifier(t, time.Hour)
+	valid, err := issuer.GoogleToken("1234", testClientID, clock.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, payload, _ := strings.Cut(valid, ".")
+	payload, signature, _ := strings.Cut(payload, ".")
+	for _, header := range []string{`{"alg":"none","kid":"key-1"}`, `{"alg":"HS256","kid":"key-1"}`, `{"alg":"RS256"}`} {
+		forged := base64.RawURLEncoding.EncodeToString([]byte(header)) + "." + payload + "." + signature
+		if _, err := verifier.Verify(context.Background(), forged); !errors.Is(err, domain.ErrUnauthenticated) {
+			t.Errorf("header %s: Verify = %v, want unauthenticated", header, err)
+		}
+	}
+	listed, err := issuer.Token(googletest.Claims{Issuer: "accounts.google.com", Subject: "1234", ExpiresAt: clock.now.Add(time.Minute),
+		Extra: map[string]any{"aud": []string{testClientID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Verify(context.Background(), listed); !errors.Is(err, domain.ErrUnauthenticated) {
+		t.Fatalf("an audience list: Verify = %v, want unauthenticated", err)
 	}
 }

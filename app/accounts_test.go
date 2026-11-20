@@ -85,6 +85,10 @@ func TestSignInWithGoogleCreatesAnAccountAndOpensSessions(t *testing.T) {
 	if refused.Code != "display_name_required" {
 		t.Fatalf("a new account without a name = %+v", refused)
 	}
+	lobby.call(http.MethodPost, "/lobby/v1/sessions/google", "", map[string]string{"credential": credential, "display_name": "   "}, http.StatusUnprocessableEntity, &refused)
+	if refused.Code != "display_name_required" {
+		t.Fatalf("a new account with a blank name = %+v", refused)
+	}
 	lobby.call(http.MethodPost, "/lobby/v1/sessions/google", "", map[string]string{"credential": credential, "display_name": "D!"}, http.StatusUnprocessableEntity, &refused)
 	if refused.Code != "invalid_input" || refused.Detail != domain.ErrInvalidAccountName.Message {
 		t.Fatalf("an invalid name = %+v", refused)
