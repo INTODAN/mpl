@@ -852,6 +852,8 @@ export interface components {
             seat_settings: {
                 [key: string]: unknown;
             } | null;
+            /** @description Whether the person had signed in, with an account, when they joined. Always false for a seat. The lobby tells the game which account a member is; other players see only this. */
+            signed_in: boolean;
             team_id: string | null;
         };
         MemberSettingsBody: {

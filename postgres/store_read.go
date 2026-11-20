@@ -75,7 +75,7 @@ func loadAggregate(tx *gorm.DB, scope domain.Scope, lock bool) (domain.Aggregate
 		if err != nil {
 			return domain.Aggregate{}, fmt.Errorf("member settings of membership %s: %w", member.ID, err)
 		}
-		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings, MemberSettings: memberSettings, SeatRequestID: deref(member.SeatRequestID)})
+		aggregate.Members = append(aggregate.Members, domain.Member{ID: member.ID, PlayerID: member.PlayerID, DisplayName: member.DisplayName, Generation: member.Generation, Active: member.Active, TeamID: member.TeamID, Ready: member.Ready, JoinedAt: member.JoinedAt, JoinSequence: member.JoinSequence, DisconnectedUntil: member.DisconnectedUntil, Kind: domain.MemberKind(member.Kind), SeatSettings: member.SeatSettings, MemberSettings: memberSettings, SeatRequestID: deref(member.SeatRequestID), AccountID: member.AccountID})
 	}
 	var leases []LeaseRecord
 	if err := tx.Where(&LeaseRecord{LobbyID: scope.LobbyID}).Order(clause.OrderByColumn{Column: clause.Column{Name: "player_id"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "generation"}}).Order(clause.OrderByColumn{Column: clause.Column{Name: "client_instance_id"}}).Find(&leases).Error; err != nil {

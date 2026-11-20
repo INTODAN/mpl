@@ -277,7 +277,7 @@ func TestMigrateRecordsLastConnectionOfExistingRooms(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(leases) > 0 {
-			if err := db.Omit("Kind", "SeatSettings", "SeatRequestID", "MemberSettings").Create(&[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)}).Error; err != nil {
+			if err := db.Omit("Kind", "SeatSettings", "SeatRequestID", "MemberSettings", "AccountID").Create(&[]lobbypostgres.MembershipRecord{memberFor(room.ID, player.ID)}).Error; err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -332,7 +332,7 @@ func TestMigrateMakesExistingMembershipsHuman(t *testing.T) {
 	player := seedPlayer(t, db)
 	room := seedRoom(t, db, player.ID, "island-battles", "HUMANS01")
 	member := memberFor(room.ID, player.ID)
-	if err := db.Omit("Kind", "SeatSettings", "SeatRequestID", "MemberSettings").Create(&member).Error; err != nil {
+	if err := db.Omit("Kind", "SeatSettings", "SeatRequestID", "MemberSettings", "AccountID").Create(&member).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := lobbypostgres.Migrate(context.Background(), db); err != nil {
@@ -423,7 +423,7 @@ func TestMigrateGivesExistingRoomsOneMemberPerTeam(t *testing.T) {
 	for sequence := range 2 {
 		member := memberFor(shared.ID, seedPlayer(t, db).ID)
 		member.TeamID, member.JoinSequence = &sharedTeams[0].ID, int64(sequence+1)
-		if err := db.Omit("MemberSettings").Create(&member).Error; err != nil {
+		if err := db.Omit("MemberSettings", "AccountID").Create(&member).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

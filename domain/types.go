@@ -26,6 +26,16 @@ type Principal struct {
 	// AccountID is the player's account, empty for a guest.
 	AccountID string `json:"-"`
 }
+
+// Account is the principal's account ID for a member, nil for a guest.
+func (principal Principal) Account() *string {
+	if principal.AccountID == "" {
+		return nil
+	}
+	accountID := principal.AccountID
+	return &accountID
+}
+
 type Lobby struct {
 	ID       string `json:"id"`
 	GameKey  string `json:"game_key"`
@@ -106,6 +116,10 @@ type Member struct {
 	JoinedAt          time.Time  `json:"joined_at"`
 	JoinSequence      int64      `json:"join_sequence"`
 	DisconnectedUntil *time.Time `json:"disconnected_until"`
+	// AccountID is the account of a person who had signed in when they
+	// joined, and null for a guest and for a seat. Games see it; players
+	// see only whether a member is signed in.
+	AccountID *string `json:"account_id"`
 	// Kind is MemberHuman, or MemberSeat for a seat that the host added. An
 	// empty kind is a human.
 	Kind MemberKind `json:"kind"`

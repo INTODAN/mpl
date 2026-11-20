@@ -310,9 +310,20 @@ async def test_sign_in_with_google_opens_an_account_session(guests):
     session = await first.sign_in_with_google(await google_id_token(subject), name)
     assert session.account.display_name == name
 
-    # The account's session plays as a guest's does.
-    room = await create(first)
-    assert room.members[0].display_name == name
+    # The account's session plays as a guest's does, and the game learns
+    # who is signed in: the mock game takes {"signed_in": true} only from a
+    # member who signed in.
+    room = await create(first, game_key=SECOND_GAME_KEY)
+    assert room.members[0].display_name == name and room.members[0].signed_in
+    scope = Scope.from_snapshot(room)
+    guest = await guests("Live guest")
+    joined = await guest.join_lobby(game_key=SECOND_GAME_KEY, join_code=room.lobby.join_code)
+    assert [member.signed_in for member in joined.members] == [True, False]
+    with pytest.raises(LobbyError) as refused:
+        await guest.set_member_settings(scope, {"signed_in": True})
+    assert refused.value.code == "invalid_member_settings" and "sign in" in (refused.value.detail or "")
+    settled = await first.set_member_settings(scope, {"signed_in": True})
+    assert settled.members[0].member_settings.to_dict() == {"signed_in": True}
 
     second = await guests(credential="")
     second.credential = None

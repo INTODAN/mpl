@@ -88,7 +88,7 @@ func (service *Service) Start(ctx context.Context, principal domain.Principal, s
 				if member == nil || member.IsSeat() {
 					continue
 				}
-				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: member.DisplayName, Settings: bytes.Clone(member.MemberSettings)})
+				members = append(members, domain.ReadyMember{PlayerID: entry.PlayerID, DisplayName: member.DisplayName, AccountID: deref(member.AccountID), Settings: bytes.Clone(member.MemberSettings)})
 			}
 			if err := check(members, true); err != nil {
 				return domain.Change{}, err

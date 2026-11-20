@@ -82,11 +82,19 @@ type GameOverCheck func(ctx context.Context, lobbyID string, round int64) (bool,
 type SeatValidator func(ctx context.Context, lobbyID, playerID string, settings json.RawMessage) (displayName string, err error)
 
 // MemberSettingsValidator receives the member settings that a person sets for
-// themselves in a lobby, as a canonical JSON object, with the lobby's ID. To
-// reject them, return an error whose message is safe to show the client. To
-// report that the check itself failed, return the context's error or an error
-// wrapping ErrUnavailable.
-type MemberSettingsValidator func(ctx context.Context, lobbyID string, settings json.RawMessage) error
+// themselves in a lobby, as a canonical JSON object, with the lobby's ID and
+// who the person is. To reject them, return an error whose message is safe to
+// show the client. To report that the check itself failed, return the
+// context's error or an error wrapping ErrUnavailable.
+type MemberSettingsValidator func(ctx context.Context, lobbyID string, member MemberIdentity, settings json.RawMessage) error
+
+// MemberIdentity is who a member is: their player, their account when they
+// signed in, empty for a guest, and their display name.
+type MemberIdentity struct {
+	PlayerID    string
+	AccountID   string
+	DisplayName string
+}
 
 // ReadyGate loads what a game needs to decide which members of a lobby may get
 // ready. Each ReadyMember carries the member's settings, so a game that
@@ -108,6 +116,9 @@ type ReadyGate func(ctx context.Context, lobbyID string) (ReadyCheck, error)
 type ReadyMember struct {
 	PlayerID    string
 	DisplayName string
+	// AccountID is the member's account, from when they joined, or empty for
+	// a guest.
+	AccountID string
 	// Settings are the member's member settings, the canonical JSON object
 	// that the game checked when they set it, or nil when they set none.
 	Settings json.RawMessage
@@ -365,10 +376,10 @@ func (policy Policy) ValidateSeatSettings(ctx context.Context, gameKey, lobbyID,
 }
 
 // ValidateMemberSettings normalizes a person's member settings and checks them
-// with the game's validator for the lobby. It returns the canonical settings
+// with the game's validator for the lobby and the member. It returns the canonical settings
 // to store with the member. A game without a validator takes no member
 // settings and refuses every value with CodeInvalidMemberSettings.
-func (policy Policy) ValidateMemberSettings(ctx context.Context, gameKey, lobbyID string, settings json.RawMessage) (json.RawMessage, error) {
+func (policy Policy) ValidateMemberSettings(ctx context.Context, gameKey, lobbyID string, member MemberIdentity, settings json.RawMessage) (json.RawMessage, error) {
 	game, err := policy.Game(gameKey)
 	if err != nil {
 		return nil, err
@@ -380,7 +391,7 @@ func (policy Policy) ValidateMemberSettings(ctx context.Context, gameKey, lobbyI
 	if game.ValidateMemberSettings == nil {
 		return nil, NewError(CodeInvalidMemberSettings, "this game takes no member settings")
 	}
-	err = game.ValidateMemberSettings(ctx, lobbyID, bytes.Clone(canonical))
+	err = game.ValidateMemberSettings(ctx, lobbyID, member, bytes.Clone(canonical))
 	switch {
 	case err == nil:
 		return canonical, nil

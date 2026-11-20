@@ -142,7 +142,7 @@ A ready or start request holds a database connection, and the room's lock, while
 
 ## Accounts
 
-A person can sign in with Google instead of playing as a guest. The lobby then knows them across sessions and devices, as an **account** with a display name they chose. Sign-in is offered, never required: guests play as before. The lobby keeps accounts game-neutral: a game learns nothing of them here.
+A person can sign in with Google instead of playing as a guest. The lobby then knows them across sessions and devices, as an **account** with a display name they chose. Sign-in is offered, never required: guests play as before. The lobby keeps accounts game-neutral: it tells a game which account each member is (player tokens, hooks and snapshots: [Hooks](#hooks-the-lobby-calls-the-game)), and the game decides what an account means to it.
 
 **What an account is.** An account is keyed by Google's account ID (the ID token's `sub`) and holds the display name its owner chose, and nothing else of Google's: no name, picture or email (`lobby_accounts`). Each sign-in creates a new player of the account, with one session that lasts as long as a guest's, 24 hours, and works on every route a guest's does. One account can so have several live players, one per device or sign-in. A player's `account_id` names its account; a guest's is null.
 
@@ -309,9 +309,9 @@ Seats are memberships rather than a table of their own so that everything that n
 Each person in a lobby sets their own settings for the game, such as what plays for them (Island Battles: their bot), with `PUT /lobby/v1/games/{game_key}/lobbies/{lobby_id}/member-settings` and `{"member_settings": {...}}` (`setLobbyMemberSettings`; `SetMemberSettings`, in `application/member_settings.go`). It returns the snapshot. The lobby stores the settings without reading them, as it stores seat settings, and the game only checks them, so a game needs no table of its own that refers to the lobby's.
 
 - **Who and when.** Only an active member, and only for themselves (someone else gets `not_found`), and only while the lobby waits (otherwise `phase_conflict`). Seats have no member settings.
-- **Checking.** `member_settings` is canonicalized like seat settings with `NormalizeMemberSettings` (one JSON object, at most `MaxMemberSettingsBytes`, 4 KiB) and checked by the game's `ValidateMemberSettings` with the lobby's ID, before the transaction, so the game never runs while the room is locked. Anything else is 422 `invalid_member_settings`, whose `detail` is the game's message; a game without a validator refuses every value.
+- **Checking.** `member_settings` is canonicalized like seat settings with `NormalizeMemberSettings` (one JSON object, at most `MaxMemberSettingsBytes`, 4 KiB) and checked by the game's `ValidateMemberSettings` with the lobby's ID and the member who sets them, a `MemberIdentity` of their player ID, their account ID (empty for a guest) and display name, so a game can accept a choice only from its owner, such as a bot name that belongs to the member's account. It runs before the transaction, so the game never runs while the room is locked. Anything else is 422 `invalid_member_settings`, whose `detail` is the game's message; a game without a validator refuses every value.
 - **What it changes.** New settings clear the caller's ready, so the start always sees what the person confirmed by getting ready again, bump the version and publish `lobby.changed`. Settings equal to the stored ones, after canonicalization, change nothing: the same version, no event, and the caller stays ready.
-- **Snapshots.** Every member has `member_settings`, the object the person set or null, and every member sees every member's. A `ReadyGate`'s check gets each member's settings as `ReadyMember.Settings`, and the started snapshot carries them, so the game binding reads what each roster player chose from the snapshot.
+- **Snapshots.** Every member has `member_settings`, the object the person set or null, and every member sees every member's. A `ReadyGate`'s check gets each member's settings as `ReadyMember.Settings`, and their account as `ReadyMember.AccountID`, and the started snapshot carries them, so the game binding reads what each roster player chose from the snapshot.
 - **How long they last.** They stay when the person leaves and rejoins, and when the lobby is [reopened](#playing-again-in-the-same-lobby) for its next round. Retention deletes them with the lobby.
 - **Storage.** Migration 0010 adds the nullable `member_settings jsonb` column to `lobby_memberships`. jsonb reorders keys and spacing, so the store reads the object back compact with sorted keys, as the lobby wrote it.
 
@@ -365,7 +365,7 @@ The defaults are a batch of 50 rows of each kind and a pass interval of one minu
 A game learns who sends a request from a **player token**: a short-lived JWT that the lobby signs and the game verifies with the lobby's public keys, without the lobby's database and without a call to the lobby per request. The guest credential stays the lobby's own: a game never sees it.
 
 - **Getting one:** a client calls `POST /lobby/v1/player-tokens` (operation `issuePlayerToken`) with its guest credential and `{"game_key": "island-battles"}`, and gets `{"token", "expires_at"}`. A `game_key` that no registered game has is `not_found`. The client sends the token to the game as `Authorization: Bearer <token>`, gets a new one at about 80 % of its life, and once more when the game answers 401.
-- **The token:** a compact JWS signed with Ed25519, header `{"alg": "EdDSA", "kid": …, "typ": "JWT"}`. Its claims are `iss`, the lobby's public URL; `sub`, the player ID; `aud`, the game key; `iat` and `exp`, Unix seconds; and `name`, the player's display name, so the game needs no name lookup. A token lasts 15 minutes, and never past its session's expiry.
+- **The token:** a compact JWS signed with Ed25519, header `{"alg": "EdDSA", "kid": …, "typ": "JWT"}`. Its claims are `iss`, the lobby's public URL; `sub`, the player ID; `aud`, the game key; `iat` and `exp`, Unix seconds; `name`, the player's display name, so the game needs no name lookup; and, for a player who [signed in](#accounts), `account_id`, their account's ID, which a guest's token leaves out. A token lasts 15 minutes, and never past its session's expiry.
 - **The keys:** the host passes `auth.NewPlayerTokens(keys, issuer, lifetime, clock, policy)` to `httpapi.Register`. `playertoken.ParseKeySet` reads the keys from `LOBBY_PLAYER_TOKEN_KEYS`, a comma-separated list of `kid:seed` pairs, where `seed` is a 32-byte Ed25519 seed in base64url without padding. The first key signs; all are published at `GET /lobby/v1/jwks.json` (operation `getLobbyPublicKeys`), a JWKS with `Cache-Control: public, max-age=300`. To rotate, put the new key first and keep the old one for 15 minutes, the longest a token lasts, then remove it. Island Battles' deploy, for example, does this as [its deploy README](https://github.com/INTODAN/island-battles-go/blob/main/deploy/README.md#rotating-the-player-token-key) describes. `LOBBY_PLAYER_TOKEN_LIFETIME` can shorten tokens for development, from `1m` to `15m`.
 
 ### Verifying players in a game
@@ -377,10 +377,10 @@ keys, err := playertoken.NewJWKSSource("https://lobby.example.org/lobby/v1/jwks.
 verifier, err := playertoken.NewVerifier("https://lobby.example.org", keys)
 
 token, ok := playertoken.FromAuthorization(request.Header.Get("Authorization"))
-player, err := verifier.Verify(ctx, token, "quiz-demo") // player.ID, player.Name
+player, err := verifier.Verify(ctx, token, "quiz-demo") // player.ID, player.Name, player.AccountID
 ```
 
-`Verify` checks the header's `alg`, which must be `EdDSA` (so `none` and HS256 are refused), the signature with the key that `kid` names, `iss`, `aud` (the game's own key) and `exp`, with 30 seconds of leeway. Every failure is `playertoken.ErrInvalid`, which the game answers with 401. Any other error means the keys couldn't be read, such as an unreachable lobby; answer it with 503.
+`Verify` checks the header's `alg`, which must be `EdDSA` (so `none` and HS256 are refused), the signature with the key that `kid` names, `iss`, `aud` (the game's own key) and `exp`, with 30 seconds of leeway. Every failure is `playertoken.ErrInvalid`, which the game answers with 401. `player.AccountID` is the player's account, empty for a guest. Any other error means the keys couldn't be read, such as an unreachable lobby; answer it with 503.
 
 - `JWKSSource` fetches the JWKS on first use and keeps it for the response's `max-age`. A token that names a `kid` it doesn't have makes it fetch again, so a new key works at once, but it fetches at most once a minute, so forged `kid`s can't flood the lobby. When a fetch fails, it keeps the keys it has.
 - While the lobby and the game run in one process, as in Island Battles, the lobby's `*playertoken.KeySet` is itself the key source: `playertoken.NewVerifier(issuer, keys)`.
@@ -439,8 +439,8 @@ Each hook is `POST {hooks_url}/<hook>`, with a JSON body, signed (see below), an
 |---|---|---|---|
 | `validate-settings` | `{lobby_id, settings, teams}`; `lobby_id` is absent while the lobby is being created | 204, or 422 to refuse | `ValidateSettings` |
 | `validate-seat` | `{lobby_id, player_id, settings}`; `player_id` is the player adding the seat, whom the lobby checks to be the host only afterwards | 200 `{display_name}`, or 422 | `ValidateSeat` |
-| `validate-member-settings` | `{lobby_id, settings}` | 204, or 422 | `ValidateMemberSettings` |
-| `ready-check` | `{lobby_id, members: [{player_id, display_name, settings}], at_start}` | 204, or 409 with `code` `game_requirement` | `ReadyGate` |
+| `validate-member-settings` | `{lobby_id, player_id, account_id, display_name, settings}`: the member who sets them; `account_id` is empty for a guest | 204, or 422 | `ValidateMemberSettings` |
+| `ready-check` | `{lobby_id, members: [{player_id, display_name, account_id, settings}], at_start}`; a member's `account_id` is the account they had when they joined, empty for a guest | 204, or 409 with `code` `game_requirement` | `ReadyGate` |
 | `start` | `{snapshot}`, the started lobby as `GET` on the game API returns it | 200 `{game_id}` | `StartGame` |
 | `round-ended` | `{lobby_id, round}` | 200 `{ended}` | `GameOver` |
 
@@ -449,6 +449,7 @@ Each hook is `POST {hooks_url}/<hook>`, with a JSON body, signed (see below), an
 - `settings` are canonical JSON objects, compact with sorted keys; a member's `settings` are null when they set none. `teams` are the request's validated teams, `[{name}]`, in order.
 - `ready-check` runs inside the transaction of the ready or start request, so it holds the lobby's row lock while it runs, and other requests to the lobby wait for it: answer it quickly, from its body. The other hooks run outside any transaction. A game can read the lobby through the game API from any hook, since the game API reads without waiting for the lock.
 - `round-ended` must answer true for a round whose start created no game, so the lobby is never stuck, and a round that ended must stay ended.
+- **Which account a member is.** A member who had [signed in](#accounts) when they joined has an account, and the game learns it without reading the lobby's tables: from `account_id` in `validate-member-settings` and `ready-check`, from each member's `account_id` in the `start` hook's snapshot and the game API's, null for a guest and a seat, and from the [player token](#player-tokens). Players see only `signed_in` in their snapshots, never the account ID.
 
 ### Starting idempotently
 
@@ -480,6 +481,7 @@ Under `/lobby/v1/game-api/games/{game_key}/`, signed with that game's secret, so
 - [ ] Make `round-ended` true for a round that has no game, and keep a round ended once it is.
 - [ ] Read lobbies and authorize watchers through the signed game API, not the lobby's database.
 - [ ] Authenticate players with [player tokens](#verifying-players-in-a-game) for your game key, verified with the lobby's JWKS, never with the guest credential.
+- [ ] To know a person across games, such as for ratings, key what you keep by the [account](#accounts) ID that player tokens, hooks and snapshots carry, never by the player ID, which is new for every session. Guests have none.
 - [ ] Add your frontend entry (result URL, modules, links) to `frontend` in `LOBBY_GAMES`.
 
 ## Admin MCP tools

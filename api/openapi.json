@@ -770,6 +770,10 @@
               "null"
             ]
           },
+          "signed_in": {
+            "description": "Whether the person had signed in, with an account, when they joined. Always false for a seat. The lobby tells the game which account a member is; other players see only this.",
+            "type": "boolean"
+          },
           "team_id": {
             "type": [
               "string",
@@ -790,7 +794,8 @@
           "disconnected_until",
           "kind",
           "seat_settings",
-          "member_settings"
+          "member_settings",
+          "signed_in"
         ],
         "type": "object"
       },

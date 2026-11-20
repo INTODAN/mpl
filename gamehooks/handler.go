@@ -200,7 +200,8 @@ func (handler *hooksHandler) validateMemberSettings(ctx context.Context, respons
 		refuse(response, errors.New("this game takes no member settings"))
 		return
 	}
-	if err := handler.game.ValidateMemberSettings(ctx, input.LobbyID, input.Settings); err != nil {
+	member := domain.MemberIdentity{PlayerID: input.PlayerID, AccountID: input.AccountID, DisplayName: input.DisplayName}
+	if err := handler.game.ValidateMemberSettings(ctx, input.LobbyID, member, input.Settings); err != nil {
 		refuse(response, err)
 		return
 	}
@@ -219,7 +220,7 @@ func (handler *hooksHandler) readyCheck(ctx context.Context, response http.Respo
 	}
 	members := make([]domain.ReadyMember, 0, len(input.Members))
 	for _, member := range input.Members {
-		members = append(members, domain.ReadyMember{PlayerID: member.PlayerID, DisplayName: member.DisplayName, Settings: nilIfNull(member.Settings)})
+		members = append(members, domain.ReadyMember{PlayerID: member.PlayerID, DisplayName: member.DisplayName, AccountID: member.AccountID, Settings: nilIfNull(member.Settings)})
 	}
 	err = check(members, input.AtStart)
 	var requirement *domain.Error

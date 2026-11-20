@@ -199,6 +199,12 @@
       "Member": {
         "additionalProperties": false,
         "properties": {
+          "account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "active": {
             "type": "boolean"
           },
@@ -256,6 +262,7 @@
           "joined_at",
           "join_sequence",
           "disconnected_until",
+          "account_id",
           "kind",
           "seat_settings",
           "member_settings"
